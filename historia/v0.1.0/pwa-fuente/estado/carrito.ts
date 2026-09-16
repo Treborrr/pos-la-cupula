@@ -1,0 +1,153 @@
+/**
+ * El ticket en curso.
+ *
+ * Es el ÚNICO estado que la PWA guarda por su cuenta, y es efímero a
+ * propósito: vive hasta que se cobra. No se persiste en localStorage porque un
+ * ticket a medias recuperado de ayer, sin que nadie lo pidiera, es una fuente
+ * de cobros equivocados.
+ */
+
+import { create } from "zustand";
+import { ulid } from "ulid";
+
+import type { Item } from "../lib/api";
+
+export interface LineaDelTicket {
+  itemId: string;
+  codigo: string;
+  nombre: string;
+  tipo: "SERVICIO" | "PRODUCTO";
+  cantidad: number;
+  /** Lo que se va a cobrar por unidad. Editable. */
+  precioUnitario: number;
+  /** Lo que dice la lista. Si difieren, la pantalla lo marca. */
+  precioLista: number;
+  barberoId: string | null;
+}
+
+interface EstadoCarrito {
+  lineas: LineaDelTicket[];
+  descuento: number;
+  clienteId: string | null;
+  nombreCliente: string | null;
+  notas: string;
+  /**
+   * Se genera al abrir la pantalla y se renueva DESPUÉS de cobrar. Es lo que
+   * hace que un doble clic o un reintento tras un timeout devuelvan la misma
+   * venta en vez de cobrar dos veces.
+   */
+  claveIdempotencia: string;
+
+  agregar: (item: Item, cantidad?: number) => void;
+  cambiarCantidad: (indice: number, cantidad: number) => void;
+  cambiarPrecio: (indice: number, precio: number) => void;
+  cambiarBarbero: (indice: number, barberoId: string | null) => void;
+  quitar: (indice: number) => void;
+  ponerDescuento: (centimos: number) => void;
+  ponerCliente: (id: string | null, nombre: string | null) => void;
+  ponerNotas: (notas: string) => void;
+  vaciar: () => void;
+  /** Tras un cobro exitoso: limpia y estrena clave de idempotencia. */
+  reiniciar: () => void;
+}
+
+export const usarCarrito = create<EstadoCarrito>((set) => ({
+  lineas: [],
+  descuento: 0,
+  clienteId: null,
+  nombreCliente: null,
+  notas: "",
+  claveIdempotencia: ulid(),
+
+  agregar: (item, cantidad = 1) =>
+    set((s) => {
+      // Si el ítem ya está, SUMA cantidad en vez de crear una línea repetida.
+      // El Excel creaba una fila por cada vez que se tecleaba el código, y los
+      // tickets terminaban con "CORTE CLASICO" cuatro veces seguidas.
+      const existente = s.lineas.findIndex(
+        (l) => l.itemId === item.id && l.precioUnitario === item.precio,
+      );
+
+      if (existente >= 0) {
+        const lineas = [...s.lineas];
+        lineas[existente] = {
+          ...lineas[existente],
+          cantidad: redondear(lineas[existente].cantidad + cantidad),
+        };
+        return { lineas };
+      }
+
+      return {
+        lineas: [
+          ...s.lineas,
+          {
+            itemId: item.id,
+            codigo: item.codigo,
+            nombre: item.nombre,
+            tipo: item.tipo,
+            cantidad,
+            precioUnitario: item.precio,
+            precioLista: item.precio,
+            barberoId: null,
+          },
+        ],
+      };
+    }),
+
+  cambiarCantidad: (indice, cantidad) =>
+    set((s) => {
+      if (cantidad <= 0) return { lineas: s.lineas.filter((_, i) => i !== indice) };
+      const lineas = [...s.lineas];
+      lineas[indice] = { ...lineas[indice], cantidad: redondear(cantidad) };
+      return { lineas };
+    }),
+
+  cambiarPrecio: (indice, precio) =>
+    set((s) => {
+      const lineas = [...s.lineas];
+      lineas[indice] = { ...lineas[indice], precioUnitario: Math.max(0, Math.round(precio)) };
+      return { lineas };
+    }),
+
+  cambiarBarbero: (indice, barberoId) =>
+    set((s) => {
+      const lineas = [...s.lineas];
+      lineas[indice] = { ...lineas[indice], barberoId };
+      return { lineas };
+    }),
+
+  quitar: (indice) => set((s) => ({ lineas: s.lineas.filter((_, i) => i !== indice) })),
+
+  ponerDescuento: (centimos) => set({ descuento: Math.max(0, Math.round(centimos)) }),
+
+  ponerCliente: (clienteId, nombreCliente) => set({ clienteId, nombreCliente }),
+
+  ponerNotas: (notas) => set({ notas }),
+
+  vaciar: () => set({ lineas: [], descuento: 0, clienteId: null, nombreCliente: null, notas: "" }),
+
+  reiniciar: () =>
+    set({
+      lineas: [],
+      descuento: 0,
+      clienteId: null,
+      nombreCliente: null,
+      notas: "",
+      claveIdempotencia: ulid(),
+    }),
+}));
+
+/** Las cantidades admiten hasta 3 decimales; sin esto se acumula basura. */
+function redondear(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+export function subtotalDe(lineas: LineaDelTicket[]): number {
+  return lineas.reduce((a, l) => a + Math.round(l.precioUnitario * l.cantidad), 0);
+}
+
+/** Nunca negativo: un descuento mayor que el subtotal deja el total en cero. */
+export function totalDe(lineas: LineaDelTicket[], descuento: number): number {
+  return Math.max(0, subtotalDe(lineas) - descuento);
+}
+

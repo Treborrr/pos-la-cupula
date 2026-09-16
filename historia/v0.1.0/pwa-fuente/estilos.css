@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+/*
+ * Identidad visual, derivada del logo: un emblema vintage negro.
+ *
+ * Tres colores y basta. El verde y el rojo quedan RESERVADOS para estados
+ * (cobrado/anulado, stock bien/mal): si el rojo también fuera decoración,
+ * dejaría de funcionar como alarma, que es exactamente lo que necesita una
+ * pantalla donde se maneja dinero.
+ */
+@theme {
+  --color-tinta: #0b0b0b;
+  --color-tinta-suave: #2a2724;
+  --color-hueso: #f5f1e8;
+  --color-hueso-hondo: #e8e1d3;
+  --color-laton: #b8894a;
+  --color-laton-claro: #d4a566;
+
+  --color-bien: #2f7d4f;
+  --color-mal: #b3261e;
+  --color-aviso: #9a6b00;
+
+  --font-titulo: "Bebas Neue", "Oswald", "Arial Narrow", sans-serif;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius-caja: 0.5rem;
+}
+
+@layer base {
+  body {
+    background: var(--color-hueso);
+    color: var(--color-tinta);
+    font-family: var(--font-sans);
+  }
+
+  /*
+   * Los montos SIEMPRE en cifras tabulares: sin esto las columnas de precios
+   * bailan de fila en fila y una lista de totales se vuelve difícil de barrer
+   * con la vista.
+   */
+  .cifra {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer components {
+  /*
+   * Objetivos táctiles de 56px. La pantalla del mostrador se toca con el dedo,
+   * muchas veces con las manos ocupadas, y un botón de 36px se falla.
+   *
+   * La base va en un selector agrupado y no en un `@apply .boton` desde cada
+   * variante: Tailwind v4 solo deja aplicar utilidades reales, no clases
+   * propias definidas en esta misma capa.
+   */
+  .boton,
+  .boton-primario,
+  .boton-laton,
+  .boton-suave,
+  .boton-peligro {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold
+           transition-colors select-none disabled:opacity-40 disabled:cursor-not-allowed;
+    min-height: 3.5rem;
+  }
+
+  .boton-primario {
+    @apply bg-tinta text-hueso hover:bg-tinta-suave active:scale-[0.99];
+  }
+
+  .boton-laton {
+    @apply bg-laton text-white hover:bg-laton-claro active:scale-[0.99];
+  }
+
+  .boton-suave {
+    @apply border border-black/10 bg-hueso-hondo text-tinta hover:bg-[#dcd3c1];
+  }
+
+  .boton-peligro {
+    @apply bg-mal text-white hover:brightness-110;
+  }
+
+  .campo {
+    @apply w-full rounded-lg border border-black/15 bg-white px-3 py-3 text-base
+           outline-none focus:border-laton focus:ring-2 focus:ring-laton/30;
+  }
+
+  .tarjeta {
+    @apply rounded-xl border border-black/10 bg-white shadow-sm;
+  }
+
+  .etiqueta {
+    @apply text-xs font-semibold uppercase tracking-wider text-tinta/55;
+  }
+}
+
+/* La barra de scroll del ticket, discreta pero visible: en una pantalla táctil
+   hay que saber que hay más abajo. */
+.scroll-fino::-webkit-scrollbar {
+  width: 10px;
+}
+.scroll-fino::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.18);
+  border-radius: 999px;
+}

@@ -1,0 +1,94 @@
+POS LA CÚPULA — v0.1.0
+================================================================
+
+QUÉ ES ESTO
+  El punto de venta de LA CÚPULA TATTOO BARBER SHOP. Reemplaza el
+  Excel "NOTA DE VENTA CUPULA.xlsm".
+
+  Corre entero en esta computadora. No necesita internet para
+  funcionar: solo para la integración con las tarjetas de fidelidad,
+  que es opcional.
+
+
+ANTES DE INSTALAR
+  Falta un archivo que no puedo incluir aquí: nssm.exe
+
+  1. Bájalo de https://nssm.cc/download (versión 2.24 o superior)
+  2. Del ZIP, saca win64\nssm.exe
+  3. Cópialo en ESTA MISMA CARPETA, al lado de INSTALAR.cmd
+
+  NSSM es lo que convierte el POS en un servicio de Windows: hace
+  que arranque solo al encender la PC y que se reinicie solo si se
+  cae. Es software libre y conocido; no lo incluyo en el paquete
+  simplemente para no redistribuir binarios de terceros.
+
+
+CÓMO INSTALAR
+  Clic derecho en INSTALAR.cmd → "Ejecutar como administrador"
+
+  El instalador:
+    · Copia el programa a C:\POSCupula\app
+    · Crea C:\POSCupula\datos (aquí viven las ventas)
+    · Registra el servicio "POS La Cupula"
+    · Deja un acceso directo en el escritorio
+
+  Reinstalar por encima NO borra los datos.
+
+
+LO PRIMERO DESPUÉS DE INSTALAR
+  Abre el POS y ve a Ajustes:
+
+  1. TICKETERA
+     Elige cómo está conectada y toca "Imprimir ticket de prueba".
+     Revisa en el papel: las tildes y la eñe, que la descripción
+     larga se parta en varias líneas, que el logo se distinga, que
+     el QR se lea con la pistola, y que corte solo al final.
+
+     Si el QR sale mal: es el firmware de esa impresora. Elige el
+     perfil genérico, que lo manda como imagen y siempre funciona.
+
+  2. RESPALDOS
+     Configura una carpeta externa (OneDrive o un USB que quede
+     siempre conectado) y toca "Guardar y probar".
+
+     ESTO NO ES OPCIONAL. Sin copia fuera de esta computadora, el
+     día que el disco falle se pierden todas las ventas. El sistema
+     escribe un archivo de prueba y lo lee para verificar que el
+     destino sirve de verdad.
+
+  3. CATÁLOGO
+     Carga los servicios y los productos con sus precios reales.
+
+
+DÓNDE ESTÁ TODO
+  Programa   C:\POSCupula\app
+  DATOS      C:\POSCupula\datos     ← ES LO ÚNICO QUE HAY QUE RESPALDAR
+  Registro   C:\POSCupula\registro
+
+
+SI ALGO FALLA
+  1. Abre el POS → Ajustes → Diagnóstico.
+     Ahí dice si los datos están íntegros, cuánta memoria usa y
+     qué pasa con la impresora. Se puede leer por teléfono.
+
+  2. Si no abre, reinicia el servicio:
+       Inicio → escribir "servicios" → buscar "POS La Cupula"
+       → clic derecho → Reiniciar
+
+  3. Los errores quedan en C:\POSCupula\registro
+
+
+CÓMO SE GUARDAN LOS DATOS
+  Cada venta se escribe en un archivo de texto y se confirma en el
+  disco ANTES de decir "cobrado". Si se corta la luz en medio de una
+  venta, al volver el sistema detecta la línea incompleta, la aparta
+  y sigue funcionando: no se pierde nada de lo anterior.
+
+  Los archivos son texto plano legible (.jsonl). Se pueden abrir con
+  el Bloc de notas. Si alguien los edita a mano, el sistema lo
+  detecta y lo avisa en Diagnóstico.
+
+
+DESINSTALAR
+  Clic derecho en DESINSTALAR.cmd → "Ejecutar como administrador"
+  Los datos NO se borran.

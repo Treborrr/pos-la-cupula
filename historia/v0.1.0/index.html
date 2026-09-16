@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es-PE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>POS · La Cúpula</title>
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/iconos/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0B0B0B" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+
+    <!--
+      El POS es una herramienta de trabajo, no una página: sin selección de
+      texto accidental al arrastrar sobre los botones, sin zoom por doble toque
+      y sin rebote al final del scroll. Esas tres cosas, en una pantalla táctil
+      de mostrador, se sienten como errores.
+    -->
+    <style>
+      html, body, #raiz { height: 100%; }
+      body { margin: 0; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+    </style>
+  </head>
+  <body>
+    <div id="raiz"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

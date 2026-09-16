@@ -1,0 +1,233 @@
+================================================================
+ POS LA CÚPULA — Guía de instalación
+ Para Robert. Versión 0.1.0
+================================================================
+
+Esta guía es la tuya, la técnica. El archivo LEEME.txt de esta
+misma carpeta es el del cliente, escrito para que lo entienda
+alguien que no es técnico.
+
+
+----------------------------------------------------------------
+ QUÉ HAY EN ESTE USB
+----------------------------------------------------------------
+
+  pos-cupula.exe   El sistema entero: servidor, API e interfaz.
+                   Lleva Node adentro, así que NO hay que
+                   instalar nada previo en la PC. 57 MB.
+
+  pwa/             La interfaz compilada.
+
+  nssm.exe         Convierte el .exe en un servicio de Windows.
+                   Ya está incluido (lo bajé de nssm.cc).
+
+  INSTALAR.cmd     Instalación automática. Pide administrador.
+  DESINSTALAR.cmd  Quita el programa. NO borra los datos.
+  LEEME.txt        El instructivo para el cliente.
+
+
+----------------------------------------------------------------
+ OPCIÓN A — INSTALACIÓN DEFINITIVA (lo normal)
+----------------------------------------------------------------
+
+Deja el POS andando para siempre: arranca solo al encender la
+PC, se reinicia solo si se cae, y el dueño solo ve un ícono en
+el escritorio.
+
+  1. Conecta el USB a la PC con Windows.
+
+  2. Copia la carpeta entera del USB al Escritorio.
+     (Se puede instalar desde el USB, pero si alguien lo
+     desconecta a mitad, queda a medias.)
+
+  3. Clic derecho sobre INSTALAR.cmd
+     → "Ejecutar como administrador"
+
+     Si Windows muestra la pantalla azul de "Windows protegió
+     tu PC": clic en "Más información" → "Ejecutar de todas
+     formas". Aparece porque el .exe no está firmado
+     digitalmente; una firma cuesta unos 200 USD al año y para
+     un sistema interno no se justifica.
+
+  4. Espera. Va a mostrar 5 pasos y al final la IP de la PC.
+     ANOTA ESA IP: con ella se entra desde el celular.
+
+  5. Doble clic en el ícono "POS La Cupula" del escritorio.
+
+Listo. Queda instalado en C:\POSCupula
+
+
+----------------------------------------------------------------
+ OPCIÓN B — SOLO PROBARLO, SIN INSTALAR NADA
+----------------------------------------------------------------
+
+Para mostrárselo al cliente sin tocarle la computadora. No deja
+rastro: al cerrar la ventana, se terminó.
+
+  1. Abre la carpeta del USB.
+
+  2. Doble clic en pos-cupula.exe
+     Se abre una ventana negra. DÉJALA ABIERTA: esa ventana
+     ES el sistema corriendo.
+
+  3. Abre el navegador y entra a:
+         http://localhost:7070
+
+  4. Para cerrar: cierra la ventana negra.
+
+  OJO: así los datos se guardan en C:\POSCupula\datos igual.
+  Si quieres que la prueba no deje nada, antes de abrirlo abre
+  una ventana de comandos en la carpeta del USB y ejecuta:
+
+      set POS_DATOS=%TEMP%\pos-prueba
+      pos-cupula.exe
+
+  Eso manda los datos a una carpeta temporal.
+
+
+----------------------------------------------------------------
+ LO PRIMERO DESPUÉS DE INSTALAR (en este orden)
+----------------------------------------------------------------
+
+1) LA TICKETERA
+   Ajustes → Ticketera
+
+   a. Conecta la impresora y VOLTÉALA para leer marca y modelo
+      en la etiqueta. Mándamelo y confirmo el perfil.
+
+   b. Si es USB: hay que compartirla en Windows.
+      Panel de control → Dispositivos e impresoras
+      → clic derecho en la impresora → Propiedades de impresora
+      → pestaña "Compartir" → tildar "Compartir esta impresora"
+      → ponerle de nombre exactamente:  TICKETERA
+      (sin espacios, sin tildes, en mayúsculas)
+
+   c. En el POS elige "USB (Windows)" y escribe ese mismo
+      nombre. Si es de red, elige "Red" y pon su IP.
+
+   d. Toca "Imprimir ticket de prueba" y revisa EN EL PAPEL:
+
+        [ ] Las tildes y la eñe salen bien (ÁÉÍÓÚ ñÑ ¿¡)
+            Si salen símbolos raros → cambia el modelo a otro
+            perfil de la lista.
+
+        [ ] La descripción larga se parte en varias líneas
+            y no sale cortada.
+
+        [ ] El logo se distingue (no es una mancha negra).
+            Si sale mal → desactiva "Imprimir el logo" y
+            avísame: tengo una versión simplificada.
+
+        [ ] El QR se lee con la pistola.
+            Si no lee → ya está en modo imagen, que funciona
+            siempre; avísame si igual falla.
+
+        [ ] El papel corta solo al final.
+
+2) LOS RESPALDOS  —  ESTO NO ES OPCIONAL
+   Ajustes → Respaldos
+
+   Pon una carpeta de OneDrive o un USB que quede SIEMPRE
+   conectado, y toca "Guardar y probar". El sistema escribe un
+   archivo de prueba, lo lee y lo borra para verificar que el
+   destino funciona de verdad.
+
+   Si queda en rojo, no sigas hasta resolverlo. Sin copia fuera
+   de esa computadora, el día que falle el disco se pierden
+   todas las ventas del negocio.
+
+3) EL CATÁLOGO
+   Catálogo → + Nuevo
+
+   El sistema arranca VACÍO. Hay que cargar:
+     · Los servicios (corte, barba, lo que ofrezcan)
+     · Los productos físicos con su stock inicial
+       (ceras, vapes, pipas, mallas, trimmers)
+     · Los barberos, en el panel de la derecha
+
+   El correlativo arranca en NV000030, continuando donde quedó
+   el Excel. Se puede cambiar en Ajustes.
+
+
+----------------------------------------------------------------
+ DESDE EL CELULAR
+----------------------------------------------------------------
+
+Con el celular en el MISMO WiFi que la PC, entra a:
+
+    http://<la IP que anotaste>:7070
+
+Ejemplo:  http://192.168.1.95:7070
+
+Para encontrar la IP en cualquier momento: en la PC, abre
+"Símbolo del sistema" y escribe  ipconfig  — es la que dice
+"Dirección IPv4".
+
+Si no entra: casi siempre es el Firewall de Windows. La primera
+vez que arranca debería preguntar; hay que darle "Permitir" en
+redes privadas.
+
+
+----------------------------------------------------------------
+ SI ALGO FALLA
+----------------------------------------------------------------
+
+Lo primero, siempre:  Ajustes → Diagnóstico
+Ahí dice si los datos están íntegros, cuánta memoria usa y qué
+pasa con la impresora. Se puede leer por teléfono.
+
+El POS no abre:
+  Inicio → escribir "servicios" → buscar "POS La Cupula"
+  → clic derecho → Reiniciar
+
+Los errores quedan en:
+  C:\POSCupula\registro\error.log
+
+Verificar los datos desde una ventana de comandos:
+  cd C:\POSCupula\app
+  pos-cupula.exe verificar
+
+  Recorre todo el registro de ventas comprobando que no falte
+  ningún evento y que nadie haya editado los archivos a mano.
+
+
+----------------------------------------------------------------
+ CÓMO ESTÁN GUARDADOS LOS DATOS
+----------------------------------------------------------------
+
+Todo vive en C:\POSCupula\datos  — es LO ÚNICO que hay que
+respaldar.
+
+Son archivos de texto plano (.jsonl), una línea por operación.
+Se abren con el Bloc de notas. Cada venta se escribe en el disco
+y se confirma ANTES de que el sistema diga "cobrado", así que un
+corte de luz no puede dejar una venta impresa que no quedó
+registrada.
+
+Si alguien edita un archivo a mano, el sistema lo detecta: cada
+línea lleva una huella encadenada con la anterior. Sale en
+Ajustes → Diagnóstico.
+
+Reinstalar por encima NUNCA toca la carpeta de datos.
+
+
+----------------------------------------------------------------
+ ACTUALIZAR MÁS ADELANTE
+----------------------------------------------------------------
+
+Cuando te pase una versión nueva: copias la carpeta y vuelves a
+ejecutar INSTALAR.cmd como administrador. Reemplaza el programa
+y deja los datos intactos.
+
+
+----------------------------------------------------------------
+ LO QUE FALTA DEFINIR
+----------------------------------------------------------------
+
+  [ ] Marca y modelo de la ticketera
+  [ ] Lista real de productos con precios
+  [ ] Nombres de los barberos
+  [ ] Carpeta de respaldo externa
+  [ ] Si quieren cambiar qué dice el ticket
+      (la plantilla es configuración, no código: se edita sin
+       recompilar nada)
