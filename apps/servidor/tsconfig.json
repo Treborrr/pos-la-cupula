@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@cupula/contratos": ["../../paquetes/contratos/src/indice.ts"],
+      "@cupula/contratos/*": ["../../paquetes/contratos/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "pruebas/**/*.ts", "../../paquetes/contratos/src/**/*.ts"]
+}

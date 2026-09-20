@@ -1,0 +1,581 @@
+/**
+ * Pruebas del dominio de venta.
+ *
+ * Cada una corresponde a un defecto REAL del Excel que estamos reemplazando, o
+ * a una regla que sostiene que las cuentas cuadren. No hay pruebas de camino feliz
+ * por cumplir.
+ */
+
+import { describe, expect, it, afterEach } from "vitest";
+import { ulid } from "ulid";
+
+import { ServicioPos } from "../src/servicios/Pos";
+import { crearItem, desactivarItem } from "../src/dominio/catalogo/catalogo";
+import { crearBarbero, desactivarBarbero, reactivarBarbero } from "../src/dominio/barberos/barberos";
+import { registrarEntrada } from "../src/dominio/inventario/inventario";
+import { abrirTurno, arquear, cerrarTurno } from "../src/dominio/caja/caja";
+import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
+
+const aBorrar: string[] = [];
+afterEach(async () => {
+  await Promise.all(aBorrar.splice(0).map(borrar));
+});
+
+/** Un POS recién instalado, con el catálogo mínimo de la barbería cargado. */
+async function posDePrueba() {
+  const dir = await carpetaTemporal();
+  aBorrar.push(dir);
+  const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+
+  // Estas pruebas son de pagos, stock, idempotencia y caja: exigir cliente en
+  // todas agregaría ruido sin probar nada. La regla tiene sus propias pruebas
+  // más abajo, en «cliente obligatorio».
+  await pos.guardarConfig("ventas.exigirCliente", false);
+
+  const ids: Record<string, string> = {};
+
+  for (const [codigo, nombre, precio] of [
+    ["COR", "CORTE CLASICO", 2000],
+    ["COR-D", "CORTE DEGRADADO", 2500],
+    ["BAR", "BARBA", 1000],
+  ] as const) {
+    await pos.transaccion(() => {
+      const r = crearItem(pos.p, { codigo, nombre, tipo: "SERVICIO", categoria: "Barbería", precio });
+      ids[codigo] = r.itemId;
+      return { eventos: r.eventos, resultado: null };
+    });
+  }
+
+  await pos.transaccion(() => {
+    const r = crearItem(pos.p, {
+      codigo: "CERA",
+      nombre: "CERA MODELADORA",
+      tipo: "PRODUCTO",
+      categoria: "Productos",
+      precio: 3500,
+      stockMinimo: 3,
+      stockInicial: 10,
+    });
+    ids["CERA"] = r.itemId;
+    return { eventos: r.eventos, resultado: null };
+  });
+
+  return { pos, ids, dir };
+}
+
+function pedido(itemId: string, cantidad = 1, extra: Record<string, unknown> = {}) {
+  return {
+    lineas: [{ itemId, cantidad }],
+    pagos: [{ medio: "EFECTIVO" as const, monto: 0 }],
+    claveIdempotencia: ulid(),
+    ...extra,
+  };
+}
+
+describe("cobrar", () => {
+  it("cobra, asigna correlativo y calcula el total", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR-D"], cantidad: 2 }],
+      pagos: [{ medio: "YAPE", monto: 5000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.correlativo).toBe("NV000030"); // continúa donde quedó el Excel
+    expect(r.venta.total).toBe(5000);
+    expect(r.venta.lineas[0].cantidad).toBe(2);
+    expect(r.duplicada).toBe(false);
+    await pos.cerrar();
+  });
+
+  it("acepta cantidad distinta de 1 en la misma línea", async () => {
+    // El Excel SIEMPRE metía cantidad 1 y corregirla exigía activar un modo
+    // especial y volver a hacer clic en la fila. Era su peor defecto de uso.
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["BAR"], cantidad: 3 }],
+      pagos: [{ medio: "EFECTIVO", monto: 3000, recibido: 5000, vuelto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.venta.total).toBe(3000);
+    await pos.cerrar();
+  });
+
+  it("acepta pago mixto: parte efectivo, parte YAPE", async () => {
+    // El Excel solo admitía un medio de pago por venta.
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR-D"], cantidad: 1 }, { itemId: ids["BAR"], cantidad: 1 }],
+      pagos: [
+        { medio: "EFECTIVO", monto: 2000 },
+        { medio: "YAPE", monto: 1500 },
+      ],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.venta.total).toBe(3500);
+    expect(r.venta.pagos).toHaveLength(2);
+    await pos.cerrar();
+  });
+
+  it("rechaza si los pagos no suman exactamente el total", async () => {
+    const { pos, ids } = await posDePrueba();
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 1900 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/Faltan S\/ 1\.00/);
+    await pos.cerrar();
+  });
+
+  it("guarda el precio de lista aparte cuando se cobra otro precio", async () => {
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR-D"], cantidad: 1, precioUnitario: 2000 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.venta.lineas[0].precioUnitario).toBe(2000);
+    expect(r.venta.lineas[0].precioLista).toBe(2500); // queda registrado lo que se regaló
+    await pos.cerrar();
+  });
+
+  it("registra quién atendió, sin calcular comisión alguna", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "José");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId }],
+      pagos: [{ medio: "YAPE", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.lineas[0].barberoId).toBe(barberoId);
+    expect(r.venta).not.toHaveProperty("comision");
+    await pos.cerrar();
+  });
+});
+
+describe("idempotencia", () => {
+  it("el mismo pedido enviado dos veces cobra una sola vez", async () => {
+    const { pos, ids } = await posDePrueba();
+    const clave = ulid();
+    const cuerpo = {
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO" as const, monto: 2000 }],
+      claveIdempotencia: clave,
+    };
+
+    const primera = await pos.cobrar(cuerpo);
+    const segunda = await pos.cobrar(cuerpo);
+
+    expect(segunda.duplicada).toBe(true);
+    expect(segunda.venta.correlativo).toBe(primera.venta.correlativo);
+    expect(pos.p.ventas.size).toBe(1);
+    await pos.cerrar();
+  });
+
+  it("resiste el doble clic: dos envíos simultáneos con la misma clave", async () => {
+    const { pos, ids } = await posDePrueba();
+    const cuerpo = {
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO" as const, monto: 2000 }],
+      claveIdempotencia: ulid(),
+    };
+
+    const [a, b] = await Promise.all([pos.cobrar(cuerpo), pos.cobrar(cuerpo)]);
+
+    expect(a.venta.id).toBe(b.venta.id);
+    expect(pos.p.ventas.size).toBe(1);
+    await pos.cerrar();
+  });
+
+  it("nunca repite correlativo con 50 cobros simultáneos", async () => {
+    // Es el bug que tenía el Excel: F7 = MAX(NotaVenta[ID])+1, recalculado
+    // fuera de toda transacción.
+    const { pos, ids } = await posDePrueba();
+
+    const resultados = await Promise.all(
+      Array.from({ length: 50 }, () =>
+        pos.cobrar({
+          lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+          pagos: [{ medio: "EFECTIVO" as const, monto: 2000 }],
+          claveIdempotencia: ulid(),
+        }),
+      ),
+    );
+
+    const correlativos = resultados.map((r) => r.venta.correlativo);
+    expect(new Set(correlativos).size).toBe(50);
+    expect(correlativos.sort()[0]).toBe("NV000030");
+    expect(correlativos.sort().at(-1)).toBe("NV000079");
+    await pos.cerrar();
+  });
+});
+
+describe("anulación", () => {
+  it("no borra: marca, conserva el correlativo y devuelve el stock", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 2 }],
+      pagos: [{ medio: "EFECTIVO", monto: 7000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(pos.p.stockDe(ids["CERA"])).toBe(8);
+
+    const anulada = await pos.anular(r.venta.id, "El cliente se arrepintió");
+
+    expect(anulada.anulada).toBe(true);
+    expect(anulada.correlativo).toBe("NV000030");
+    expect(pos.p.ventas.size).toBe(1); // sigue existiendo
+    expect(pos.p.stockDe(ids["CERA"])).toBe(10); // el stock volvió
+
+    // Y el correlativo NO se reusa: la siguiente venta es la 31.
+    const siguiente = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "YAPE", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(siguiente.venta.correlativo).toBe("NV000031");
+    await pos.cerrar();
+  });
+
+  it("exige motivo y no deja anular dos veces", async () => {
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    await expect(pos.anular(r.venta.id, "")).rejects.toThrow(/necesita motivo/);
+    await pos.anular(r.venta.id, "Cobro duplicado");
+    await expect(pos.anular(r.venta.id, "otra vez")).rejects.toThrow(/ya estaba anulada/);
+    await pos.cerrar();
+  });
+});
+
+describe("stock", () => {
+  it("descuenta al vender sin necesitar un evento aparte", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 3 }],
+      pagos: [{ medio: "TARJETA", monto: 10500 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(pos.p.stockDe(ids["CERA"])).toBe(7);
+    await pos.cerrar();
+  });
+
+  it("los servicios no consumen stock", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 5 }],
+      pagos: [{ medio: "EFECTIVO", monto: 10000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(pos.p.stock.has(ids["COR"])).toBe(false);
+    await pos.cerrar();
+  });
+
+  it("avisa pero NO bloquea cuando no alcanza el stock", async () => {
+    // Negarse a cobrar con el cliente y el billete delante es peor problema
+    // que un inventario desfasado.
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 15 }],
+      pagos: [{ medio: "EFECTIVO", monto: 52500 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.total).toBe(52500); // se cobró igual
+    expect(r.advertencias).toHaveLength(1);
+    expect(r.advertencias[0]).toMatch(/hay 10 y se están vendiendo 15/);
+    expect(pos.p.stockDe(ids["CERA"])).toBe(-5); // negativo: hay que contar
+    await pos.cerrar();
+  });
+
+  it("acumula la misma cantidad aunque el producto venga en dos líneas", async () => {
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [
+        { itemId: ids["CERA"], cantidad: 6 },
+        { itemId: ids["CERA"], cantidad: 6 },
+      ],
+      pagos: [{ medio: "EFECTIVO", monto: 42000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.advertencias[0]).toMatch(/se están vendiendo 12/);
+    await pos.cerrar();
+  });
+
+  it("el ajuste fija el saldo contado y guarda lo que el sistema creía", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.escribir(() =>
+      registrarEntrada(pos.p, { itemId: ids["CERA"], cantidad: 5, motivo: "Compra a proveedor" }),
+    );
+    expect(pos.p.stockDe(ids["CERA"])).toBe(15);
+    await pos.cerrar();
+  });
+});
+
+describe("caja", () => {
+  it("arquea el turno y calcula el efectivo esperado en el cajón", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR-D"], cantidad: 1 }],
+      pagos: [{ medio: "YAPE", monto: 2500 }],
+      claveIdempotencia: ulid(),
+    });
+
+    const arqueo = arquear(pos.p);
+    expect(arqueo.medios.EFECTIVO).toBe(2000);
+    expect(arqueo.medios.YAPE).toBe(2500);
+    expect(arqueo.totalVendido).toBe(4500);
+    expect(arqueo.efectivoEnCajon).toBe(7000); // 5000 inicial + 2000 cobrado
+    await pos.cerrar();
+  });
+
+  it("registra la diferencia al cerrar y no cuenta las ventas anuladas", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 0 }).eventos);
+
+    const a = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    await pos.cobrar({
+      lineas: [{ itemId: ids["BAR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 1000 }],
+      claveIdempotencia: ulid(),
+    });
+    await pos.anular(a.venta.id, "Se cobró de más");
+
+    const arqueo = arquear(pos.p);
+    expect(arqueo.cantidadVentas).toBe(1);
+    expect(arqueo.efectivoEnCajon).toBe(1000);
+    expect(arqueo.ventasAnuladas).toBe(1);
+
+    // Contaron 950: faltan 50 céntimos.
+    const cierre = await pos.transaccion(() => {
+      const r = cerrarTurno(pos.p, { contadoEfectivo: 950 });
+      return { eventos: r.eventos, resultado: r };
+    });
+    expect(cierre.diferencia).toBe(-50);
+    expect(pos.p.turnoAbierto).toBeNull();
+    await pos.cerrar();
+  });
+
+  it("deja cobrar con la caja cerrada y lo reporta aparte", async () => {
+    // Perder una venta porque nadie abrió la caja es inaceptable.
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.venta.turnoId).toBeNull();
+
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 0 }).eventos);
+    expect(arquear(pos.p).cantidadVentas).toBe(0);
+    await pos.cerrar();
+  });
+});
+
+describe("reconstrucción", () => {
+  it("el estado se rehace idéntico reproduciendo el log", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+
+    let ventaId = "";
+    let ceraId = "";
+    {
+      const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+      await pos.guardarConfig("ventas.exigirCliente", false);
+      const { itemId } = await pos.transaccion(() => {
+        const r = crearItem(pos.p, {
+          codigo: "CERA",
+          nombre: "CERA",
+          tipo: "PRODUCTO",
+          categoria: "P",
+          precio: 3500,
+          stockInicial: 10,
+        });
+        return { eventos: r.eventos, resultado: r };
+      });
+      ceraId = itemId;
+
+      const r = await pos.cobrar({
+        lineas: [{ itemId, cantidad: 4 }],
+        pagos: [{ medio: "EFECTIVO", monto: 14000 }],
+        claveIdempotencia: ulid(),
+      });
+      ventaId = r.venta.id;
+      await pos.cerrar();
+    }
+
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    expect(revivido.p.ventas.get(ventaId)?.correlativo).toBe("NV000030");
+    expect(revivido.p.stockDe(ceraId)).toBe(6);
+    expect(revivido.p.ultimoCorrelativo).toBe(30);
+    await revivido.cerrar();
+  });
+
+  it("ignora una instantánea de otro formato y reconstruye desde el log", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+
+    const almacen = await abrirAlmacen(dir);
+    const pos = await ServicioPos.abrir(almacen);
+    await pos.transaccion(() => {
+      const r = crearItem(pos.p, {
+        codigo: "COR",
+        nombre: "CORTE",
+        tipo: "SERVICIO",
+        categoria: "B",
+        precio: 2000,
+      });
+      return { eventos: r.eventos, resultado: r };
+    });
+
+    // Instantánea escrita por una versión anterior, con otra forma.
+    await almacen.guardarInstantanea(1, { formato: 999, seq: 1, items: [] });
+
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    expect(revivido.p.itemPorCodigo("COR")?.nombre).toBe("CORTE");
+    await revivido.cerrar();
+    await pos.cerrar();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reglas que llegaron con la v0.2.0
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("cliente obligatorio", () => {
+  it("no deja cobrar sin cliente cuando la regla está encendida", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.guardarConfig("ventas.exigirCliente", true);
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/Falta el nombre del cliente/);
+
+    await pos.cerrar();
+  });
+
+  it("rechaza un cliente que no existe antes de tocar el log", async () => {
+    const { pos, ids } = await posDePrueba();
+    const antes = pos.almacen.ultimaSeq();
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        clienteId: ulid(),
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/cliente elegido no existe/);
+
+    // Lo que importa: una venta rechazada no deja rastro en el log.
+    expect(pos.almacen.ultimaSeq()).toBe(antes);
+    await pos.cerrar();
+  });
+});
+
+describe("barbero de la venta", () => {
+  it("no admite un barbero desactivado en una venta nueva", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Kevin");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+    await pos.escribir(() => desactivarBarbero(pos.p, barberoId));
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/ya no está activo/);
+
+    await pos.cerrar();
+  });
+
+  it("reactivar conserva el id, así que las ventas viejas siguen apuntando a la persona", async () => {
+    const { pos } = await posDePrueba();
+
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Marco");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+    await pos.escribir(() => desactivarBarbero(pos.p, barberoId));
+    expect(pos.p.barberos.get(barberoId)?.activo).toBe(false);
+
+    await pos.escribir(() => reactivarBarbero(pos.p, barberoId));
+    expect(pos.p.barberos.get(barberoId)?.activo).toBe(true);
+    expect(pos.p.barberos.get(barberoId)?.nombre).toBe("Marco");
+
+    await pos.cerrar();
+  });
+});
+
+describe("catálogo de la v0.2.0", () => {
+  it("genera el código solo, sin reutilizar el de un ítem desactivado", async () => {
+    const { pos } = await posDePrueba();
+
+    const primero = await pos.transaccion(() => {
+      const r = crearItem(pos.p, { nombre: "VAPE", tipo: "PRODUCTO", categoria: "Productos", precio: 4500 });
+      return { eventos: r.eventos, resultado: r.itemId };
+    });
+    expect(pos.p.items.get(primero)?.codigo).toBe("P0001");
+
+    await pos.escribir(() => desactivarItem(pos.p, primero, "se dejó de vender"));
+
+    const segundo = await pos.transaccion(() => {
+      const r = crearItem(pos.p, { nombre: "PIPA", tipo: "PRODUCTO", categoria: "Productos", precio: 3500 });
+      return { eventos: r.eventos, resultado: r.itemId };
+    });
+    // P0002 y NO P0001: reutilizarlo haría que un ticket viejo pareciera de
+    // otro producto.
+    expect(pos.p.items.get(segundo)?.codigo).toBe("P0002");
+
+    await pos.cerrar();
+  });
+
+  it("unifica cómo se escribe una categoría en vez de abrir una pestaña nueva", async () => {
+    const { pos } = await posDePrueba();
+
+    const id = await pos.transaccion(() => {
+      // El catálogo de `posDePrueba` ya tiene "Productos".
+      const r = crearItem(pos.p, { nombre: "GEL", tipo: "PRODUCTO", categoria: "  productos ", precio: 1800 });
+      return { eventos: r.eventos, resultado: r.itemId };
+    });
+
+    expect(pos.p.items.get(id)?.categoria).toBe("Productos");
+    await pos.cerrar();
+  });
+});

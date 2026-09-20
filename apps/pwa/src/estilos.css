@@ -1,0 +1,181 @@
+/*
+ * Sistema visual del POS.
+ *
+ * Tres ideas que mandan sobre todo lo demás:
+ *
+ *  · TAMAÑO. Se usa de pie, con prisa y a veces con pantalla táctil. Ningún
+ *    control mide menos de 48 px de alto y el texto base es de 16 px o más.
+ *  · POCO RUIDO. Blanco, negro y un solo acento (el latón de la marca). El color
+ *    fuerte se reserva para lo que exige atención: errores, faltantes, vuelto.
+ *  · GUIAR. Cada pantalla dice qué se hace ahí; los estados vacíos dicen qué
+ *    falta y llevan a donde se resuelve.
+ */
+
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: "Inter Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --color-tinta: #121211;
+  --color-tinta-suave: #2b2926;
+  --color-hueso: #f6f4ef;
+  --color-hueso-hondo: #ece8de;
+  --color-linea: #e6e1d6;
+  --color-laton: #b8894a;
+  --color-laton-oscuro: #8f6630;
+  --color-laton-claro: #f3e9d9;
+  --color-bien: #2f7d4f;
+  --color-mal: #b3261e;
+  --color-aviso: #93650a;
+}
+
+@layer base {
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* En monitores grandes (1600 px o más) todo crece un poco: la interfaz
+     está en rem, así que escalar la raíz agranda textos, controles y espacios
+     a la vez sin descuadrar nada. */
+  @media (min-width: 1600px) {
+    html {
+      font-size: 17px;
+    }
+  }
+
+  body {
+    background: var(--color-hueso);
+    color: var(--color-tinta);
+    font-family: var(--font-sans);
+  }
+
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--color-laton) 55%, transparent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* ── Botones ─────────────────────────────────────────────────────────── */
+  .boton,
+  .boton-primario,
+  .boton-laton,
+  .boton-suave,
+  .boton-peligro,
+  .boton-fantasma {
+    @apply inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-base font-semibold whitespace-nowrap transition-colors select-none disabled:opacity-40;
+  }
+
+  .boton-primario {
+    @apply bg-tinta text-white hover:bg-tinta-suave;
+  }
+
+  .boton-laton {
+    @apply bg-laton text-white hover:bg-laton-oscuro;
+  }
+
+  .boton-suave {
+    @apply border border-linea bg-white text-tinta hover:border-tinta/25 hover:bg-hueso;
+  }
+
+  .boton-peligro {
+    @apply border border-mal/25 bg-white text-mal hover:bg-mal/5;
+  }
+
+  .boton-fantasma {
+    @apply text-tinta/70 hover:bg-black/5 hover:text-tinta;
+  }
+
+  .boton-grande {
+    @apply h-14 rounded-2xl px-6 text-lg;
+  }
+
+  .boton-chico {
+    @apply h-10 rounded-lg px-3 text-sm;
+  }
+
+  .boton-icono {
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-tinta/55 transition-colors hover:bg-black/5 hover:text-tinta;
+  }
+
+  /* ── Campos ──────────────────────────────────────────────────────────── */
+  .campo {
+    @apply h-12 w-full rounded-xl border border-linea bg-white px-4 text-base text-tinta transition-[border-color,box-shadow] outline-none placeholder:text-tinta/35 focus:border-laton focus:ring-4 focus:ring-laton/15 disabled:bg-hueso disabled:text-tinta/50;
+  }
+
+  textarea.campo {
+    @apply h-auto py-3;
+  }
+
+  select.campo {
+    @apply pr-10;
+  }
+
+  .etiqueta {
+    @apply text-sm font-medium text-tinta/60;
+  }
+
+  .ayuda {
+    @apply text-sm text-tinta/50;
+  }
+
+  /* ── Superficies ─────────────────────────────────────────────────────── */
+  .tarjeta {
+    @apply rounded-2xl border border-linea bg-white;
+  }
+
+  .cifra {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* ── Tablas ──────────────────────────────────────────────────────────── */
+  .tabla {
+    @apply w-full text-left text-base;
+  }
+
+  .tabla thead th {
+    @apply sticky top-0 z-10 border-b border-linea bg-white px-5 py-3 text-sm font-medium text-tinta/55;
+  }
+
+  .tabla tbody td {
+    @apply border-b border-linea/70 px-5 py-4 align-middle;
+  }
+
+  .tabla tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .tabla-clic tbody tr {
+    @apply cursor-pointer transition-colors hover:bg-hueso;
+  }
+
+  /* ── Pastillas de estado ─────────────────────────────────────────────── */
+  .pastilla {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap;
+  }
+
+  .scroll-fino::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scroll-fino::-webkit-scrollbar-thumb {
+    background: rgb(0 0 0 / 0.16);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+}

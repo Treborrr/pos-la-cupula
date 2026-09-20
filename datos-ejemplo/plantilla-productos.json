@@ -1,0 +1,21 @@
+{
+  "_nota": [
+    "PLANTILLA, NO son los datos reales del negocio.",
+    "Los productos que vende La Cúpula (ceras, vapes, pipas, mallas, trimmers) no estaban",
+    "en el Excel: ahí solo había servicios. Estos son ejemplos con precios inventados para",
+    "poder probar el inventario end-to-end.",
+    "",
+    "Antes de instalar en la barbería hay que reemplazar esta lista por la real, o cargarla",
+    "desde la pantalla de Catálogo. El stock inicial también es de mentira."
+  ],
+  "barberos": ["Barbero 1", "Barbero 2"],
+  "items": [
+    { "codigo": "CERA", "nombre": "CERA MODELADORA", "tipo": "PRODUCTO", "categoria": "Productos", "precio": 2500, "stockMinimo": 3, "stockInicial": 12, "orden": 100 },
+    { "codigo": "GEL", "nombre": "GEL FIJADOR", "tipo": "PRODUCTO", "categoria": "Productos", "precio": 1800, "stockMinimo": 3, "stockInicial": 8, "orden": 110 },
+    { "codigo": "SHAMP", "nombre": "SHAMPOO", "tipo": "PRODUCTO", "categoria": "Productos", "precio": 3200, "stockMinimo": 2, "stockInicial": 6, "orden": 120 },
+    { "codigo": "VAPE", "nombre": "VAPE DESECHABLE", "tipo": "PRODUCTO", "categoria": "Smoke shop", "precio": 4500, "stockMinimo": 5, "stockInicial": 20, "orden": 200 },
+    { "codigo": "PIPA", "nombre": "PIPA", "tipo": "PRODUCTO", "categoria": "Smoke shop", "precio": 3500, "stockMinimo": 2, "stockInicial": 7, "orden": 210 },
+    { "codigo": "MALLA", "nombre": "MALLA PARA PIPA", "tipo": "PRODUCTO", "categoria": "Smoke shop", "precio": 200, "stockMinimo": 20, "stockInicial": 100, "orden": 220 },
+    { "codigo": "TRIM", "nombre": "TRIMMER", "tipo": "PRODUCTO", "categoria": "Equipos", "precio": 12000, "stockMinimo": 1, "stockInicial": 3, "orden": 300 }
+  ]
+}

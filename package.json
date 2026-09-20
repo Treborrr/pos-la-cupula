@@ -1,0 +1,20 @@
+{
+  "name": "pos-cupula",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Punto de venta de LA CÚPULA TATTOO BARBER SHOP — local, sin base de datos, listo para migrar a la nube",
+  "workspaces": [
+    "paquetes/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=@cupula/servidor",
+    "dev:pwa": "npm run dev --workspace=@cupula/pwa",
+    "build": "npm run build --workspace=@cupula/pwa && npm run build --workspace=@cupula/servidor",
+    "test": "npm run test --workspace=@cupula/servidor",
+    "verificar-capas": "node herramientas/verificar-capas.mjs"
+  }
+}

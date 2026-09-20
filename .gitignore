@@ -1,0 +1,28 @@
+node_modules/
+dist/
+
+# La PWA compilada que el empaquetador copia junto al servidor.
+apps/servidor/pwa/
+
+# El paquete de instalación para Windows. Se regenera con:
+#   node herramientas/empaquetar-windows.mjs
+#
+# Con barra inicial: ancla el patrón a la raíz. Sin ella, git ignora CUALQUIER
+# carpeta llamada "entrega" a cualquier profundidad — y se comió en silencio la
+# copia de la entrega v0.1.0 que se guardó en historia/.
+/entrega/
+
+# Datos de desarrollo: son el log de eventos de pruebas locales, no del negocio.
+/datos-dev/
+/datos/
+
+# Lo que genera el extractor a partir del Excel. Se regenera con:
+#   python3 herramientas/extraer-catalogo-excel.py
+datos-ejemplo/catalogo-del-excel.json
+
+# Íconos derivados del logo. Se regeneran con:
+#   python3 herramientas/generar-iconos.py
+apps/pwa/public/iconos/
+
+.DS_Store
+*.log

@@ -1,0 +1,15 @@
+{
+  "name": "@cupula/contratos",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "src/indice.ts",
+  "types": "src/indice.ts",
+  "exports": {
+    ".": "./src/indice.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
