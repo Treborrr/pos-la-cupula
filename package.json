@@ -1,7 +1,7 @@
 {
   "name": "pos-cupula",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Punto de venta de LA CÚPULA TATTOO BARBER SHOP — local, sin base de datos, listo para migrar a la nube",
   "workspaces": [
     "paquetes/*",

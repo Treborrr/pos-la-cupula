@@ -19,7 +19,7 @@ import { relojDelSistema } from "./puertos/Reloj";
 import { construirApp } from "./http/app";
 import { construirAuditoria, formatearAuditoria } from "./consultas/auditoria";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 

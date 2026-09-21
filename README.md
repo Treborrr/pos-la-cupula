@@ -42,6 +42,10 @@ la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
 
+**v0.3.0** — carga del catálogo desde un Excel: se descarga una plantilla,
+se llena fuera del sistema y se sube desde Ajustes, con vista previa de qué va
+a cambiar y opción de agregar o de reemplazar todo.
+
 **v0.2.0** — ticketera Advance con impresión por la cola de Windows (ya no hay
 que compartir la impresora), cajón de dinero, cliente obligatorio en cada venta,
 un solo barbero por venta elegido junto al cliente, códigos de catálogo

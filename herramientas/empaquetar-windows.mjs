@@ -31,7 +31,7 @@ const correr = promisify(exec);
 const RAIZ = fileURLToPath(new URL("..", import.meta.url));
 const ENTREGA = join(RAIZ, "entrega");
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 const NOMBRE_SERVICIO = "POSCupula";
 const PUERTO = 7070;
 const CARPETA_INSTALACION = "C:\\POSCupula";
