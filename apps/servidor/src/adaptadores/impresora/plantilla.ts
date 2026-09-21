@@ -31,7 +31,7 @@ export type BloqueTicket =
   | { tipo: "espacio"; lineas?: number }
   | { tipo: "corte" }
   /** Bloques que solo se imprimen si se cumple la condición. */
-  | { tipo: "si"; condicion: "anulada" | "copia" | "cliente" | "descuento"; bloques: BloqueTicket[] };
+  | { tipo: "si"; condicion: "anulada" | "copia" | "cliente" | "barbero" | "descuento"; bloques: BloqueTicket[] };
 
 /**
  * Plantilla por defecto.
@@ -73,6 +73,15 @@ export const PLANTILLA_POR_DEFECTO: BloqueTicket[] = [
     tipo: "si",
     condicion: "cliente",
     bloques: [{ tipo: "texto", contenido: "Cliente: {cliente.nombre}", alinear: "centro" }],
+  },
+
+  // Quién atendió, UNA vez y arriba. Antes salía repetido bajo cada servicio,
+  // porque cada línea podía llevar un barbero distinto; desde que la venta
+  // tiene uno solo, eso era la misma línea dos o tres veces en el papel.
+  {
+    tipo: "si",
+    condicion: "barbero",
+    bloques: [{ tipo: "texto", contenido: "Atendió: {venta.barbero}", alinear: "centro" }],
   },
 
   { tipo: "separador", caracter: "=" },

@@ -77,12 +77,14 @@ async function pintar(
     "venta.medios": venta.pagos.map((p) => p.medio).join(" + "),
     "venta.motivoAnulacion": venta.motivoAnulacion ?? "",
     "cliente.nombre": extra.nombreDelCliente ?? "",
+    "venta.barbero": nombreDelBarberoUnico() ?? "",
   };
 
   const condiciones = {
     anulada: venta.anulada,
     copia: Boolean(extra.reimpresion),
     cliente: Boolean(extra.nombreDelCliente),
+    barbero: Boolean(valores["venta.barbero"]),
     descuento: venta.descuento > 0,
   };
 
@@ -170,11 +172,27 @@ async function pintar(
         aTexto(linea.total),
       );
 
-      if (mostrarBarbero && linea.barberoId) {
+      // Solo cuando la venta tiene MÁS DE UN barbero. Con uno solo, ya se
+      // nombró arriba junto al cliente y repetirlo bajo cada servicio alarga
+      // el papel sin agregar nada.
+      if (mostrarBarbero && linea.barberoId && !nombreDelBarberoUnico()) {
         const nombre = extra.nombresDeBarbero?.[linea.barberoId];
         if (nombre) salida.linea(`  (${nombre})`);
       }
     }
+  }
+
+  /**
+   * El barbero de la venta, si hay UNO solo.
+   *
+   * Hoy siempre es uno: la pantalla de cobro lo elige junto al cliente. Pero
+   * las ventas anteriores a ese cambio pueden tener un barbero distinto por
+   * servicio, y ahí devuelve null para que cada línea muestre el suyo.
+   */
+  function nombreDelBarberoUnico(): string | null {
+    const ids = [...new Set(venta.lineas.map((l) => l.barberoId).filter(Boolean))];
+    if (ids.length !== 1) return null;
+    return extra.nombresDeBarbero?.[ids[0] as string] ?? null;
   }
 
   function pintarTotales(): void {

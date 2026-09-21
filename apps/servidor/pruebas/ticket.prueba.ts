@@ -289,14 +289,58 @@ describe("ticket completo", () => {
     expect(textoDe(sinCliente)).not.toContain("Cliente:");
   });
 
-  it("imprime el nombre del barbero cuando se lo pasan", async () => {
+  it("nombra al barbero UNA vez arriba, no bajo cada servicio", async () => {
+    // La venta lleva un solo barbero desde que se elige junto al cliente.
+    // Repetirlo en cada línea alargaba el papel sin agregar nada.
     const bytes = await renderTicketEscPos(
       ventaDePrueba(),
       NEGOCIO,
       { perfil: PERFIL_GENERICO_80 },
       { nombresDeBarbero: { "01K59000000000000000000B2": "José" } },
     );
-    expect(textoDe(bytes)).toContain("(Jos");
+    const texto = textoDe(bytes);
+
+    expect(texto).toContain("Atendi");
+    expect(texto).toContain("Jos");
+    expect(texto).not.toContain("(Jos");
+  });
+
+  it("vuelve a nombrarlo por línea si la venta tiene barberos distintos", async () => {
+    // Las ventas anteriores al cambio pueden tener uno por servicio: ahí el
+    // dato de la cabecera sería ambiguo y cada línea tiene que decir el suyo.
+    const venta = ventaDePrueba();
+    const bytes = await renderTicketEscPos(
+      {
+        ...venta,
+        lineas: [
+          venta.lineas[0],
+          { ...venta.lineas[0], nombre: "BARBA", barberoId: "01K59000000000000000000B3" },
+        ],
+      },
+      NEGOCIO,
+      { perfil: PERFIL_GENERICO_80 },
+      {
+        nombresDeBarbero: {
+          "01K59000000000000000000B2": "José",
+          "01K59000000000000000000B3": "Kevin",
+        },
+      },
+    );
+    const texto = textoDe(bytes);
+
+    expect(texto).toContain("(Jos");
+    expect(texto).toContain("(Kevin)");
+    expect(texto).not.toContain("Atendi");
+  });
+
+  it("no dice nada del barbero si la venta no tiene ninguno", async () => {
+    const venta = ventaDePrueba();
+    const bytes = await renderTicketEscPos(
+      { ...venta, lineas: [{ ...venta.lineas[0], barberoId: null }] },
+      NEGOCIO,
+      { perfil: PERFIL_GENERICO_80 },
+    );
+    expect(textoDe(bytes)).not.toContain("Atendi");
   });
 
   it("desglosa subtotal y descuento solo si hubo descuento", async () => {
