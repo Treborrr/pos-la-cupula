@@ -90,6 +90,15 @@ try {
 
 await cp(join(RAIZ, "apps/pwa/dist"), join(ENTREGA, "pwa"), { recursive: true });
 
+// La plantilla de catálogo, al lado del instalador. El sistema la sirve desde
+// Ajustes, pero así se le puede pasar al cliente ANTES de instalar nada, para
+// que la vaya llenando. Se genera desde el servidor recién compilado y no se
+// guarda en el repositorio: si se copiara un archivo fijo, el día que cambien
+// las columnas la plantilla y el lector dejarían de coincidir en silencio.
+await correr(`node apps/servidor/dist/pos-cupula.mjs plantilla "${join(ENTREGA, "PLANTILLA-CATALOGO.xlsx")}"`, {
+  cwd: RAIZ,
+});
+
 // ── 3. Los scripts de instalación ────────────────────────────────────────────
 
 console.log("4/4  Escribiendo los scripts de instalación…");
@@ -505,8 +514,15 @@ CARGAR EL CATÁLOGO DESDE UN EXCEL
   Sirve para dar de alta todos los servicios y productos de una vez, en
   lugar de cargarlos uno por uno.
 
-    1. "Descargar plantilla". El archivo trae las instrucciones adentro
-       y tres filas de ejemplo.
+    1. La plantilla ya está en esta misma carpeta:
+       PLANTILLA-CATALOGO.xlsx
+
+       (También se baja desde el botón "Descargar plantilla", que
+        siempre entrega la versión que el sistema espera.)
+
+       El archivo trae las instrucciones adentro y tres filas de
+       ejemplo. Se le puede pasar al cliente ANTES de instalar, para
+       que la vaya llenando mientras tanto.
     2. Llénalo y borra los ejemplos. El Código se deja VACÍO: lo genera
        el sistema.
     3. Súbelo y toca "Revisar el archivo". NO se carga nada todavía:

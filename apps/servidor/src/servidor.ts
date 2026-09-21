@@ -18,6 +18,7 @@ import { ServicioDeRespaldos } from "./servicios/Respaldos";
 import { relojDelSistema } from "./puertos/Reloj";
 import { construirApp } from "./http/app";
 import { construirAuditoria, formatearAuditoria } from "./consultas/auditoria";
+import { generarPlantilla } from "./adaptadores/planilla/plantillaCatalogo";
 
 export const VERSION = "0.3.0";
 
@@ -71,6 +72,21 @@ async function principal() {
     console.log(r.ok ? "\n✓ El log está íntegro." : "\n✗ El log tiene problemas (ver arriba).");
     await almacen.cerrar();
     process.exit(r.ok ? 0 : 1);
+  }
+
+  /**
+   * Escribe la plantilla de catálogo en la ruta que se le pase.
+   *
+   * La misma que sirve el botón "Descargar plantilla", pero sin necesidad de
+   * tener el POS instalado: así se le puede pasar al cliente para que la vaya
+   * llenando antes de la instalación. Lo usa el empaquetador para dejarla
+   * junto al instalador.
+   */
+  if (process.argv[2] === "plantilla") {
+    const destino = process.argv[3] ?? path.join(process.cwd(), "PLANTILLA-CATALOGO.xlsx");
+    await fs.writeFile(destino, generarPlantilla());
+    console.log(`Plantilla escrita en: ${destino}`);
+    process.exit(0);
   }
 
   /**
