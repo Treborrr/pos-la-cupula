@@ -19,6 +19,9 @@ import {
   desactivarBarbero,
   reactivarBarbero,
 } from "../../dominio/barberos/barberos";
+import { ErrorDeNegocio } from "../../dominio/errores";
+import { importarCatalogo, planificarImportacion } from "../../dominio/catalogo/importar";
+import { generarPlantilla, leerPlantilla } from "../../adaptadores/planilla/plantillaCatalogo";
 import type { Dependencias } from "../app";
 
 /**
@@ -79,6 +82,80 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
       })),
       categorias: [...new Set(items.map((i) => i.categoria))].sort((a, b) => a.localeCompare(b, "es")),
     };
+  });
+
+  /**
+   * La plantilla de Excel para que el cliente cargue su catálogo.
+   *
+   * Se genera al vuelo en vez de servir un archivo guardado: así los
+   * encabezados y las instrucciones nunca se despegan de lo que el lector
+   * espera de verdad.
+   */
+  app.get("/catalogo/plantilla.xlsx", async (_peticion, respuesta) => {
+    return respuesta
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", 'attachment; filename="catalogo-la-cupula.xlsx"')
+      .send(generarPlantilla());
+  });
+
+  /**
+   * Importa el catálogo desde la planilla llena.
+   *
+   * En dos pasos a propósito. Con `revisar` no se escribe nada y se devuelve
+   * exactamente qué va a pasar con cada fila; recién con `agregar` o
+   * `reemplazar` se ejecuta. Autorizar una carga masiva sin ver antes qué
+   * cambia es la diferencia entre cargar el catálogo y quedarse sin catálogo.
+   *
+   * El archivo viaja en base64 dentro del JSON para no sumar un plugin de
+   * subida por un .xlsx de veinte kilobytes.
+   */
+  app.post("/catalogo/importar", async (peticion) => {
+    // `modo` y `aplicar` son independientes a propósito: revisar SIEMPRE se
+    // hace sobre el modo elegido. Mezclarlos hacía que la vista previa de
+    // "reemplazar" se calculara como "agregar" y no mostrara nada de lo que
+    // se iba a desactivar, que es justo lo que hay que ver antes de aceptar.
+    const { archivo, modo, aplicar } = z
+      .object({
+        archivo: z.string().min(1),
+        modo: z.enum(["agregar", "reemplazar"]),
+        aplicar: z.boolean().default(false),
+      })
+      .parse(peticion.body);
+
+    let lectura;
+    try {
+      lectura = leerPlantilla(Buffer.from(archivo, "base64"));
+    } catch (e) {
+      throw new ErrorDeNegocio(
+        "PLANILLA_ILEGIBLE",
+        e instanceof Error ? e.message : "No se pudo leer el archivo.",
+        "Tiene que ser el .xlsx de la plantilla, sin convertir a otro formato.",
+      );
+    }
+
+    const plan = planificarImportacion(pos.p, lectura.filas, modo);
+
+    if (!aplicar) {
+      return { aplicado: false, problemas: lectura.problemas, filas: lectura.filas.length, plan };
+    }
+
+    // Una planilla con errores no se aplica a medias: se corrige y se sube de
+    // nuevo. Importar solo las filas buenas dejaría un catálogo incompleto que
+    // nadie sabría que lo está.
+    if (lectura.problemas.length > 0) {
+      throw new ErrorDeNegocio(
+        "PLANILLA_CON_ERRORES",
+        `La planilla tiene ${lectura.problemas.length} ${lectura.problemas.length === 1 ? "problema" : "problemas"} que hay que corregir antes de cargarla.`,
+        "Revisa la lista, corrige el Excel y vuelve a subirlo.",
+      );
+    }
+    if (lectura.filas.length === 0) {
+      throw new ErrorDeNegocio("PLANILLA_VACIA", "La planilla no tiene ninguna fila con datos.");
+    }
+
+    await pos.escribir(() => importarCatalogo(pos.p, lectura.filas, modo));
+
+    return { aplicado: true, problemas: [], filas: lectura.filas.length, plan };
   });
 
   /** Lo consulta el formulario de alta para mostrar el código que va a tocar. */

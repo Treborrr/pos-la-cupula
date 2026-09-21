@@ -27,6 +27,9 @@ export type CodigoError =
   | "BARBERO_NO_EXISTE"
   | "BARBERO_INACTIVO"
   | "NO_ES_PRODUCTO"
+  | "PLANILLA_ILEGIBLE"
+  | "PLANILLA_CON_ERRORES"
+  | "PLANILLA_VACIA"
   | "DATO_INVALIDO";
 
 export class ErrorDeNegocio extends Error {

@@ -499,6 +499,36 @@ ENTRAR DESDE FUERA DE LA BARBERÍA
   pierde es verlo desde afuera.
 
 
+CARGAR EL CATÁLOGO DESDE UN EXCEL
+  Ajustes → Cargar catálogo desde Excel
+
+  Sirve para dar de alta todos los servicios y productos de una vez, en
+  lugar de cargarlos uno por uno.
+
+    1. "Descargar plantilla". El archivo trae las instrucciones adentro
+       y tres filas de ejemplo.
+    2. Llénalo y borra los ejemplos. El Código se deja VACÍO: lo genera
+       el sistema.
+    3. Súbelo y toca "Revisar el archivo". NO se carga nada todavía:
+       primero muestra qué va a pasar con cada fila.
+    4. Elige qué hacer con lo que ya estaba cargado:
+
+         Agregar          Carga lo nuevo y actualiza lo que coincida.
+                          Lo que no esté en el Excel se queda igual.
+
+         Reemplazar todo  Además, da de baja lo que NO venga en el Excel.
+                          El catálogo queda idéntico al archivo.
+
+    5. Recién ahí aparece el botón para aplicar.
+
+  Si la planilla tiene errores, te dice la FILA y la COLUMNA de cada uno
+  y no carga nada hasta que los corrijas.
+
+  "Dar de baja" no borra: el ítem deja de aparecer en la pantalla de
+  cobro, pero los tickets viejos se siguen viendo, y si lo vuelves a
+  cargar reaparece con su historial intacto.
+
+
 REVISAR TODOS LOS MOVIMIENTOS
   Clic derecho en AUDITORIA.cmd → "Ejecutar como administrador"
 

@@ -8,11 +8,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Check, HardDrive, Printer, Receipt, RefreshCw, Store, type LucideIcon } from "lucide-react";
+import { Activity, Check, FileSpreadsheet, HardDrive, Printer, Receipt, RefreshCw, Store, type LucideIcon } from "lucide-react";
 
 import { api } from "../lib/api";
 import { Aviso } from "../componentes/Modal";
 import { TarjetaPrimerosPasos } from "../componentes/PrimerosPasos";
+import { SeccionCatalogo } from "./ajustes/Catalogo";
 import { SeccionImpresora } from "./ajustes/Impresora";
 import { SeccionRespaldos } from "./ajustes/Respaldos";
 import { CampoGuardable, Casilla, Dato, EncabezadoPagina, Pagina } from "../componentes/Piezas";
@@ -35,6 +36,7 @@ interface Salud {
 const SECCIONES: { id: string; texto: string; icono: LucideIcon }[] = [
   { id: "negocio", texto: "Negocio", icono: Store },
   { id: "ventas", texto: "Tickets", icono: Receipt },
+  { id: "catalogo", texto: "Catálogo", icono: FileSpreadsheet },
   { id: "ticketera", texto: "Ticketera", icono: Printer },
   { id: "respaldos", texto: "Respaldos", icono: HardDrive },
   { id: "diagnostico", texto: "Diagnóstico", icono: Activity },
@@ -119,6 +121,14 @@ export function Ajustes() {
 
           <Bloque id="ventas" titulo="Tickets y cobro">
             {config.data ? <AjustesDeVentas config={config.data} alGuardar={(c) => guardar.mutate(c)} /> : null}
+          </Bloque>
+
+          <Bloque
+            id="catalogo"
+            titulo="Cargar catálogo desde Excel"
+            descripcion="Para dar de alta servicios y productos en bloque, sin cargarlos uno por uno."
+          >
+            <SeccionCatalogo />
           </Bloque>
 
           <Bloque id="ticketera" titulo="Ticketera" descripcion="Advance ADV-8010N o cualquier impresora térmica ESC/POS.">
