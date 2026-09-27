@@ -96,13 +96,26 @@ app nativa · sincronización en la nube.
   Además permite filtrar el catálogo por marca y reportar ventas por marca, que
   con 35 marcas es una pregunta de negocio. En el ticket se imprime solo en los
   productos: los servicios los hace La Cúpula y su nombre ya está arriba.
-- **Un ítem puede no tener precio, y es un estado válido.** El catálogo que
-  entregó el cliente traía 119 de 137 productos sin precio de venta. Un ítem sin
-  precio existe, aparece en el catálogo y en el inventario, y al cobrarlo la
-  pantalla **pide el precio de esa venta** en vez de cobrar S/ 0 en silencio. El
-  precio de lista se pone desde Catálogo, de a uno o en tanda desde el panel de
-  precios pendientes. `null` y `0` no son lo mismo: uno es "falta ponerle
+- **Un ítem puede no tener precio, y entonces NO SE VENDE.** El catálogo que
+  entregó el cliente traía 119 de 137 productos sin precio de venta, así que
+  "sin precio" es un estado válido y no un error: el ítem existe, se le lleva el
+  stock y aparece en Catálogo e Inventario. Lo que no hace es aparecer en la
+  pantalla de cobro. `null` y `0` no son lo mismo: uno es "falta ponerle
   precio", el otro sería "es gratis".
+
+  **La regla vive en el dominio** (`registrarVenta`), no en la pantalla, y esa
+  es la diferencia entre una regla y una costumbre: la grilla de cobro, la
+  pistola de escaneo y cualquier integración futura pasan todas por la misma
+  línea. Una regla que solo vive en el front se saltea sin querer el día que
+  alguien agrega una segunda forma de cargar una línea. Ni siquiera se puede
+  vender mandando el precio en el pedido — si se pudiera, alcanzaría con un
+  script para saltearla.
+
+  El porqué: el precio de lista es una decisión del dueño, no del mostrador. Si
+  cada cajero pudiera ponerle precio a un producto sin precio, el mismo producto
+  se cobraría distinto según quién atienda y el margen del reporte no
+  significaría nada. Ajustar el precio de una línea puntual —la cortesía— sí se
+  puede, y queda registrado contra el precio de lista para poder reportarlo.
 - Alta, edición y **desactivación** (nunca borrado: si se borrara, las ventas
   viejas quedarían apuntando al vacío).
 - **Códigos únicos garantizados por el sistema.** En el Excel había tres códigos

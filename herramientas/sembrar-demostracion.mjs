@@ -135,40 +135,35 @@ const VENTAS = [
   { lineas: [["COR", 1], ["GEL", 1]], medio: "YAPE", cliente: 4 },
   { lineas: [["SHAMP", 3]], medio: "TARJETA", descuento: 500 },
   { lineas: [["COR-D", 1]], medio: "EFECTIVO", recibido: 3000 },
-  // La laca no tiene precio de lista: se cobra escribiéndolo en el momento.
-  // Deja la venta marcada en la auditoría y en el reporte como precio a mano.
-  { lineas: [["COR", 1], ["LACA", 1, 3000]], medio: "EFECTIVO", recibido: 5000 },
+  // La LACA no aparece en ninguna venta a propósito: no tiene precio, así que
+  // no se puede vender. Queda en el catálogo y en el inventario para que se vea
+  // el caso —y para que Reportes la muestre entre lo que no rota—.
 ];
 
 let cobradas = 0;
 let primeraVenta = null;
 
 /**
- * Cuánto cobra una línea por unidad.
+ * Cuánto cuesta una línea por unidad.
  *
- * El tercer elemento de la tupla es el precio escrito a mano, y es obligatorio
- * cuando el ítem no tiene precio de lista: el servidor rechaza la venta si
- * falta, que es justo lo que se quiere.
+ * Falla ruidosamente si el ítem no tiene precio: el servidor rechazaría la
+ * venta igual, y es mejor enterarse acá con el nombre del producto que recibir
+ * un error de la API sobre una venta a medio armar.
  */
-const precioDeLinea = ([codigo, , precioAbierto]) => {
+const precioDeLinea = ([codigo]) => {
   const def = [...SERVICIOS, ...PRODUCTOS].find((x) => x.codigo === codigo);
-  const precio = precioAbierto ?? def.precio;
-  if (precio === null || precio === undefined) {
-    throw new Error(`"${codigo}" no tiene precio de lista: hay que indicar el precio en la venta de demostración.`);
+  if (def?.precio === null || def?.precio === undefined) {
+    throw new Error(`"${codigo}" no tiene precio de lista y no se puede vender. Sácalo de las ventas de ejemplo.`);
   }
-  return precio;
+  return def.precio;
 };
 
 for (const v of VENTAS) {
-  const lineas = v.lineas.map((linea) => {
-    const [codigo, cantidad, precioAbierto] = linea;
-    return {
-      itemId: items[codigo],
-      cantidad,
-      ...(precioAbierto !== undefined ? { precioUnitario: precioAbierto } : {}),
-      barberoId: SERVICIOS.some((s) => s.codigo === codigo) ? azar(barberos) : null,
-    };
-  });
+  const lineas = v.lineas.map(([codigo, cantidad]) => ({
+    itemId: items[codigo],
+    cantidad,
+    barberoId: SERVICIOS.some((s) => s.codigo === codigo) ? azar(barberos) : null,
+  }));
 
   const subtotal = v.lineas.reduce((a, linea) => a + precioDeLinea(linea) * linea[1], 0);
   const total = subtotal - (v.descuento ?? 0);

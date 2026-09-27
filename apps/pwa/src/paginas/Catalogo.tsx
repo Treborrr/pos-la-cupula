@@ -118,8 +118,8 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
             titulo={`${sinPrecio} ${sinPrecio === 1 ? "ítem no tiene" : "ítems no tienen"} precio de lista`}
           >
             <p>
-              Están en el catálogo y en el inventario, pero al cobrarlos hay que escribir el precio a mano cada vez.
-              Ponles precio una vez y ya salen solos.
+              <strong>No se pueden vender hasta que se lo pongas</strong>: no aparecen en la pantalla de cobro. Están
+              en el catálogo y en el inventario, así que su stock sí se lleva. Ponles precio y pasan a la grilla.
             </p>
             <button className="boton-primario mt-3" onClick={() => setCompletandoPrecios(true)}>
               <Tags className="h-5 w-5" />

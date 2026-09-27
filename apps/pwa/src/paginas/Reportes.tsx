@@ -80,7 +80,6 @@ interface Reporte extends TotalesDelPeriodo {
     costoUnitario: number;
     perdida: number;
   }[];
-  preciosAbiertos: number;
   inventario: {
     productos: number;
     valorCosto: number;
@@ -457,13 +456,6 @@ function FormasDePago({ r }: { r: Reporte }) {
         ))}
       </div>
 
-      {r.preciosAbiertos > 0 ? (
-        <p className="ayuda mt-5 border-t border-linea pt-4">
-          {r.preciosAbiertos} {r.preciosAbiertos === 1 ? "línea se cobró" : "líneas se cobraron"} con el precio escrito
-          a mano, porque el ítem no tiene precio de lista. Ponerles precio desde Catálogo evita que cada cajero cobre
-          distinto por lo mismo.
-        </p>
-      ) : null}
     </Seccion>
   );
 }

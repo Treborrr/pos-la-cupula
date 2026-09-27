@@ -61,12 +61,20 @@ necesita y que el sistema no tenía. De ahí sale todo lo demás:
   siembra el promedio y cada entrada de mercadería posterior lo recalcula. Al
   vender, ese promedio se **congela en la línea de venta**, así el reporte de un
   mes cerrado no se mueve nunca aunque después suba el costo.
-- **Ítems sin precio.** El catálogo llegó con 119 de 137 productos sin precio de
-  venta, así que "sin precio" pasó a ser un estado válido y no un error: el ítem
-  se carga, aparece en el catálogo y en el inventario, y al cobrarlo se escribe
-  el precio de esa venta. El precio de lista se pone desde Catálogo, de a uno o
-  en tanda desde el panel de precios pendientes. Nunca se cobra S/ 0 por
-  omisión.
+- **Ítems sin precio: se cargan, pero no se venden.** El catálogo llegó con 119
+  de 137 productos sin precio de venta, así que "sin precio" pasó a ser un
+  estado válido y no un error. El ítem se crea, se le lleva el stock y aparece
+  en Catálogo e Inventario, pero **no aparece en la pantalla de cobro** hasta
+  que alguien le ponga precio. El precio de lista se pone desde Catálogo, de a
+  uno o en tanda desde el panel de precios pendientes.
+
+  La regla se aplica en el dominio y no escondiendo el botón: la pantalla de
+  cobro, la pistola de escaneo y cualquier integración futura pasan por la misma
+  validación. El precio de lista es una decisión del dueño, no del mostrador —
+  si cada cajero pudiera ponerle precio a un producto sin precio, el mismo
+  producto se cobraría distinto según quién atienda y el margen del reporte no
+  significaría nada. Ajustar el precio de una línea puntual sí se puede, y queda
+  registrado contra el de lista.
 - **La planilla pone precios, nunca los borra.** Una celda de precio vacía
   significa "no lo sé", no "déjalo en nada". Sin esta regla, volver a subir la
   planilla de siempre —con esas celdas todavía vacías— habría destruido en

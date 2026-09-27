@@ -186,8 +186,8 @@ export function SeccionCatalogo() {
           </p>
           {listo.plan.resumen.sinPrecio > 0 ? (
             <p className="mt-2">
-              Quedaron <strong>{listo.plan.resumen.sinPrecio} sin precio</strong>: no se pueden cobrar de la grilla
-              hasta que se los pongas.{" "}
+              Quedaron <strong>{listo.plan.resumen.sinPrecio} sin precio</strong>: no se pueden vender hasta que se
+              los pongas.{" "}
               <Link to="/catalogo" className="font-semibold underline">
                 Completar precios ahora
               </Link>
@@ -238,9 +238,9 @@ export function SeccionCatalogo() {
               tono="aviso"
               titulo={`${r.sinPrecio} ${r.sinPrecio === 1 ? "ítem va a quedar" : "ítems van a quedar"} sin precio`}
             >
-              Su celda PRECIO VENTA está vacía en el Excel. Se cargan igual y aparecen en el catálogo y en el
-              inventario, pero al cobrarlos hay que escribir el precio a mano cada vez. Después de cargar, ponles
-              precio desde <strong>Catálogo → Completar precios</strong>.
+              Su celda PRECIO VENTA está vacía en el Excel. Se cargan igual y su stock se lleva, pero{" "}
+              <strong>no se van a poder vender</strong>: no aparecen en la pantalla de cobro hasta que tengan precio.
+              Después de cargar, ponéselo desde <strong>Catálogo → Completar precios</strong>.
             </Aviso>
           ) : null}
 

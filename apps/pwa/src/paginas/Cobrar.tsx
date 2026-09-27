@@ -48,7 +48,6 @@ import { aCentimos, aTexto, aTextoConSimbolo, cantidad as fmtCantidad } from "..
 import { useAtajos, useEscaner } from "../lib/escaneo";
 import { abrirLector, esQrDeTicket } from "../lib/lector";
 import { nombreDeLinea, subtotalDe, totalDe, usarCarrito } from "../estado/carrito";
-import { Campo } from "../componentes/Piezas";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { BotonesDeMedio, DetalleDePagos, MEDIOS } from "../componentes/PanelDePago";
 import { CampoCliente, normalizarNombre } from "../componentes/CampoCliente";
@@ -68,8 +67,6 @@ export function Cobrar() {
   const [categoria, setCategoria] = useState<string | null>(null);
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [mensaje, setMensaje] = useState<{ tono: "aviso" | "mal" | "bien"; texto: string } | null>(null);
-  /** El ítem sin precio cuyo importe se está pidiendo, si hay alguno. */
-  const [pidiendoPrecio, setPidiendoPrecio] = useState<Item | null>(null);
   const [cobrada, setCobrada] = useState<VentaRecienCobrada | null>(null);
   const [ambiguo, setAmbiguo] = useState<Extract<RespuestaEscaneo, { tipo: "clienteAmbiguo" }> | null>(null);
 
@@ -102,12 +99,26 @@ export function Cobrar() {
   const clienteListo = Boolean(carrito.clienteId) || (carrito.nombreCliente ?? "").trim().length >= 2;
   const puedeCobrar = hayLineas && clienteListo && pagoListo && total > 0;
 
+  /**
+   * Cuántos ítems quedan fuera de la grilla por no tener precio.
+   *
+   * Se cuenta sobre el catálogo COMPLETO y no sobre lo filtrado: el aviso es
+   * sobre el estado del catálogo, no sobre la búsqueda en curso.
+   */
+  const sinPrecio = useMemo(() => items.filter((i) => i.precio === null).length, [items]);
+
   const visibles = useMemo(() => {
     const termino = busqueda.trim().toLowerCase();
     return items.filter((i) => {
+      // Sin precio de lista no se puede vender, así que no se muestra: un botón
+      // que al tocarlo siempre falla es peor que no tener el botón. Están en
+      // Catálogo, que es donde se resuelve.
+      if (i.precio === null) return false;
       if (categoria && i.categoria !== categoria) return false;
       if (!termino) return true;
-      const texto = `${i.codigo} ${i.nombre}`.toLowerCase();
+      // La marca entra en la búsqueda: quien escribe "bandido" espera ver sus
+      // ceras aunque la palabra no esté en el nombre de ninguna.
+      const texto = `${i.codigo} ${i.marca} ${i.nombre}`.toLowerCase();
       return termino.split(/\s+/).every((p) => texto.includes(p));
     });
   }, [items, busqueda, categoria]);
@@ -169,14 +180,18 @@ export function Cobrar() {
     }
   }
 
-  function agregarItem(item: Item, precioAbierto?: number) {
-    // Sin precio de lista y sin precio escrito: primero hay que preguntarlo.
-    // Es la única puerta por la que un ítem sin precio entra al ticket.
-    if (item.precio === null && precioAbierto === undefined) {
-      setPidiendoPrecio(item);
+  function agregarItem(item: Item) {
+    // Un ítem sin precio no se vende. Puede llegar acá por la pistola de
+    // escaneo aunque no esté en la grilla, así que se explica en vez de no
+    // hacer nada: un toque que no produce efecto parece que el sistema falló.
+    if (item.precio === null) {
+      setMensaje({
+        tono: "aviso",
+        texto: `"${item.nombreCompleto}" todavía no tiene precio y no se puede vender. Ponle precio desde Catálogo.`,
+      });
       return;
     }
-    carrito.agregar(item, 1, precioAbierto);
+    carrito.agregar(item);
     setMensaje(null);
     // Los pagos se invalidan al cambiar el total: dejarlos puestos haría que
     // "cuadra" mostrara un importe que ya no corresponde.
@@ -301,6 +316,24 @@ export function Cobrar() {
                 {c}
               </Chip>
             ))}
+          </div>
+        ) : null}
+
+        {/* Por qué faltan productos en la grilla. Sin esta línea, el cajero
+            busca una cera que sabe que está en el depósito, no la encuentra, y
+            concluye que el sistema perdió el catálogo. */}
+        {sinPrecio > 0 ? (
+          <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-aviso/30 bg-aviso/5 px-4 py-3">
+            <span className="font-semibold text-aviso">
+              {sinPrecio} {sinPrecio === 1 ? "producto no aparece" : "productos no aparecen"} acá
+            </span>
+            <span className="ayuda">
+              No tienen precio, así que no se pueden vender todavía.
+            </span>
+            <Link to="/catalogo" className="boton-suave boton-chico ml-auto">
+              Ponerles precio
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         ) : null}
 
@@ -498,16 +531,6 @@ export function Cobrar() {
         />
       ) : null}
 
-      {pidiendoPrecio ? (
-        <PedirPrecio
-          item={pidiendoPrecio}
-          alCerrar={() => setPidiendoPrecio(null)}
-          alConfirmar={(centimos) => {
-            agregarItem(pidiendoPrecio, centimos);
-            setPidiendoPrecio(null);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
@@ -587,100 +610,10 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
           </span>
         ) : null}
       </span>
-      {/* Un ítem sin precio se ve distinto a propósito: al tocarlo va a pedir el
-          precio en vez de agregarse directo, y el cajero tiene que saberlo antes
-          de tocarlo, no después. */}
-      {item.precio === null ? (
-        <span className="mt-3 flex items-center gap-1.5 text-[0.95rem] font-semibold text-aviso">
-          <Pencil className="h-4 w-4" />
-          Poner precio
-        </span>
-      ) : (
-        <span className="cifra mt-3 text-xl font-semibold tracking-tight">{aTextoConSimbolo(item.precio)}</span>
-      )}
+      {/* Los ítems sin precio no llegan a esta grilla —no se pueden vender—,
+          así que acá el precio siempre existe. */}
+      <span className="cifra mt-3 text-xl font-semibold tracking-tight">{aTextoConSimbolo(item.precio ?? 0)}</span>
     </button>
-  );
-}
-
-/**
- * Pide el precio de un ítem que no lo tiene.
- *
- * El precio queda SOLO en esta venta: el de lista se pone desde Catálogo. Es
- * deliberado —fijar precios de lista no es una decisión de mostrador— y por eso
- * el modal lo dice en vez de dejarlo a la interpretación de cada cajero.
- */
-function PedirPrecio({
-  item,
-  alCerrar,
-  alConfirmar,
-}: {
-  item: Item;
-  alCerrar: () => void;
-  alConfirmar: (centimos: number) => void;
-}) {
-  const [texto, setTexto] = useState("");
-  const centimos = aCentimos(texto);
-  const valido = texto.trim() !== "" && centimos !== null && centimos > 0;
-
-  return (
-    <Modal
-      titulo={item.marca ? `${item.marca} ${item.nombre}` : item.nombre}
-      subtitulo="Este ítem no tiene precio de lista"
-      alCerrar={alCerrar}
-      pie={
-        <div className="flex gap-3">
-          <button className="boton-suave ml-auto" onClick={alCerrar}>
-            Cancelar
-          </button>
-          <button className="boton-primario" disabled={!valido} onClick={() => alConfirmar(centimos!)}>
-            <Check className="h-5 w-5" />
-            Agregar al ticket
-          </button>
-        </div>
-      }
-    >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (valido) alConfirmar(centimos!);
-        }}
-      >
-        <Campo etiqueta="¿Cuánto se cobra?" ayuda="Solo para esta venta.">
-          <div className="relative">
-            <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-xl text-tinta/40">
-              S/
-            </span>
-            <input
-              className="campo cifra h-16 pl-12 text-right text-2xl"
-              autoFocus
-              inputMode="decimal"
-              placeholder="0.00"
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-            />
-          </div>
-        </Campo>
-
-        {item.costo !== null ? (
-          <p className="ayuda">
-            Lo compras a {aTextoConSimbolo(item.costo)}
-            {valido && centimos! < item.costo ? (
-              <strong className="text-mal"> · a ese precio se vende a pérdida</strong>
-            ) : valido ? (
-              ` · ganarías ${aTextoConSimbolo(centimos! - item.costo)}`
-            ) : (
-              ""
-            )}
-          </p>
-        ) : null}
-
-        <p className="ayuda">
-          El precio queda en esta venta y no en el catálogo. Para que salga solo la próxima vez, ponle precio de lista
-          desde <strong className="text-tinta">Catálogo</strong>.
-        </p>
-      </form>
-    </Modal>
   );
 }
 

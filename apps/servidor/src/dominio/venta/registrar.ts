@@ -97,18 +97,33 @@ export function registrarVenta(
       throw new ErrorDeNegocio("BARBERO_NO_EXISTE", "El barbero indicado no existe.");
     }
 
-    // Un ítem sin precio de lista NO se puede cobrar solo: el precio tiene que
-    // venir en el pedido. Es el caso de los 119 productos que el cliente cargó
-    // sin precio — aparecen en la grilla, pero al tocarlos hay que escribir
-    // cuánto se cobra. Caer en 0 en silencio sería regalar mercadería.
-    const precioUnitario = pedida.precioUnitario ?? item.precio;
-    if (precioUnitario === null) {
+    /**
+     * UN ÍTEM SIN PRECIO DE LISTA NO SE VENDE. Ni siquiera indicando el precio
+     * en el pedido.
+     *
+     * La regla se aplica ACÁ y no solo escondiendo el botón en la pantalla, que
+     * es la diferencia entre una regla y una costumbre: la pantalla de cobro,
+     * la pistola de escaneo y cualquier integración futura pasan todas por esta
+     * línea. Una regla que solo vive en el front se salta sin querer el día que
+     * alguien agrega una segunda forma de cargar una línea.
+     *
+     * Por qué así: el precio de lista es una decisión del dueño, no del
+     * mostrador. Si cada cajero pudiera escribir el precio de un producto sin
+     * precio, el mismo producto se cobraría distinto según quién atienda, y el
+     * margen del reporte no significaría nada. El precio se pone una vez desde
+     * Catálogo y de ahí en más sale solo.
+     */
+    if (item.precio === null) {
       throw new ErrorDeNegocio(
         "ITEM_SIN_PRECIO",
-        `"${p.nombreCompleto(item)}" no tiene precio.`,
-        "Escribe cuánto se cobra en esta venta, o ponle precio de lista desde Catálogo.",
+        `"${p.nombreCompleto(item)}" todavía no tiene precio y no se puede vender.`,
+        "Ponle precio desde Catálogo —ahí están juntos todos los que faltan— y vuelve a cobrarlo.",
       );
     }
+
+    // Ajustar el precio de una línea SÍ se puede: es la cortesía puntual, y
+    // queda registrada contra el precio de lista para poder reportarla.
+    const precioUnitario = pedida.precioUnitario ?? item.precio;
     if (precioUnitario < 0) {
       throw new ErrorDeNegocio("DATO_INVALIDO", `El precio de "${item.nombre}" no puede ser negativo.`);
     }

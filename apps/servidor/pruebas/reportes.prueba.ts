@@ -261,7 +261,11 @@ describe("señales", () => {
     await pos.cerrar();
   });
 
-  it("cuenta los cobros con el precio escrito a mano", async () => {
+  it("un producto sin precio no ensucia el reporte porque no se pudo vender", async () => {
+    // No hay un contador de "precios escritos a mano" porque ese caso ya no
+    // puede existir: sin precio de lista el dominio rechaza la venta. Lo que sí
+    // aparece es su stock inmovilizado, que es el problema real de tener
+    // productos sin precio.
     const { pos } = await posConCatalogo();
     await pos.transaccion(() => {
       const r = crearItem(pos.p, {
@@ -276,9 +280,14 @@ describe("señales", () => {
     });
     const sinPrecio = [...pos.p.items.values()].find((i) => i.nombre === "CERA ROJA")!;
 
-    await cobrar(pos, [{ itemId: sinPrecio.id, cantidad: 1, precioUnitario: 3500 }]);
+    await expect(cobrar(pos, [{ itemId: sinPrecio.id, cantidad: 1, precioUnitario: 3500 }])).rejects.toThrow(
+      /no se puede vender/,
+    );
 
-    expect(construirReporte(pos.p, hoy(), hoy()).preciosAbiertos).toBe(1);
+    const r = construirReporte(pos.p, hoy(), hoy());
+    expect(r.total).toBe(0);
+    expect(r.inventario.sinPrecio).toBe(1);
+    expect(r.sinRotar.map((s) => s.nombre)).toContain("FORAJIDO CERA ROJA");
     await pos.cerrar();
   });
 });

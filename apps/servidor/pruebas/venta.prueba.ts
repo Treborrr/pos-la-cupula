@@ -10,7 +10,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { ulid } from "ulid";
 
 import { ServicioPos } from "../src/servicios/Pos";
-import { crearItem, desactivarItem } from "../src/dominio/catalogo/catalogo";
+import { actualizarItem, crearItem, desactivarItem } from "../src/dominio/catalogo/catalogo";
 import { crearBarbero, desactivarBarbero, reactivarBarbero } from "../src/dominio/barberos/barberos";
 import { registrarEntrada } from "../src/dominio/inventario/inventario";
 import { abrirTurno, arquear, cerrarTurno } from "../src/dominio/caja/caja";
@@ -106,36 +106,67 @@ describe("cobrar", () => {
     await pos.cerrar();
   });
 
-  it("cobra un ítem sin precio con el precio escrito en el momento", async () => {
-    // Es lo que permite empezar a usar el POS con un catálogo al que le faltan
-    // 119 precios: el producto está en la grilla y el precio se escribe al vender.
-    const { pos, ids } = await posDePrueba();
-
-    const r = await pos.cobrar({
-      lineas: [{ itemId: ids["ROJA"], cantidad: 1, precioUnitario: 3500 }],
-      pagos: [{ medio: "EFECTIVO", monto: 3500 }],
-      claveIdempotencia: ulid(),
-    });
-
-    expect(r.venta.total).toBe(3500);
-    expect(r.venta.lineas[0].precioUnitario).toBe(3500);
-    // `null` y no 0: la lista no decía cero, no decía nada. La auditoría los
-    // distingue —uno es un regalo, el otro un catálogo incompleto.
-    expect(r.venta.lineas[0].precioLista).toBeNull();
-    await pos.cerrar();
-  });
-
-  it("se niega a cobrar un ítem sin precio si no se indica cuánto", async () => {
-    // Caer en 0 en silencio sería regalar mercadería.
+  it("un ítem sin precio NO se puede vender", async () => {
+    // El precio de lista es una decisión del dueño, no del mostrador. Un
+    // producto sin precio se carga, se le lleva el stock, y no se vende hasta
+    // que alguien le ponga precio desde Catálogo.
     const { pos, ids } = await posDePrueba();
 
     await expect(
       pos.cobrar({
         lineas: [{ itemId: ids["ROJA"], cantidad: 1 }],
-        pagos: [{ medio: "EFECTIVO", monto: 0 }],
+        pagos: [{ medio: "EFECTIVO", monto: 3500 }],
         claveIdempotencia: ulid(),
       }),
-    ).rejects.toThrow(/no tiene precio/);
+    ).rejects.toThrow(/no tiene precio y no se puede vender/);
+    await pos.cerrar();
+  });
+
+  it("tampoco se vende indicando el precio en el pedido", async () => {
+    // La prueba que hace que la regla sea una REGLA y no una costumbre de la
+    // pantalla. Si el servidor aceptara un precio suelto, alcanzaría con una
+    // pantalla vieja, un script o la pistola de escaneo para saltearla, y el
+    // mismo producto se cobraría distinto según quién atienda.
+    const { pos, ids } = await posDePrueba();
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["ROJA"], cantidad: 1, precioUnitario: 3500 }],
+        pagos: [{ medio: "EFECTIVO", monto: 3500 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/no tiene precio y no se puede vender/);
+    await pos.cerrar();
+  });
+
+  it("se vende apenas se le pone precio, sin tocar nada más", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.escribir(() => actualizarItem(pos.p, ids["ROJA"], { precio: 3500 }));
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["ROJA"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 3500 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.total).toBe(3500);
+    expect(r.venta.lineas[0].precioLista).toBe(3500);
+    await pos.cerrar();
+  });
+
+  it("ajustar el precio de una línea SÍ se puede, si el ítem tiene precio", async () => {
+    // La cortesía puntual sigue existiendo: lo que no se puede es inventar el
+    // precio de algo que no lo tiene.
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 1, precioUnitario: 3000 }],
+      pagos: [{ medio: "EFECTIVO", monto: 3000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.lineas[0].precioUnitario).toBe(3000);
+    expect(r.venta.lineas[0].precioLista).toBe(3500); // queda registrado lo que se regaló
     await pos.cerrar();
   });
 

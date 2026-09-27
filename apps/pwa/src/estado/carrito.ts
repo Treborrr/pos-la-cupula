@@ -60,10 +60,12 @@ interface EstadoCarrito {
   claveIdempotencia: string;
 
   /**
-   * `precioAbierto` es obligatorio cuando el ítem no tiene precio de lista.
-   * Sin él, el ítem no se agrega — es lo que evita cobrar S/ 0 por accidente.
+   * Un ítem sin precio de lista NO entra al ticket: no se puede vender hasta
+   * que se le ponga precio desde Catálogo. La pantalla ni siquiera lo muestra
+   * en la grilla, pero el guardia vive acá también por si llega por otro
+   * camino —la pistola de escaneo, por ejemplo—.
    */
-  agregar: (item: Item, cantidad?: number, precioAbierto?: number) => void;
+  agregar: (item: Item, cantidad?: number) => void;
   cambiarCantidad: (indice: number, cantidad: number) => void;
   cambiarPrecio: (indice: number, precio: number) => void;
   quitar: (indice: number) => void;
@@ -85,13 +87,13 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
   notas: "",
   claveIdempotencia: ulid(),
 
-  agregar: (item, cantidad = 1, precioAbierto) =>
+  agregar: (item, cantidad = 1) =>
     set((s) => {
-      // Un ítem sin precio de lista necesita el precio de esta venta. Si no
-      // llegó, no se agrega: la pantalla tiene que pedirlo primero. Caer en 0
-      // acá sería meter un regalo en el ticket sin que nadie lo decida.
-      const precio = item.precio ?? precioAbierto;
-      if (precio === undefined || precio === null) return s;
+      // Sin precio de lista no entra al ticket. El servidor lo rechaza igual
+      // —la regla vive en el dominio—, pero frenarlo acá evita que el cajero
+      // arme un ticket que después no va a poder cobrar.
+      const precio = item.precio;
+      if (precio === null) return s;
 
       // Si el ítem ya está AL MISMO PRECIO, suma cantidad en vez de crear una
       // línea repetida. El Excel creaba una fila por cada vez que se tecleaba el

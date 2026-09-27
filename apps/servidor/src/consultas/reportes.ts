@@ -106,8 +106,6 @@ export interface Reporte extends TotalesDelPeriodo {
   porMarca: FilaAgrupada[];
   porBarbero: { barberoId: string; nombre: string; cantidad: number; total: Centimos }[];
   bajoCosto: VentaBajoCosto[];
-  /** Cobros con el precio escrito a mano: el ítem no tenía precio de lista. */
-  preciosAbiertos: number;
   inventario: Inventario;
   sinRotar: ProductoSinRotar[];
 }
@@ -381,7 +379,6 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
 
   const porDia = new Map<string, { total: number; cantidad: number; acum: AcumUtilidad }>();
   const porBarbero = new Map<string, { cantidad: number; total: number }>();
-  let preciosAbiertos = 0;
 
   for (const venta of ventas) {
     const dia = venta.ts.slice(0, 10);
@@ -391,7 +388,6 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
 
     for (const linea of venta.lineas) {
       sumarLinea(d.acum, linea);
-      if (linea.precioLista === null) preciosAbiertos += 1;
       if (linea.barberoId) {
         const b = porBarbero.get(linea.barberoId) ?? { cantidad: 0, total: 0 };
         b.cantidad += linea.cantidad;
@@ -445,7 +441,6 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
       .sort((a, b) => b.total - a.total),
 
     bajoCosto: ventasBajoCosto(ventas),
-    preciosAbiertos,
     inventario: valorizarInventario(p),
     sinRotar: productosSinRotar(p, hasta, ventas),
   };
