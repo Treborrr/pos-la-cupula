@@ -47,7 +47,8 @@ import {
 import { aCentimos, aTexto, aTextoConSimbolo, cantidad as fmtCantidad } from "../lib/formato";
 import { useAtajos, useEscaner } from "../lib/escaneo";
 import { abrirLector, esQrDeTicket } from "../lib/lector";
-import { subtotalDe, totalDe, usarCarrito } from "../estado/carrito";
+import { nombreDeLinea, subtotalDe, totalDe, usarCarrito } from "../estado/carrito";
+import { Campo } from "../componentes/Piezas";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { BotonesDeMedio, DetalleDePagos, MEDIOS } from "../componentes/PanelDePago";
 import { CampoCliente, normalizarNombre } from "../componentes/CampoCliente";
@@ -67,6 +68,8 @@ export function Cobrar() {
   const [categoria, setCategoria] = useState<string | null>(null);
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [mensaje, setMensaje] = useState<{ tono: "aviso" | "mal" | "bien"; texto: string } | null>(null);
+  /** El ítem sin precio cuyo importe se está pidiendo, si hay alguno. */
+  const [pidiendoPrecio, setPidiendoPrecio] = useState<Item | null>(null);
   const [cobrada, setCobrada] = useState<VentaRecienCobrada | null>(null);
   const [ambiguo, setAmbiguo] = useState<Extract<RespuestaEscaneo, { tipo: "clienteAmbiguo" }> | null>(null);
 
@@ -166,8 +169,14 @@ export function Cobrar() {
     }
   }
 
-  function agregarItem(item: Item) {
-    carrito.agregar(item);
+  function agregarItem(item: Item, precioAbierto?: number) {
+    // Sin precio de lista y sin precio escrito: primero hay que preguntarlo.
+    // Es la única puerta por la que un ítem sin precio entra al ticket.
+    if (item.precio === null && precioAbierto === undefined) {
+      setPidiendoPrecio(item);
+      return;
+    }
+    carrito.agregar(item, 1, precioAbierto);
     setMensaje(null);
     // Los pagos se invalidan al cambiar el total: dejarlos puestos haría que
     // "cuadra" mostrara un importe que ya no corresponde.
@@ -488,6 +497,17 @@ export function Cobrar() {
           alCerrar={() => setAmbiguo(null)}
         />
       ) : null}
+
+      {pidiendoPrecio ? (
+        <PedirPrecio
+          item={pidiendoPrecio}
+          alCerrar={() => setPidiendoPrecio(null)}
+          alConfirmar={(centimos) => {
+            agregarItem(pidiendoPrecio, centimos);
+            setPidiendoPrecio(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -550,6 +570,14 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
         </span>
       ) : null}
       <span className={enTicket > 0 ? "pr-9" : ""}>
+        {/* La marca va arriba y más chica: distingue el TALCO de DON NISH del de
+            SIRMAN sin robarle espacio al nombre, que es lo que se busca con la
+            vista. */}
+        {item.marca ? (
+          <span className="mb-0.5 block truncate text-xs font-semibold tracking-wide text-tinta/45 uppercase">
+            {item.marca}
+          </span>
+        ) : null}
         <span className="line-clamp-2 text-base leading-snug font-semibold">{item.nombre}</span>
         {item.tipo === "PRODUCTO" ? (
           // El stock se muestra pero NO bloquea: negarse a cobrar con el
@@ -559,8 +587,100 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
           </span>
         ) : null}
       </span>
-      <span className="cifra mt-3 text-xl font-semibold tracking-tight">{aTextoConSimbolo(item.precio)}</span>
+      {/* Un ítem sin precio se ve distinto a propósito: al tocarlo va a pedir el
+          precio en vez de agregarse directo, y el cajero tiene que saberlo antes
+          de tocarlo, no después. */}
+      {item.precio === null ? (
+        <span className="mt-3 flex items-center gap-1.5 text-[0.95rem] font-semibold text-aviso">
+          <Pencil className="h-4 w-4" />
+          Poner precio
+        </span>
+      ) : (
+        <span className="cifra mt-3 text-xl font-semibold tracking-tight">{aTextoConSimbolo(item.precio)}</span>
+      )}
     </button>
+  );
+}
+
+/**
+ * Pide el precio de un ítem que no lo tiene.
+ *
+ * El precio queda SOLO en esta venta: el de lista se pone desde Catálogo. Es
+ * deliberado —fijar precios de lista no es una decisión de mostrador— y por eso
+ * el modal lo dice en vez de dejarlo a la interpretación de cada cajero.
+ */
+function PedirPrecio({
+  item,
+  alCerrar,
+  alConfirmar,
+}: {
+  item: Item;
+  alCerrar: () => void;
+  alConfirmar: (centimos: number) => void;
+}) {
+  const [texto, setTexto] = useState("");
+  const centimos = aCentimos(texto);
+  const valido = texto.trim() !== "" && centimos !== null && centimos > 0;
+
+  return (
+    <Modal
+      titulo={item.marca ? `${item.marca} ${item.nombre}` : item.nombre}
+      subtitulo="Este ítem no tiene precio de lista"
+      alCerrar={alCerrar}
+      pie={
+        <div className="flex gap-3">
+          <button className="boton-suave ml-auto" onClick={alCerrar}>
+            Cancelar
+          </button>
+          <button className="boton-primario" disabled={!valido} onClick={() => alConfirmar(centimos!)}>
+            <Check className="h-5 w-5" />
+            Agregar al ticket
+          </button>
+        </div>
+      }
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valido) alConfirmar(centimos!);
+        }}
+      >
+        <Campo etiqueta="¿Cuánto se cobra?" ayuda="Solo para esta venta.">
+          <div className="relative">
+            <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-xl text-tinta/40">
+              S/
+            </span>
+            <input
+              className="campo cifra h-16 pl-12 text-right text-2xl"
+              autoFocus
+              inputMode="decimal"
+              placeholder="0.00"
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+            />
+          </div>
+        </Campo>
+
+        {item.costo !== null ? (
+          <p className="ayuda">
+            Lo compras a {aTextoConSimbolo(item.costo)}
+            {valido && centimos! < item.costo ? (
+              <strong className="text-mal"> · a ese precio se vende a pérdida</strong>
+            ) : valido ? (
+              ` · ganarías ${aTextoConSimbolo(centimos! - item.costo)}`
+            ) : (
+              ""
+            )}
+          </p>
+        ) : null}
+
+        <p className="ayuda">
+          El precio queda en esta venta y no en el catálogo. Para que salga solo la próxima vez, ponle precio de lista
+          desde <strong className="text-tinta">Catálogo</strong>.
+        </p>
+      </form>
+    </Modal>
   );
 }
 
@@ -576,12 +696,15 @@ function LineaDelTicket({
   const carrito = usarCarrito();
   const [editandoPrecio, setEditandoPrecio] = useState(false);
   const [precioTexto, setPrecioTexto] = useState(aTexto(linea.precioUnitario));
-  const ajustado = linea.precioUnitario !== linea.precioLista;
+  // Sin precio de lista no hay ajuste que marcar: el precio se escribió porque
+  // el ítem no tenía ninguno, no porque alguien lo cambiara.
+  const ajustado = linea.precioLista !== null && linea.precioUnitario !== linea.precioLista;
+  const escritoAMano = linea.precioLista === null;
 
   return (
     <div className="px-5 py-4">
       <div className="flex items-start justify-between gap-3">
-        <span className="min-w-0 flex-1 pt-2 leading-snug font-semibold">{linea.nombre}</span>
+        <span className="min-w-0 flex-1 pt-2 leading-snug font-semibold">{nombreDeLinea(linea)}</span>
         <span className="cifra pt-2 text-lg font-semibold">
           {aTextoConSimbolo(Math.round(linea.precioUnitario * linea.cantidad))}
         </span>
@@ -660,9 +783,15 @@ function LineaDelTicket({
               setEditandoPrecio(true);
             }}
             className={`cifra inline-flex h-11 items-center gap-1.5 rounded-lg px-2 text-[0.95rem] hover:bg-hueso ${
-              ajustado ? "font-semibold text-laton-oscuro" : "text-tinta/55"
+              ajustado || escritoAMano ? "font-semibold text-laton-oscuro" : "text-tinta/55"
             }`}
-            title={ajustado ? `Precio de lista: ${aTexto(linea.precioLista)}` : "Tocar para ajustar el precio"}
+            title={
+              escritoAMano
+                ? "Precio escrito al cobrar: este ítem no tiene precio de lista"
+                : ajustado
+                  ? `Precio de lista: ${aTexto(linea.precioLista!)}`
+                  : "Tocar para ajustar el precio"
+            }
           >
             × {aTexto(linea.precioUnitario)}
             <Pencil className="h-3.5 w-3.5 opacity-60" />

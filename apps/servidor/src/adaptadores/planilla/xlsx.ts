@@ -182,6 +182,46 @@ function textoDeNodos(xml: string): string {
   return partes.join("");
 }
 
+/**
+ * Qué archivo tiene la PRIMERA hoja del libro.
+ *
+ * No alcanza con asumir `sheet1.xml`. El orden de las pestañas lo define
+ * `workbook.xml`, y el archivo detrás de cada una lo define el mapa de
+ * relaciones: si alguien borró una hoja, la que queda puede ser `sheet2.xml`, y
+ * si reordenó las pestañas, la primera puede ser cualquiera. Leer el archivo
+ * equivocado no da un error — da una tabla vacía o las instrucciones en lugar
+ * de los productos, que es peor porque parece que la planilla estaba vacía.
+ */
+function rutaDeLaPrimeraHoja(zip: Map<string, Buffer>): string {
+  const libro = zip.get("xl/workbook.xml")?.toString("utf8");
+  const relaciones = zip.get("xl/_rels/workbook.xml.rels")?.toString("utf8");
+
+  if (libro && relaciones) {
+    const primera = /<sheet\b[^>]*\br:id="([^"]+)"/.exec(libro)?.[1];
+    if (primera) {
+      for (const m of relaciones.matchAll(/<Relationship\b([^>]*)\/>/g)) {
+        if (!new RegExp(`Id="${primera}"`).test(m[1])) continue;
+        const destino = /Target="([^"]+)"/.exec(m[1])?.[1];
+        if (!destino) break;
+        // Los destinos son relativos a xl/ y a veces vienen como "/xl/…".
+        const ruta = destino.startsWith("/")
+          ? destino.slice(1)
+          : `xl/${destino.replace(/^\.\//, "")}`;
+        if (zip.has(ruta)) return ruta;
+      }
+    }
+  }
+
+  // Sin workbook legible, el nombre por convención. Y si tampoco está, la
+  // primera hoja que haya: mejor leer algo que negarse por un detalle de
+  // empaquetado.
+  if (zip.has("xl/worksheets/sheet1.xml")) return "xl/worksheets/sheet1.xml";
+  for (const nombre of zip.keys()) {
+    if (nombre.startsWith("xl/worksheets/") && nombre.endsWith(".xml")) return nombre;
+  }
+  return "xl/worksheets/sheet1.xml";
+}
+
 /** "BC12" → 54 (índice de columna, base 0). */
 function columnaDeReferencia(ref: string): number {
   const letras = /^([A-Z]+)/.exec(ref)?.[1] ?? "A";
@@ -204,45 +244,80 @@ export interface HojaAEscribir {
   anchos?: number[];
 }
 
+/** Genera un .xlsx de una sola hoja. Atajo sobre `escribirLibro`. */
+export function escribirXlsx(hoja: HojaAEscribir): Buffer {
+  return escribirLibro([hoja]);
+}
+
 /**
- * Genera un .xlsx de una sola hoja.
+ * Genera un .xlsx con VARIAS hojas.
+ *
+ * Existe por una razón concreta: las instrucciones de la plantilla de catálogo
+ * vivían debajo de los datos, en la misma hoja, y el lector tenía que adivinar
+ * con heurísticas cuál fila era un producto y cuál una explicación ("si no
+ * tiene nombre pero sí primera columna, es instructivo…"). Cada instrucción
+ * nueva era un riesgo de que una fila real se descartara en silencio. Con la
+ * hoja aparte, el lector lee la primera hoja y ahí solo hay datos.
  *
  * Las cadenas van EN LÍNEA (`t="inlineStr"`) en vez de en la tabla de cadenas
  * compartidas: evita mantener un índice y el archivo sigue siendo válido.
  */
-export function escribirXlsx(hoja: HojaAEscribir): Buffer {
-  const filasXml = hoja.filas
-    .map((fila, f) => {
-      const celdas = fila
-        .map((valor, c) => {
-          if (valor === null || valor === undefined || valor === "") return "";
-          const ref = `${letrasDeColumna(c)}${f + 1}`;
-          if (typeof valor === "number") return `<c r="${ref}"><v>${valor}</v></c>`;
-          return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escaparXml(String(valor))}</t></is></c>`;
-        })
-        .join("");
-      return `<row r="${f + 1}">${celdas}</row>`;
-    })
-    .join("");
+export function escribirLibro(hojas: HojaAEscribir[]): Buffer {
+  if (hojas.length === 0) throw new Error("Un libro necesita al menos una hoja.");
 
-  const columnas = hoja.anchos?.length
-    ? `<cols>${hoja.anchos.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>`
-    : "";
+  const cuerpoDeHoja = (hoja: HojaAEscribir): string => {
+    const filasXml = hoja.filas
+      .map((fila, f) => {
+        const celdas = fila
+          .map((valor, c) => {
+            if (valor === null || valor === undefined || valor === "") return "";
+            const ref = `${letrasDeColumna(c)}${f + 1}`;
+            if (typeof valor === "number") return `<c r="${ref}"><v>${valor}</v></c>`;
+            return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escaparXml(String(valor))}</t></is></c>`;
+          })
+          .join("");
+        return `<row r="${f + 1}">${celdas}</row>`;
+      })
+      .join("");
 
-  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    const columnas = hoja.anchos?.length
+      ? `<cols>${hoja.anchos.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>`
+      : "";
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${columnas}<sheetData>${filasXml}</sheetData></worksheet>`;
+  };
+
+  const entradasDeHoja = hojas.map((hoja, i) => ({
+    ruta: `xl/worksheets/sheet${i + 1}.xml`,
+    rel: `rId${i + 1}`,
+    nombre: hoja.nombre,
+    xml: cuerpoDeHoja(hoja),
+  }));
 
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${escaparXml(hoja.nombre)}" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${entradasDeHoja
+    .map((h, i) => `<sheet name="${escaparXml(h.nombre)}" sheetId="${i + 1}" r:id="${h.rel}"/>`)
+    .join("")}</sheets></workbook>`;
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${entradasDeHoja
+    .map(
+      (h) =>
+        `<Override PartName="/${h.ruta}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`,
+    )
+    .join("")}</Types>`;
 
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
 
   const relsWorkbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`;
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${entradasDeHoja
+    .map(
+      (h) =>
+        `<Relationship Id="${h.rel}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${h.ruta.replace("xl/", "")}"/>`,
+    )
+    .join("")}</Relationships>`;
 
   const utf8 = (s: string) => Buffer.from(s, "utf8");
   return armarZip([
@@ -250,7 +325,7 @@ export function escribirXlsx(hoja: HojaAEscribir): Buffer {
     { nombre: "_rels/.rels", contenido: utf8(rels) },
     { nombre: "xl/workbook.xml", contenido: utf8(workbook) },
     { nombre: "xl/_rels/workbook.xml.rels", contenido: utf8(relsWorkbook) },
-    { nombre: "xl/worksheets/sheet1.xml", contenido: utf8(sheet) },
+    ...entradasDeHoja.map((h) => ({ nombre: h.ruta, contenido: utf8(h.xml) })),
   ]);
 }
 
@@ -275,7 +350,7 @@ function letrasDeColumna(indice: number): string {
 export function leerXlsx(datos: Buffer): string[][] {
   const zip = leerZip(datos);
 
-  const hoja = zip.get("xl/worksheets/sheet1.xml");
+  const hoja = zip.get(rutaDeLaPrimeraHoja(zip));
   if (!hoja) throw new Error("El archivo no tiene ninguna hoja de cálculo legible.");
 
   // Excel guarda las cadenas una sola vez en una tabla compartida y en las

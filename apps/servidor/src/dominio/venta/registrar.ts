@@ -19,6 +19,8 @@ export interface LineaPedida {
   /**
    * Precio cobrado, si difiere del de lista (un ajuste puntual, una cortesía).
    * Si no viene, se usa el de lista.
+   *
+   * En un ítem SIN precio de lista es OBLIGATORIO: no hay de dónde sacarlo.
    */
   precioUnitario?: Centimos;
   barberoId?: string | null;
@@ -95,7 +97,18 @@ export function registrarVenta(
       throw new ErrorDeNegocio("BARBERO_NO_EXISTE", "El barbero indicado no existe.");
     }
 
+    // Un ítem sin precio de lista NO se puede cobrar solo: el precio tiene que
+    // venir en el pedido. Es el caso de los 119 productos que el cliente cargó
+    // sin precio — aparecen en la grilla, pero al tocarlos hay que escribir
+    // cuánto se cobra. Caer en 0 en silencio sería regalar mercadería.
     const precioUnitario = pedida.precioUnitario ?? item.precio;
+    if (precioUnitario === null) {
+      throw new ErrorDeNegocio(
+        "ITEM_SIN_PRECIO",
+        `"${p.nombreCompleto(item)}" no tiene precio.`,
+        "Escribe cuánto se cobra en esta venta, o ponle precio de lista desde Catálogo.",
+      );
+    }
     if (precioUnitario < 0) {
       throw new ErrorDeNegocio("DATO_INVALIDO", `El precio de "${item.nombre}" no puede ser negativo.`);
     }
@@ -103,11 +116,16 @@ export function registrarVenta(
     lineas.push({
       itemId: item.id,
       codigo: item.codigo,
+      marca: item.marca || undefined,
       nombre: item.nombre,
       tipo: item.tipo,
       cantidad: pedida.cantidad,
       precioUnitario,
       precioLista: item.precio,
+      // El costo se CONGELA acá: es el promedio ponderado que el producto tenía
+      // al momento de vender. Si mañana sube el costo, la utilidad de esta
+      // venta —y del mes al que pertenece— no se mueve.
+      costoUnitario: item.tipo === "PRODUCTO" ? item.costo : null,
       barberoId: pedida.barberoId ?? null,
       total: multiplicar(precioUnitario, pedida.cantidad),
     });

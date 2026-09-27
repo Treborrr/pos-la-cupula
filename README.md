@@ -42,6 +42,48 @@ la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
 
+**v0.4.0** — la plantilla del catálogo tomó la forma que le dio el cliente, y el
+sistema aprendió los dos campos que le faltaban.
+
+El cliente devolvió la plantilla de la v0.3.0 reescrita: sin la columna `Código`
+—que el sistema genera solo— y con dos columnas nuevas, `MARCA` y
+`PRECIO COMPRA`. No era un error de llenado: eran dos datos que su negocio
+necesita y que el sistema no tenía. De ahí sale todo lo demás:
+
+- **Marca** como campo propio, no pegada al nombre. Hace falta porque el
+  catálogo real tiene nombres repetidos entre marcas —hay un `TALCO` de DON NISH
+  y otro de SIRMAN— y con un solo campo de texto esos dos productos son
+  indistinguibles al cobrar. Permite filtrar el catálogo por marca y reportar
+  ventas por marca. En el ticket se imprime solo en los productos: los servicios
+  los hace La Cúpula y su nombre ya está en el encabezado.
+- **Precio de compra** y, con él, **utilidad y margen reales**. El costo se
+  lleva como **promedio ponderado móvil**: el `PRECIO COMPRA` de la planilla
+  siembra el promedio y cada entrada de mercadería posterior lo recalcula. Al
+  vender, ese promedio se **congela en la línea de venta**, así el reporte de un
+  mes cerrado no se mueve nunca aunque después suba el costo.
+- **Ítems sin precio.** El catálogo llegó con 119 de 137 productos sin precio de
+  venta, así que "sin precio" pasó a ser un estado válido y no un error: el ítem
+  se carga, aparece en el catálogo y en el inventario, y al cobrarlo se escribe
+  el precio de esa venta. El precio de lista se pone desde Catálogo, de a uno o
+  en tanda desde el panel de precios pendientes. Nunca se cobra S/ 0 por
+  omisión.
+- **La planilla pone precios, nunca los borra.** Una celda de precio vacía
+  significa "no lo sé", no "déjalo en nada". Sin esta regla, volver a subir la
+  planilla de siempre —con esas celdas todavía vacías— habría destruido en
+  silencio todos los precios completados a mano.
+- **`STOCK` acepta `ILIMITADO`**, que es lo que el cliente escribió en sus siete
+  servicios de barbería. Tiene razón: un corte de pelo no se agota.
+- **Reportes rehechos**: períodos de calendario (hoy, 7 días, este mes, mes
+  pasado, este año, rango libre) con comparación contra el período anterior del
+  mismo largo; utilidad y margen por categoría, marca e ítem; inventario
+  valorizado a costo y a precio de venta; productos que no rotan con la plata
+  que tienen inmovilizada; y aviso de lo vendido por debajo del costo.
+
+Regla que atraviesa los reportes: **lo que no se sabe se dice**. Un producto sin
+costo cargado no tiene margen del 100%, no tiene margen calculable. Cada cifra de
+utilidad viene con su cobertura —sobre qué parte de lo vendido se pudo calcular—
+y donde falta el dato hay una raya, no un cero.
+
 **v0.3.0** — carga del catálogo desde un Excel: se descarga una plantilla,
 se llena fuera del sistema y se sube desde Ajustes, con vista previa de qué va
 a cambiar y opción de agregar o de reemplazar todo.

@@ -3,6 +3,8 @@
  * la misma que usa el servidor: aquí solo se decide cómo se ve.
  */
 
+import { aTextoConSimbolo } from "@cupula/contratos";
+
 export { aCentimos, aTexto, aTextoConSimbolo, aTextoLargo } from "@cupula/contratos";
 
 /** "2026-09-16T19:42:11.204-05:00" → "19:42" */
@@ -47,4 +49,33 @@ export function cuandoFue(iso?: string): string {
 /** Cantidades: 1 y no "1.000", pero 1.5 sí se muestra. */
 export function cantidad(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3)));
+}
+
+/**
+ * Un monto que puede no existir.
+ *
+ * Existe para que las cinco pantallas que muestran precios digan LO MISMO
+ * cuando el dato falta. Un "S/ 0.00" ahí sería mentira —el producto no es
+ * gratis, es que nadie le puso precio todavía— y es la clase de mentira que
+ * termina en un cobro equivocado.
+ */
+export function montoOAusente(centimos: number | null | undefined, ausente = "—"): string {
+  return centimos === null || centimos === undefined ? ausente : aTextoConSimbolo(centimos);
+}
+
+/**
+ * Un porcentaje de variación con su signo: "↑ 12.5%", "↓ 3%", "—".
+ *
+ * `null` se muestra como raya y no como "0%": no hubo período anterior contra
+ * el cual comparar, y un 0% afirmaría que se vendió igual.
+ */
+export function variacionLegible(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  if (v === 0) return "igual";
+  return `${v > 0 ? "↑" : "↓"} ${Math.abs(v)}%`;
+}
+
+/** El porcentaje de margen, o una raya si no se pudo calcular. */
+export function margenLegible(margen: number | null | undefined): string {
+  return margen === null || margen === undefined ? "—" : `${margen}%`;
 }

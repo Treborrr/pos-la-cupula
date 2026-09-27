@@ -57,14 +57,24 @@ const SERVICIOS = [
   { codigo: "BAR", nombre: "BARBA", precio: 1000, orden: 30 },
 ];
 
+/**
+ * Los productos llevan MARCA y PRECIO DE COMPRA, y uno entra SIN PRECIO.
+ *
+ * No es adorno: sin costos, el reporte de margen sale vacío y quien mira la
+ * demostración concluye que esa parte no funciona. Y el producto sin precio
+ * está para que se vea el caso que trae el catálogo real —119 de 137 llegaron
+ * así— y cómo se cobra escribiendo el precio en el momento.
+ */
 const PRODUCTOS = [
-  { codigo: "CERA", nombre: "CERA MODELADORA", precio: 2500, stockMinimo: 3, stockInicial: 12, categoria: "Productos", orden: 100 },
-  { codigo: "GEL", nombre: "GEL FIJADOR", precio: 1800, stockMinimo: 3, stockInicial: 8, categoria: "Productos", orden: 110 },
-  { codigo: "SHAMP", nombre: "SHAMPOO", precio: 3200, stockMinimo: 2, stockInicial: 2, categoria: "Productos", orden: 120 },
-  { codigo: "VAPE", nombre: "VAPE DESECHABLE", precio: 4500, stockMinimo: 5, stockInicial: 20, categoria: "Smoke shop", orden: 200 },
-  { codigo: "PIPA", nombre: "PIPA", precio: 3500, stockMinimo: 2, stockInicial: 7, categoria: "Smoke shop", orden: 210 },
-  { codigo: "MALLA", nombre: "MALLA PARA PIPA", precio: 200, stockMinimo: 20, stockInicial: 100, categoria: "Smoke shop", orden: 220 },
-  { codigo: "TRIM", nombre: "TRIMMER", precio: 12000, stockMinimo: 1, stockInicial: 3, categoria: "Equipos", orden: 300 },
+  { codigo: "CERA", marca: "NIVEL TRES", nombre: "CERA MODELADORA", precio: 2500, costo: 1400, stockMinimo: 3, stockInicial: 12, categoria: "Productos", orden: 100 },
+  { codigo: "GEL", marca: "ROLDA", nombre: "GEL FIJADOR", precio: 1800, costo: 1000, stockMinimo: 3, stockInicial: 8, categoria: "Productos", orden: 110 },
+  { codigo: "SHAMP", marca: "DON NISH", nombre: "SHAMPOO", precio: 3200, costo: 2100, stockMinimo: 2, stockInicial: 2, categoria: "Productos", orden: 120 },
+  { codigo: "VAPE", marca: "OXBIR", nombre: "VAPE DESECHABLE", precio: 4500, costo: 2800, stockMinimo: 5, stockInicial: 20, categoria: "Vapes", orden: 200 },
+  { codigo: "PIPA", marca: "VPRO", nombre: "PIPA", precio: 3500, costo: 2000, stockMinimo: 2, stockInicial: 7, categoria: "Vapes", orden: 210 },
+  { codigo: "MALLA", marca: "VPRO", nombre: "MALLA PARA PIPA", precio: 200, costo: 80, stockMinimo: 20, stockInicial: 100, categoria: "Vapes", orden: 220 },
+  { codigo: "TRIM", marca: "KEMEI", nombre: "TRIMMER", precio: 12000, costo: 8500, stockMinimo: 1, stockInicial: 3, categoria: "Equipos", orden: 300 },
+  // Sin precio y sin costo: el caso que hay que poder ver funcionando.
+  { codigo: "LACA", marca: "FORAJIDO", nombre: "LACA DORADA", precio: null, stockMinimo: 2, stockInicial: 6, categoria: "Productos", orden: 130 },
 ];
 
 const items = {};
@@ -125,22 +135,42 @@ const VENTAS = [
   { lineas: [["COR", 1], ["GEL", 1]], medio: "YAPE", cliente: 4 },
   { lineas: [["SHAMP", 3]], medio: "TARJETA", descuento: 500 },
   { lineas: [["COR-D", 1]], medio: "EFECTIVO", recibido: 3000 },
+  // La laca no tiene precio de lista: se cobra escribiéndolo en el momento.
+  // Deja la venta marcada en la auditoría y en el reporte como precio a mano.
+  { lineas: [["COR", 1], ["LACA", 1, 3000]], medio: "EFECTIVO", recibido: 5000 },
 ];
 
 let cobradas = 0;
 let primeraVenta = null;
 
-for (const v of VENTAS) {
-  const lineas = v.lineas.map(([codigo, cantidad]) => ({
-    itemId: items[codigo],
-    cantidad,
-    barberoId: SERVICIOS.some((s) => s.codigo === codigo) ? azar(barberos) : null,
-  }));
+/**
+ * Cuánto cobra una línea por unidad.
+ *
+ * El tercer elemento de la tupla es el precio escrito a mano, y es obligatorio
+ * cuando el ítem no tiene precio de lista: el servidor rechaza la venta si
+ * falta, que es justo lo que se quiere.
+ */
+const precioDeLinea = ([codigo, , precioAbierto]) => {
+  const def = [...SERVICIOS, ...PRODUCTOS].find((x) => x.codigo === codigo);
+  const precio = precioAbierto ?? def.precio;
+  if (precio === null || precio === undefined) {
+    throw new Error(`"${codigo}" no tiene precio de lista: hay que indicar el precio en la venta de demostración.`);
+  }
+  return precio;
+};
 
-  const subtotal = v.lineas.reduce((a, [codigo, cantidad]) => {
-    const def = [...SERVICIOS, ...PRODUCTOS].find((x) => x.codigo === codigo);
-    return a + def.precio * cantidad;
-  }, 0);
+for (const v of VENTAS) {
+  const lineas = v.lineas.map((linea) => {
+    const [codigo, cantidad, precioAbierto] = linea;
+    return {
+      itemId: items[codigo],
+      cantidad,
+      ...(precioAbierto !== undefined ? { precioUnitario: precioAbierto } : {}),
+      barberoId: SERVICIOS.some((s) => s.codigo === codigo) ? azar(barberos) : null,
+    };
+  });
+
+  const subtotal = v.lineas.reduce((a, linea) => a + precioDeLinea(linea) * linea[1], 0);
   const total = subtotal - (v.descuento ?? 0);
 
   const pagos = v.mixto
@@ -160,7 +190,13 @@ for (const v of VENTAS) {
     lineas,
     pagos,
     descuento: v.descuento ?? 0,
-    clienteId: v.cliente !== undefined ? clientes[v.cliente] : null,
+    // Cliente en TODAS las ventas. La instalación viene con "cliente
+    // obligatorio" activado, así que las ventas sin cliente eran rechazadas y
+    // la demostración quedaba con tres ventas de once y los reportes vacíos.
+    // Las que no eligen uno en particular reciben un cliente rotado, y el
+    // índice se envuelve: una venta que pedía el cliente 4 de una lista de 4
+    // quedaba sin cliente y se rechazaba igual.
+    clienteId: clientes.length ? clientes[(v.cliente ?? cobradas) % clientes.length] : null,
     claveIdempotencia: ulid(),
   });
 

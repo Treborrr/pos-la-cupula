@@ -34,7 +34,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 1;
+export const FORMATO_PROYECCION = 2;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -43,6 +43,14 @@ export class Proyeccion {
   readonly items = new Map<string, Item>();
   /** código (mayúsculas) → itemId. Garantiza códigos únicos. */
   readonly porCodigo = new Map<string, string>();
+  /**
+   * marca normalizada → itemIds (activos e inactivos).
+   *
+   * Es una LISTA y no un mapa a uno: una marca tiene muchos productos, que es
+   * justamente para lo que sirve el índice (filtrar el catálogo por marca y
+   * reportar ventas por marca sin recorrer los 137 ítems en cada consulta).
+   */
+  readonly porMarca = new Map<string, string[]>();
   /** itemId → unidades. Solo PRODUCTO. Puede quedar negativo (ver abajo). */
   readonly stock = new Map<string, number>();
 
@@ -79,10 +87,12 @@ export class Proyeccion {
         const item: Item = {
           id: d.itemId,
           codigo: d.codigo,
+          marca: d.marca ?? "",
           nombre: d.nombre,
           tipo: d.tipo,
           categoria: d.categoria,
           precio: d.precio,
+          costo: d.costo ?? null,
           stockMinimo: d.stockMinimo ?? 0,
           orden: d.orden ?? 0,
           activo: true,
@@ -91,6 +101,7 @@ export class Proyeccion {
         };
         this.items.set(item.id, item);
         this.porCodigo.set(item.codigo, item.id);
+        this.indexarMarca(item.marca, item.id);
         if (item.tipo === "PRODUCTO" && !this.stock.has(item.id)) this.stock.set(item.id, 0);
         break;
       }
@@ -102,6 +113,11 @@ export class Proyeccion {
           if (this.porCodigo.get(item.codigo) === item.id) this.porCodigo.delete(item.codigo);
           item.codigo = e.datos.codigo;
           if (item.activo) this.porCodigo.set(item.codigo, item.id);
+        }
+        if (e.datos.marca !== undefined && e.datos.marca !== item.marca) {
+          this.desindexarMarca(item.marca, item.id);
+          item.marca = e.datos.marca;
+          this.indexarMarca(item.marca, item.id);
         }
         if (e.datos.nombre !== undefined) item.nombre = e.datos.nombre;
         if (e.datos.categoria !== undefined) item.categoria = e.datos.categoria;
@@ -115,6 +131,16 @@ export class Proyeccion {
         const item = this.items.get(e.datos.itemId);
         if (!item) break;
         item.precio = e.datos.precioNuevo;
+        item.actualizadoEn = e.ts;
+        break;
+      }
+
+      case "item.costo_cambiado": {
+        const item = this.items.get(e.datos.itemId);
+        if (!item) break;
+        // Fija el promedio, no lo pondera: esto es "el costo es este", que es
+        // lo que corresponde cuando lo declara una persona o la planilla.
+        item.costo = e.datos.costoNuevo;
         item.actualizadoEn = e.ts;
         break;
       }
@@ -143,6 +169,9 @@ export class Proyeccion {
       }
 
       case "stock.entrada":
+        // El recosteo va ANTES de mover el stock: el promedio se pondera contra
+        // las unidades que había, no contra las que quedan después de entrar.
+        this.recostear(e.datos.itemId, e.datos.cantidad, e.datos.costoUnitario);
         this.moverStock(e.datos.itemId, e.datos.cantidad);
         break;
 
@@ -328,6 +357,59 @@ export class Proyeccion {
     this.stock.set(itemId, nuevo);
   }
 
+  /**
+   * Recalcula el COSTO PROMEDIO PONDERADO MÓVIL al entrar mercadería.
+   *
+   * Había 6 a 28 y entran 4 a 34 → (6×28 + 4×34) / 10 = 30.40. De ahí en más,
+   * la utilidad de cada venta se mide contra 30.40. Vender no mueve el
+   * promedio, y contar tampoco (`stock.ajustado` cambia cuántas hay, no a
+   * cuánto se compraron): solo lo mueve una compra a otro precio.
+   *
+   * Una entrada SIN costo declarado no toca el promedio. Es deliberado:
+   * suponerle costo cero a la mercadería que entró sin factura a mano
+   * abarataría el promedio y el reporte mostraría una utilidad que no existe.
+   */
+  private recostear(itemId: string, cantidad: number, costoUnitario?: number): void {
+    if (costoUnitario === undefined) return;
+    const item = this.items.get(itemId);
+    if (!item) return;
+
+    const enMano = this.stock.get(itemId) ?? 0;
+
+    // Sin unidades con las que ponderar —o con stock negativo, que es un saldo
+    // por corregir y no un valor de inventario— el costo que acaba de entrar es
+    // el único dato real que hay. Ponderar contra un negativo daría un promedio
+    // absurdo, incluso negativo.
+    if (item.costo === null || enMano <= 0) {
+      item.costo = costoUnitario;
+      return;
+    }
+
+    const valorPrevio = item.costo * enMano;
+    const valorNuevo = costoUnitario * cantidad;
+    item.costo = Math.round((valorPrevio + valorNuevo) / (enMano + cantidad));
+  }
+
+  private indexarMarca(marca: string, itemId: string): void {
+    const clave = normalizar(marca);
+    if (!clave) return; // sin marca no se indexa: la mayoría de los servicios
+    const lista = this.porMarca.get(clave);
+    if (lista) {
+      if (!lista.includes(itemId)) lista.push(itemId);
+    } else {
+      this.porMarca.set(clave, [itemId]);
+    }
+  }
+
+  private desindexarMarca(marca: string, itemId: string): void {
+    const clave = normalizar(marca);
+    const lista = this.porMarca.get(clave);
+    if (!lista) return;
+    const i = lista.indexOf(itemId);
+    if (i >= 0) lista.splice(i, 1);
+    if (lista.length === 0) this.porMarca.delete(clave);
+  }
+
   private indexarNombre(nombre: string, clienteId: string): void {
     const clave = normalizar(nombre);
     const lista = this.clientesPorNombre.get(clave);
@@ -382,6 +464,41 @@ export class Proyeccion {
 
   stockDe(itemId: string): number {
     return this.stock.get(itemId) ?? 0;
+  }
+
+  /**
+   * Las marcas que existen, con cuántos ítems activos tiene cada una, ordenadas
+   * alfabéticamente. Es lo que llena el desplegable de filtro del catálogo.
+   *
+   * Devuelve la forma CANÓNICA de cada marca —la del primer ítem que la usó— y
+   * no la clave normalizada: el filtro tiene que decir "NIVEL TRES", no "level 3".
+   */
+  marcas(): { marca: string; items: number }[] {
+    const salida: { marca: string; items: number }[] = [];
+    for (const ids of this.porMarca.values()) {
+      const activos = ids.map((id) => this.items.get(id)).filter((i) => i?.activo);
+      if (activos.length === 0) continue;
+      salida.push({ marca: activos[0]!.marca, items: activos.length });
+    }
+    return salida.sort((a, b) => a.marca.localeCompare(b.marca, "es"));
+  }
+
+  /**
+   * Cómo se nombra un ítem donde el espacio alcanza: "DON NISH TALCO".
+   *
+   * Existe acá y no en cada pantalla porque hay tres lugares que necesitan la
+   * misma respuesta —la grilla de cobro, el catálogo y los reportes— y si cada
+   * uno la arma a su manera, el mismo producto aparece con dos nombres.
+   */
+  nombreCompleto(item: Pick<Item, "marca" | "nombre">): string {
+    return item.marca ? `${item.marca} ${item.nombre}` : item.nombre;
+  }
+
+  /** Ítems activos que todavía no tienen precio: no se pueden vender de la grilla. */
+  sinPrecio(): Item[] {
+    return [...this.items.values()]
+      .filter((i) => i.activo && i.precio === null)
+      .sort((a, b) => this.nombreCompleto(a).localeCompare(this.nombreCompleto(b), "es"));
   }
 
   /** Ventas de un día (formato "2026-09-16"), en orden de emisión. */
@@ -441,6 +558,7 @@ export class Proyeccion {
     for (const item of d.items ?? []) {
       p.items.set(item.id, item);
       if (item.activo) p.porCodigo.set(item.codigo, item.id);
+      p.indexarMarca(item.marca ?? "", item.id);
     }
     for (const [k, v] of d.stock ?? []) p.stock.set(k, v);
     for (const venta of d.ventas ?? []) {

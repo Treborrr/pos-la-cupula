@@ -11,7 +11,7 @@
  * golden sin tener la impresora enchufada.
  */
 
-import { aTexto } from "@cupula/contratos";
+import { aTexto, type LineaVenta } from "@cupula/contratos";
 
 import type { Venta } from "../../proyecciones/tipos";
 import type { DatosDelNegocio, OpcionesDeImpresion } from "../../puertos/Impresora";
@@ -164,8 +164,9 @@ async function pintar(
     for (const linea of venta.lineas) {
       // La descripción se PARTE en varias líneas en vez de truncarse. El Excel
       // cortaba a 18 caracteres con Left() y nombres largos salían mutilados
-      // en el papel del cliente.
-      for (const trozo of partir(linea.nombre, salida.columnas)) salida.linea(trozo);
+      // en el papel del cliente. Hace falta de verdad acá: "VIDA POD CARTUCHO
+      // LP WATERMELON PEACH ICE" son 41 caracteres.
+      for (const trozo of partir(descripcion(linea), salida.columnas)) salida.linea(trozo);
 
       salida.dosColumnas(
         `  ${cantidadLegible(linea.cantidad)} x ${aTexto(linea.precioUnitario)}`,
@@ -215,6 +216,22 @@ async function pintar(
       }
     }
   }
+}
+
+/**
+ * Cómo se nombra una línea en el papel: "DON NISH TALCO".
+ *
+ * La marca se imprime SOLO en los productos. Los servicios los hace La Cúpula
+ * —está en el encabezado del ticket, tres centímetros más arriba— así que
+ * repetir la marca en cada línea de servicio gastaría papel para decir algo que
+ * el cliente ya leyó. En un producto es lo contrario: la marca es justo lo que
+ * distingue el TALCO de DON NISH del de SIRMAN.
+ *
+ * La marca sale de la LÍNEA y no del catálogo, como el nombre y el código: el
+ * ticket de ayer tiene que seguir diciendo lo que decía ayer.
+ */
+function descripcion(linea: LineaVenta): string {
+  return linea.tipo === "PRODUCTO" && linea.marca ? `${linea.marca} ${linea.nombre}` : linea.nombre;
 }
 
 /** Cantidades enteras sin decimales de adorno: "2", no "2.000". */

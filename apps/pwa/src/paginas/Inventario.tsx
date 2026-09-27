@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Boxes, ClipboardCheck, PackageMinus, PackagePlus, Plus, type LucideIcon } from "lucide-react";
 
 import { api, type Item } from "../lib/api";
-import { aTextoConSimbolo, cantidad, fechaYHora } from "../lib/formato";
+import { aTextoConSimbolo, cantidad, fechaYHora, montoOAusente } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
 
@@ -16,7 +16,18 @@ interface ProductoConStock extends Item {
   stock: number;
   bajoMinimo: boolean;
   enNegativo: boolean;
-  valorizado: number;
+  /** `null` cuando falta el costo o el precio: no se puede valorizar sin el dato. */
+  valorizadoCosto: number | null;
+  valorizadoVenta: number | null;
+}
+
+interface RespuestaInventario {
+  productos: ProductoConStock[];
+  alertas: unknown[];
+  valorTotalCosto: number;
+  valorTotalVenta: number;
+  sinCosto: number;
+  sinPrecio: number;
 }
 
 interface Movimiento {
@@ -44,7 +55,7 @@ export function Inventario() {
 
   const inventario = useQuery({
     queryKey: ["inventario"],
-    queryFn: () => api.get<{ productos: ProductoConStock[]; alertas: unknown[]; valorTotal: number }>("/inventario"),
+    queryFn: () => api.get<RespuestaInventario>("/inventario"),
   });
 
   const productos = inventario.data?.productos ?? [];
@@ -60,7 +71,7 @@ export function Inventario() {
       />
 
       {productos.length > 0 ? (
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Recuadro etiqueta="Productos" valor={String(productos.length)} />
           <Recuadro
             etiqueta="Para reponer"
@@ -68,7 +79,30 @@ export function Inventario() {
             tono={enAlerta.length > 0 ? "aviso" : undefined}
             nota={enAlerta.length > 0 ? "Sin stock o por debajo del mínimo" : "Todo en orden"}
           />
-          <Recuadro etiqueta="Valor del stock" valor={aTextoConSimbolo(inventario.data?.valorTotal ?? 0)} nota="A precio de venta" />
+          {/* Dos valorizaciones porque responden preguntas distintas: a costo es
+              cuánta plata está inmovilizada, a precio de venta es cuánto
+              entraría si se vendiera todo. Cada una dice cuántos productos
+              quedaron afuera por falta de dato, para que un total bajo no se
+              lea como "hay poca mercadería" cuando es "faltan costos". */}
+          <Recuadro
+            etiqueta="Plata en stock"
+            valor={aTextoConSimbolo(inventario.data?.valorTotalCosto ?? 0)}
+            nota={
+              inventario.data?.sinCosto
+                ? `A costo · ${inventario.data.sinCosto} sin costo cargado`
+                : "A precio de compra"
+            }
+            tono={inventario.data?.sinCosto ? "aviso" : undefined}
+          />
+          <Recuadro
+            etiqueta="Si se vendiera todo"
+            valor={aTextoConSimbolo(inventario.data?.valorTotalVenta ?? 0)}
+            nota={
+              inventario.data?.sinPrecio
+                ? `A venta · ${inventario.data.sinPrecio} sin precio`
+                : "A precio de venta"
+            }
+          />
         </div>
       ) : null}
 
@@ -123,15 +157,16 @@ export function Inventario() {
                   <th>Estado</th>
                   <th className="text-right">Stock</th>
                   <th className="text-right">Mínimo</th>
-                  <th className="text-right">Precio</th>
-                  <th className="text-right">Valor</th>
+                  <th className="text-right">Compra</th>
+                  <th className="text-right">Venta</th>
+                  <th className="text-right">Plata parada</th>
                 </tr>
               </thead>
               <tbody>
                 {visibles.map((p) => (
                   <tr key={p.id} onClick={() => setAbierto(p)}>
                     <td>
-                      <div className="font-medium">{p.nombre}</div>
+                      <div className="font-medium">{p.nombreCompleto}</div>
                       <div className="ayuda cifra">{p.codigo}</div>
                     </td>
                     <td>
@@ -141,8 +176,11 @@ export function Inventario() {
                       {cantidad(p.stock)}
                     </td>
                     <td className="cifra text-right text-tinta/55">{p.stockMinimo}</td>
-                    <td className="cifra text-right">{aTextoConSimbolo(p.precio)}</td>
-                    <td className="cifra text-right text-tinta/65">{aTextoConSimbolo(p.valorizado)}</td>
+                    <td className="cifra text-right text-tinta/55">{montoOAusente(p.costo)}</td>
+                    <td className={`cifra text-right ${p.precio === null ? "text-aviso" : ""}`}>
+                      {montoOAusente(p.precio, "sin precio")}
+                    </td>
+                    <td className="cifra text-right text-tinta/65">{montoOAusente(p.valorizadoCosto)}</td>
                   </tr>
                 ))}
               </tbody>

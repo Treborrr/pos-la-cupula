@@ -9,6 +9,7 @@
  */
 
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Check, Download, FileSpreadsheet, Upload } from "lucide-react";
 
@@ -32,7 +33,15 @@ interface Respuesta {
   plan: {
     cambios: Cambio[];
     aDesactivar: { codigo: string; nombre: string }[];
-    resumen: { crear: number; actualizar: number; reactivar: number; sinCambios: number; desactivar: number };
+    resumen: {
+      crear: number;
+      actualizar: number;
+      reactivar: number;
+      sinCambios: number;
+      desactivar: number;
+      /** Cuántos ítems van a QUEDAR sin precio de lista después de esta carga. */
+      sinPrecio: number;
+    };
   };
 }
 
@@ -148,6 +157,14 @@ export function SeccionCatalogo() {
             siguen viendo y si mañana los vuelves a cargar, reaparecen con su historial intacto.
           </p>
         ) : null}
+
+        {/* Las dos preguntas que se hace cualquiera antes de apretar el botón,
+            respondidas acá y no en un manual que nadie va a abrir. */}
+        <p className="ayuda mt-2">
+          Los ítems se reconocen por su <strong>marca y su nombre</strong>, así que puedes volver a subir la planilla
+          las veces que quieras sin duplicar nada. Una celda de precio vacía <strong>no borra</strong> el precio que ya
+          tenga el ítem en el sistema: lo que corrijas desde Catálogo se conserva.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -162,9 +179,20 @@ export function SeccionCatalogo() {
 
       {listo ? (
         <Aviso tono="bien" titulo="Catálogo cargado">
-          {listo.plan.resumen.crear} creados · {listo.plan.resumen.actualizar} actualizados
-          {listo.plan.resumen.reactivar > 0 ? ` · ${listo.plan.resumen.reactivar} reactivados` : ""}
-          {listo.plan.resumen.desactivar > 0 ? ` · ${listo.plan.resumen.desactivar} dados de baja` : ""}
+          <p>
+            {listo.plan.resumen.crear} creados · {listo.plan.resumen.actualizar} actualizados
+            {listo.plan.resumen.reactivar > 0 ? ` · ${listo.plan.resumen.reactivar} reactivados` : ""}
+            {listo.plan.resumen.desactivar > 0 ? ` · ${listo.plan.resumen.desactivar} dados de baja` : ""}
+          </p>
+          {listo.plan.resumen.sinPrecio > 0 ? (
+            <p className="mt-2">
+              Quedaron <strong>{listo.plan.resumen.sinPrecio} sin precio</strong>: no se pueden cobrar de la grilla
+              hasta que se los pongas.{" "}
+              <Link to="/catalogo" className="font-semibold underline">
+                Completar precios ahora
+              </Link>
+            </p>
+          ) : null}
         </Aviso>
       ) : null}
 
@@ -199,6 +227,20 @@ export function SeccionCatalogo() {
           {revision.plan.aDesactivar.length > 0 ? (
             <Aviso tono="aviso" titulo={`${revision.plan.aDesactivar.length} ítems van a salir del catálogo`}>
               No vienen en el Excel: {revision.plan.aDesactivar.map((x) => x.nombre).join(", ")}.
+            </Aviso>
+          ) : null}
+
+          {/* Se avisa ANTES de aceptar la carga, no después. Con un catálogo al
+              que le faltan la mayoría de los precios, enterarse recién al ir a
+              cobrar es enterarse con el cliente delante. */}
+          {r && r.sinPrecio > 0 ? (
+            <Aviso
+              tono="aviso"
+              titulo={`${r.sinPrecio} ${r.sinPrecio === 1 ? "ítem va a quedar" : "ítems van a quedar"} sin precio`}
+            >
+              Su celda PRECIO VENTA está vacía en el Excel. Se cargan igual y aparecen en el catálogo y en el
+              inventario, pero al cobrarlos hay que escribir el precio a mano cada vez. Después de cargar, ponles
+              precio desde <strong>Catálogo → Completar precios</strong>.
             </Aviso>
           ) : null}
 

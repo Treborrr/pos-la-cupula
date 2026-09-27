@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { coincide } from "@cupula/contratos";
 import type { Venta } from "../../proyecciones/tipos";
-import { mediosEnCero } from "../../proyecciones/tipos";
+import { construirReporte } from "../../consultas/reportes";
 import type { Dependencias } from "../app";
 import { booleanoDeQuery } from "./catalogo";
 
@@ -148,63 +148,9 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Depe
       })
       .parse(peticion.query);
 
-    const ventas = [...pos.p.ventas.values()].filter((v) => {
-      const f = v.ts.slice(0, 10);
-      return f >= desde && f <= hasta && !v.anulada;
-    });
-
-    const porDia = new Map<string, { total: number; cantidad: number }>();
-    const porItem = new Map<string, { nombre: string; cantidad: number; total: number }>();
-    const porBarbero = new Map<string, { cantidad: number; total: number }>();
-    const medios = mediosEnCero();
-    let total = 0;
-
-    for (const venta of ventas) {
-      total += venta.total;
-      const dia = venta.ts.slice(0, 10);
-      const acumDia = porDia.get(dia) ?? { total: 0, cantidad: 0 };
-      acumDia.total += venta.total;
-      acumDia.cantidad += 1;
-      porDia.set(dia, acumDia);
-
-      for (const pago of venta.pagos) medios[pago.medio] += pago.monto;
-
-      for (const linea of venta.lineas) {
-        const acum = porItem.get(linea.itemId) ?? { nombre: linea.nombre, cantidad: 0, total: 0 };
-        acum.cantidad += linea.cantidad;
-        acum.total += linea.total;
-        porItem.set(linea.itemId, acum);
-
-        if (linea.barberoId) {
-          const b = porBarbero.get(linea.barberoId) ?? { cantidad: 0, total: 0 };
-          b.cantidad += linea.cantidad;
-          b.total += linea.total;
-          porBarbero.set(linea.barberoId, b);
-        }
-      }
-    }
-
-    return {
-      desde,
-      hasta,
-      total,
-      cantidadVentas: ventas.length,
-      ticketPromedio: ventas.length ? Math.round(total / ventas.length) : 0,
-      medios,
-      porDia: [...porDia.entries()].map(([dia, d]) => ({ dia, ...d })).sort((a, b) => a.dia.localeCompare(b.dia)),
-      ranking: [...porItem.entries()]
-        .map(([itemId, d]) => ({ itemId, ...d }))
-        .sort((a, b) => b.total - a.total),
-      // Producción por barbero. Es un dato de gestión, NO una liquidación:
-      // en La Cúpula los barberos tienen sueldo fijo y no hay comisiones.
-      porBarbero: [...porBarbero.entries()]
-        .map(([barberoId, d]) => ({
-          barberoId,
-          nombre: pos.p.barberos.get(barberoId)?.nombre ?? "(eliminado)",
-          ...d,
-        }))
-        .sort((a, b) => b.total - a.total),
-    };
+    // El cálculo entero vive en `consultas/reportes`: la ruta solo valida el
+    // rango y devuelve. Así se puede probar el reporte sin levantar HTTP.
+    return construirReporte(pos.p, desde, hasta);
   });
 
   async function imprimir(venta: Venta, reimpresion = false) {

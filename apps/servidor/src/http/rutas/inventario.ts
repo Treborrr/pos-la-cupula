@@ -20,22 +20,40 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       .filter((i) => i.tipo === "PRODUCTO")
       .map((i) => {
         const stock = pos.p.stockDe(i.id);
+        const positivo = Math.max(0, stock);
         return {
           ...i,
+          nombreCompleto: pos.p.nombreCompleto(i),
           stock,
-          bajoMinimo: stock < i.stockMinimo,
+          bajoMinimo: stock <= i.stockMinimo,
           // El negativo siempre se marca, aunque el mínimo esté en 0: significa
           // que se vendió más de lo que el sistema creía tener y hay que contar.
           enNegativo: stock < 0,
-          valorizado: Math.round(stock * i.precio),
+          // Dos valorizaciones, que responden preguntas distintas: a costo es
+          // cuánta plata hay inmovilizada, a precio de venta es cuánto entraría
+          // si se vendiera todo. `null` cuando falta el dato — un 0 haría creer
+          // que el inventario vale menos de lo que vale.
+          valorizadoCosto: i.costo === null ? null : Math.round(positivo * i.costo),
+          valorizadoVenta: i.precio === null ? null : Math.round(positivo * i.precio),
         };
       })
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+      .sort((a, b) => a.nombreCompleto.localeCompare(b.nombreCompleto, "es"));
+
+    const sumar = (campo: "valorizadoCosto" | "valorizadoVenta") =>
+      productos.reduce((a, p) => a + (p[campo] ?? 0), 0);
 
     return {
       productos,
       alertas: stockBajo(pos.p),
-      valorTotal: productos.reduce((a, p) => a + Math.max(0, p.valorizado), 0),
+      valorTotalCosto: sumar("valorizadoCosto"),
+      valorTotalVenta: sumar("valorizadoVenta"),
+      /**
+       * Cuántos productos con stock quedaron fuera de cada total por no tener
+       * el dato. Sin esto, un valorizado bajo se lee como "hay poca mercadería"
+       * cuando en realidad es "falta cargar los costos".
+       */
+      sinCosto: productos.filter((p) => p.costo === null && p.stock > 0).length,
+      sinPrecio: productos.filter((p) => p.precio === null && p.stock > 0).length,
     };
   });
 

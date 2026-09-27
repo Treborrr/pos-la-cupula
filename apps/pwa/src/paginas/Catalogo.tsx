@@ -9,10 +9,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, LayoutGrid, Package, Pencil, Plus, RotateCcw, Scissors, Search, UserRound, X } from "lucide-react";
+import { Check, LayoutGrid, Package, Pencil, Plus, RotateCcw, Scissors, Search, Tags, UserRound, X } from "lucide-react";
 
 import { api, FalloDeApi, type Barbero, type Item } from "../lib/api";
-import { aCentimos, aTexto, aTextoConSimbolo } from "../lib/formato";
+import { aCentimos, aTexto, aTextoConSimbolo, margenLegible, montoOAusente } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Segmentado } from "../componentes/Piezas";
 
@@ -71,117 +71,328 @@ export function Catalogo() {
   );
 }
 
+interface RespuestaCatalogo {
+  items: Item[];
+  categorias: string[];
+  marcas: { marca: string; items: number }[];
+  sinPrecio: number;
+}
+
 function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuevo: () => void }) {
   const [verInactivos, setVerInactivos] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [tipo, setTipo] = useState<"todos" | "SERVICIO" | "PRODUCTO">("todos");
+  const [marca, setMarca] = useState("");
+  const [soloSinPrecio, setSoloSinPrecio] = useState(false);
+  const [completandoPrecios, setCompletandoPrecios] = useState(false);
 
   const catalogo = useQuery({
     queryKey: ["catalogo", "admin", verInactivos],
-    queryFn: () => api.get<{ items: Item[] }>(`/catalogo${verInactivos ? "?incluirInactivos=true" : ""}`),
+    queryFn: () => api.get<RespuestaCatalogo>(`/catalogo${verInactivos ? "?incluirInactivos=true" : ""}`),
   });
 
   const todos = catalogo.data?.items ?? [];
+  const marcas = catalogo.data?.marcas ?? [];
+  const sinPrecio = catalogo.data?.sinPrecio ?? 0;
+
   const termino = busqueda.trim().toLowerCase();
   const items = todos.filter(
     (i) =>
       (tipo === "todos" || i.tipo === tipo) &&
-      (!termino || `${i.codigo} ${i.nombre} ${i.categoria}`.toLowerCase().includes(termino)),
+      (!marca || i.marca === marca) &&
+      (!soloSinPrecio || i.precio === null) &&
+      // La marca entra en la búsqueda: quien escribe "bandido" espera ver sus
+      // ceras, aunque la palabra no esté en el nombre de ninguna.
+      (!termino || `${i.codigo} ${i.marca} ${i.nombre} ${i.categoria}`.toLowerCase().includes(termino)),
   );
 
   return (
-    <div className="tarjeta overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-linea p-4">
-        <div className="relative min-w-64 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-tinta/35" />
-          <input
-            className="campo pl-12"
-            placeholder="Buscar por nombre, código o categoría"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
+    <>
+      {/* El aviso de precios faltantes va ARRIBA de la tabla y no escondido en
+          una columna: con 119 de 137 productos sin precio, es el estado del
+          catálogo, no un detalle de una fila. */}
+      {sinPrecio > 0 ? (
+        <div className="mb-6">
+          <Aviso
+            tono="aviso"
+            titulo={`${sinPrecio} ${sinPrecio === 1 ? "ítem no tiene" : "ítems no tienen"} precio de lista`}
+          >
+            <p>
+              Están en el catálogo y en el inventario, pero al cobrarlos hay que escribir el precio a mano cada vez.
+              Ponles precio una vez y ya salen solos.
+            </p>
+            <button className="boton-primario mt-3" onClick={() => setCompletandoPrecios(true)}>
+              <Tags className="h-5 w-5" />
+              Completar precios
+            </button>
+          </Aviso>
         </div>
-        <Segmentado
-          opciones={[
-            { id: "todos", texto: "Todos" },
-            { id: "SERVICIO", texto: "Servicios", icono: Scissors },
-            { id: "PRODUCTO", texto: "Productos", icono: Package },
-          ]}
-          valor={tipo}
-          alCambiar={setTipo}
-        />
-        <label className="flex h-12 cursor-pointer items-center gap-3 px-2 text-tinta/70">
-          <input
-            type="checkbox"
-            className="h-5 w-5 accent-tinta"
-            checked={verInactivos}
-            onChange={(e) => setVerInactivos(e.target.checked)}
+      ) : null}
+
+      <div className="tarjeta overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-linea p-4">
+          <div className="relative min-w-64 flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-tinta/35" />
+            <input
+              className="campo pl-12"
+              placeholder="Buscar por marca, nombre, código o categoría"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+          </div>
+
+          {marcas.length > 0 ? (
+            <select className="campo w-auto" value={marca} onChange={(e) => setMarca(e.target.value)}>
+              <option value="">Todas las marcas · {marcas.length}</option>
+              {marcas.map((m) => (
+                <option key={m.marca} value={m.marca}>
+                  {m.marca} · {m.items}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
+          <Segmentado
+            opciones={[
+              { id: "todos", texto: "Todos" },
+              { id: "SERVICIO", texto: "Servicios", icono: Scissors },
+              { id: "PRODUCTO", texto: "Productos", icono: Package },
+            ]}
+            valor={tipo}
+            alCambiar={setTipo}
           />
-          Ver desactivados
-        </label>
+
+          {sinPrecio > 0 ? (
+            <label className="flex h-12 cursor-pointer items-center gap-3 px-2 text-tinta/70">
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-tinta"
+                checked={soloSinPrecio}
+                onChange={(e) => setSoloSinPrecio(e.target.checked)}
+              />
+              Solo sin precio
+            </label>
+          ) : null}
+
+          <label className="flex h-12 cursor-pointer items-center gap-3 px-2 text-tinta/70">
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-tinta"
+              checked={verInactivos}
+              onChange={(e) => setVerInactivos(e.target.checked)}
+            />
+            Ver desactivados
+          </label>
+        </div>
+
+        {catalogo.isLoading ? (
+          <Vacio titulo="Cargando…" />
+        ) : todos.length === 0 ? (
+          <Vacio
+            icono={LayoutGrid}
+            titulo="El catálogo está vacío"
+            accion={
+              <button className="boton-primario" onClick={alNuevo}>
+                <Plus className="h-5 w-5" />
+                Crear el primer servicio o producto
+              </button>
+            }
+          >
+            Carga los servicios de la barbería (cortes, barba…) y los productos que venden (ceras, vapes…). Si tienes
+            muchos, conviene cargarlos de una vez con la plantilla de Excel desde Ajustes.
+          </Vacio>
+        ) : items.length === 0 ? (
+          <Vacio icono={Search} titulo="Nada coincide">
+            Prueba con otro nombre o cambia el filtro.
+          </Vacio>
+        ) : (
+          <div className="scroll-fino overflow-x-auto">
+            <table className="tabla tabla-clic">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Marca</th>
+                  <th>Nombre</th>
+                  <th>Categoría</th>
+                  <th className="text-right">Compra</th>
+                  <th className="text-right">Venta</th>
+                  <th className="text-right">Margen</th>
+                  <th className="text-right">Stock</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.id} onClick={() => alAbrir(i)} className={i.activo ? "" : "text-tinta/40"}>
+                    <td className="cifra font-semibold">{i.codigo}</td>
+                    <td className="text-tinta/65">{i.marca || <span className="text-tinta/30">—</span>}</td>
+                    <td>
+                      <span className="font-medium">{i.nombre}</span>
+                      {!i.activo ? (
+                        <span className="ml-2">
+                          <Pastilla>Desactivado</Pastilla>
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="text-tinta/65">{i.categoria}</td>
+                    <td className="cifra text-right text-tinta/55">{montoOAusente(i.costo)}</td>
+                    <td className="cifra text-right font-semibold">
+                      {i.precio === null ? (
+                        <span className="text-aviso">sin precio</span>
+                      ) : (
+                        aTextoConSimbolo(i.precio)
+                      )}
+                    </td>
+                    <td className="cifra text-right text-tinta/55">{margenLegible(margenDe(i))}</td>
+                    <td className="cifra text-right">
+                      {i.tipo === "PRODUCTO" ? (
+                        <span className={i.stock! < 0 ? "font-semibold text-mal" : ""}>{i.stock}</span>
+                      ) : (
+                        <span className="text-tinta/30">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {catalogo.isLoading ? (
-        <Vacio titulo="Cargando…" />
-      ) : todos.length === 0 ? (
-        <Vacio
-          icono={LayoutGrid}
-          titulo="El catálogo está vacío"
-          accion={
-            <button className="boton-primario" onClick={alNuevo}>
-              <Plus className="h-5 w-5" />
-              Crear el primer servicio o producto
+      {completandoPrecios ? (
+        <CompletarPrecios
+          items={todos.filter((i) => i.precio === null && i.activo)}
+          alCerrar={() => setCompletandoPrecios(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Margen de un ítem con los dos datos cargados. `null` si falta alguno. */
+function margenDe(i: Item): number | null {
+  if (i.precio === null || i.costo === null || i.precio === 0) return null;
+  return Math.round(((i.precio - i.costo) / i.precio) * 1000) / 10;
+}
+
+/**
+ * Poner precio a muchos ítems de una vez.
+ *
+ * Existe porque el catálogo del cliente llegó con 119 productos sin precio, y
+ * abrir 119 veces el formulario de edición no es una tarea que alguien vaya a
+ * terminar. Van agrupados por marca —que es como está ordenada la cabeza de
+ * quien los va a tipear, no alfabéticamente— y se guardan todos en una sola
+ * tanda: si algo falla, no queda la mitad hecha.
+ */
+function CompletarPrecios({ items, alCerrar }: { items: Item[]; alCerrar: () => void }) {
+  const qc = useQueryClient();
+  const [valores, setValores] = useState<Record<string, string>>({});
+
+  const escritos = Object.entries(valores)
+    .map(([itemId, texto]) => ({ itemId, precio: aCentimos(texto), texto }))
+    .filter((v) => v.texto.trim() !== "");
+  const invalidos = escritos.filter((v) => v.precio === null);
+  const listos = escritos.filter((v) => v.precio !== null) as { itemId: string; precio: number }[];
+
+  const guardar = useMutation({
+    mutationFn: () => api.post("/catalogo/precios", { precios: listos, motivo: "Carga de precios pendientes" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["catalogo"] });
+      qc.invalidateQueries({ queryKey: ["inventario"] });
+      alCerrar();
+    },
+  });
+
+  // Agrupados por marca, en el orden en que los va a tipear una persona que
+  // tiene los productos delante.
+  const porMarca = new Map<string, Item[]>();
+  for (const i of items) {
+    const clave = i.marca || "Sin marca";
+    porMarca.set(clave, [...(porMarca.get(clave) ?? []), i]);
+  }
+
+  const fallo = guardar.error as FalloDeApi | undefined;
+
+  return (
+    <Modal
+      titulo="Completar precios"
+      subtitulo={`${items.length} ${items.length === 1 ? "ítem" : "ítems"} sin precio de lista`}
+      alCerrar={alCerrar}
+      pie={
+        <div className="space-y-3">
+          {invalidos.length > 0 ? (
+            <p className="ayuda text-center text-mal">
+              {invalidos.length} {invalidos.length === 1 ? "precio no es un número" : "precios no son números"}. Escribe
+              solo la cifra, por ejemplo 35 o 35.50
+            </p>
+          ) : null}
+          <div className="flex items-center gap-3">
+            <span className="ayuda">
+              {listos.length === 0
+                ? "Escribe los precios que sepas; los demás pueden quedar para después."
+                : `${listos.length} ${listos.length === 1 ? "precio listo" : "precios listos"} para guardar`}
+            </span>
+            <button className="boton-suave ml-auto" onClick={alCerrar}>
+              Cancelar
             </button>
-          }
-        >
-          Carga los servicios de la barbería (cortes, barba…) y los productos que venden (ceras, trimmers…).
-        </Vacio>
-      ) : items.length === 0 ? (
-        <Vacio icono={Search} titulo="Nada coincide">
-          Prueba con otro nombre o cambia el filtro.
-        </Vacio>
-      ) : (
-        <div className="scroll-fino overflow-x-auto">
-          <table className="tabla tabla-clic">
-            <thead>
-              <tr>
-                <th>Código</th>
-                <th>Nombre</th>
-                <th>Categoría</th>
-                <th>Tipo</th>
-                <th className="text-right">Precio</th>
-                <th className="text-right">Stock</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.id} onClick={() => alAbrir(i)} className={i.activo ? "" : "text-tinta/40"}>
-                  <td className="cifra font-semibold">{i.codigo}</td>
-                  <td>
-                    <span className="font-medium">{i.nombre}</span>
-                    {!i.activo ? (
-                      <span className="ml-2">
-                        <Pastilla>Desactivado</Pastilla>
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="text-tinta/65">{i.categoria}</td>
-                  <td className="text-tinta/65">{i.tipo === "PRODUCTO" ? "Producto" : "Servicio"}</td>
-                  <td className="cifra text-right font-semibold">{aTextoConSimbolo(i.precio)}</td>
-                  <td className="cifra text-right">
-                    {i.tipo === "PRODUCTO" ? (
-                      <span className={i.stock! < 0 ? "font-semibold text-mal" : ""}>{i.stock}</span>
-                    ) : (
-                      <span className="text-tinta/30">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            <button
+              className="boton-primario"
+              disabled={listos.length === 0 || invalidos.length > 0 || guardar.isPending}
+              onClick={() => guardar.mutate()}
+            >
+              <Check className="h-5 w-5" />
+              {guardar.isPending ? "Guardando…" : `Guardar ${listos.length || ""}`.trim()}
+            </button>
+          </div>
         </div>
-      )}
-    </div>
+      }
+    >
+      <div className="space-y-6">
+        {fallo ? (
+          <Aviso tono="mal" titulo={fallo.message}>
+            {fallo.sugerencia}
+          </Aviso>
+        ) : null}
+
+        <p className="ayuda">
+          No hace falta completarlos todos de una vez: lo que guardes queda, y los que dejes vacíos siguen apareciendo
+          acá la próxima vez.
+        </p>
+
+        {[...porMarca.entries()].map(([marca, deLaMarca]) => (
+          <div key={marca}>
+            <h3 className="etiqueta mb-2 border-b border-linea pb-2">
+              {marca} · {deLaMarca.length}
+            </h3>
+            <div className="divide-y divide-linea">
+              {deLaMarca.map((i) => (
+                <div key={i.id} className="flex items-center gap-4 py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{i.nombre}</span>
+                    <span className="ayuda cifra">
+                      {i.codigo}
+                      {i.costo !== null ? ` · compra ${aTextoConSimbolo(i.costo)}` : ""}
+                      {i.tipo === "PRODUCTO" && i.stock !== null ? ` · ${i.stock} en stock` : ""}
+                    </span>
+                  </span>
+                  <div className="relative w-36 shrink-0">
+                    <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta/40">
+                      S/
+                    </span>
+                    <input
+                      className="campo cifra pl-10 text-right"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={valores[i.id] ?? ""}
+                      onChange={(e) => setValores((v) => ({ ...v, [i.id]: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
@@ -194,10 +405,12 @@ function FormularioDeItem({
   alCerrar: () => void;
   alGuardar: () => void;
 }) {
+  const [marca, setMarca] = useState(item?.marca ?? "");
   const [nombre, setNombre] = useState(item?.nombre ?? "");
   const [tipo, setTipo] = useState<"SERVICIO" | "PRODUCTO">(item?.tipo ?? "SERVICIO");
   const [categoria, setCategoria] = useState(item?.categoria ?? "");
-  const [precio, setPrecio] = useState(item ? aTexto(item.precio) : "");
+  const [precio, setPrecio] = useState(item?.precio != null ? aTexto(item.precio) : "");
+  const [costo, setCosto] = useState(item?.costo != null ? aTexto(item.costo) : "");
   const [stockMinimo, setStockMinimo] = useState(String(item?.stockMinimo ?? 0));
   const [stockInicial, setStockInicial] = useState("0");
 
@@ -207,18 +420,34 @@ function FormularioDeItem({
     enabled: !item,
   });
 
-  const centimos = aCentimos(precio);
+  // Vacío es válido en los dos precios y significa "no tiene / no se sabe", no
+  // cero. Lo que no es válido es escribir algo que no sea un número.
+  const sinPrecio = precio.trim() === "";
+  const sinCosto = costo.trim() === "";
+  const centimos = sinPrecio ? null : aCentimos(precio);
+  const centimosCosto = sinCosto ? null : aCentimos(costo);
+
   const faltan: string[] = [];
   if (!nombre.trim()) faltan.push("el nombre");
   if (!categoria.trim()) faltan.push("la categoría");
-  if (centimos === null || precio.trim() === "") faltan.push("el precio");
+
+  const malEscritos: string[] = [];
+  if (!sinPrecio && centimos === null) malEscritos.push("el precio de venta");
+  if (!sinCosto && centimosCosto === null) malEscritos.push("el precio de compra");
+
+  const margen =
+    centimos !== null && centimosCosto !== null && centimos > 0
+      ? Math.round(((centimos - centimosCosto) / centimos) * 1000) / 10
+      : null;
 
   const guardar = useMutation({
     mutationFn: async () => {
       const datos = {
+        marca: marca.trim(),
         nombre,
         categoria,
-        precio: centimos ?? 0,
+        precio: centimos,
+        costo: tipo === "PRODUCTO" ? centimosCosto : null,
         stockMinimo: tipo === "PRODUCTO" ? Number(stockMinimo) || 0 : undefined,
       };
       if (item) return api.patch(`/catalogo/${item.id}`, { ...datos, codigo: item.codigo });
@@ -248,6 +477,11 @@ function FormularioDeItem({
           {faltan.length > 0 ? (
             <p className="ayuda text-center">Para guardar falta {faltan.join(", ").replace(/, ([^,]*)$/, " y $1")}.</p>
           ) : null}
+          {malEscritos.length > 0 ? (
+            <p className="ayuda text-center text-mal">
+              Revisa {malEscritos.join(" y ")}: escribe solo el número, por ejemplo 35.50
+            </p>
+          ) : null}
           <div className="flex gap-3">
             {item ? (
               <button className={item.activo ? "boton-peligro" : "boton-suave"} onClick={() => desactivar.mutate()}>
@@ -259,7 +493,7 @@ function FormularioDeItem({
             </button>
             <button
               className="boton-primario"
-              disabled={faltan.length > 0 || guardar.isPending}
+              disabled={faltan.length > 0 || malEscritos.length > 0 || guardar.isPending}
               onClick={() => guardar.mutate()}
             >
               <Check className="h-5 w-5" />
@@ -307,33 +541,80 @@ function FormularioDeItem({
           </div>
         ) : null}
 
-        <Campo etiqueta="Nombre">
-          <input
-            className="campo"
-            autoFocus
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            placeholder={tipo === "SERVICIO" ? "Por ejemplo: Corte degradado" : "Por ejemplo: Cera mate"}
-          />
+        <div className="grid gap-4 sm:grid-cols-[14rem_1fr]">
+          <Campo
+            etiqueta="Marca"
+            ayuda={tipo === "SERVICIO" ? "Déjala vacía: el servicio lo hace la barbería." : "NIVEL TRES, FORAJIDO, VIDA POD…"}
+          >
+            <CampoMarca valor={marca} alCambiar={setMarca} />
+          </Campo>
+          <Campo etiqueta="Nombre">
+            <input
+              className="campo"
+              autoFocus
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder={tipo === "SERVICIO" ? "Por ejemplo: Corte degradado" : "Por ejemplo: Cera mate finish"}
+            />
+          </Campo>
+        </div>
+
+        {/* Cómo va a verse en el ticket y en la grilla de cobro. Se muestra
+            porque marca y nombre se escriben en dos campos y se leen juntos: sin
+            esto, nadie se da cuenta de que quedó "FORAJIDO FORAJIDO CERA". */}
+        {marca.trim() && nombre.trim() ? (
+          <p className="ayuda">
+            Se va a ver como <strong className="text-tinta">{`${marca.trim()} ${nombre.trim()}`}</strong>
+            {tipo === "SERVICIO" ? " en pantalla; en el ticket, solo el nombre." : " en pantalla y en el ticket."}
+          </p>
+        ) : null}
+
+        <Campo etiqueta="Categoría" ayuda="Agrupa los botones en la pantalla de cobro.">
+          <CampoCategoria valor={categoria} alCambiar={setCategoria} />
         </Campo>
 
         <div className="grid grid-cols-2 gap-4">
-          <Campo etiqueta="Categoría">
-            <CampoCategoria valor={categoria} alCambiar={setCategoria} />
-          </Campo>
-          <Campo etiqueta="Precio">
+          <Campo
+            etiqueta="Precio de venta"
+            ayuda={sinPrecio ? "Vacío: habrá que escribirlo al cobrar." : "A cuánto se vende."}
+          >
             <div className="relative">
               <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-tinta/40">S/</span>
               <input
-                className="campo cifra pl-11 text-right"
+                className={`campo cifra pl-11 text-right ${sinPrecio ? "border-aviso" : ""}`}
                 value={precio}
                 inputMode="decimal"
                 onChange={(e) => setPrecio(e.target.value)}
-                placeholder="0.00"
+                placeholder="sin precio"
               />
             </div>
           </Campo>
+
+          {tipo === "PRODUCTO" ? (
+            <Campo etiqueta="Precio de compra" ayuda="A cuánto lo compras. Es la base del margen.">
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-tinta/40">S/</span>
+                <input
+                  className="campo cifra pl-11 text-right"
+                  value={costo}
+                  inputMode="decimal"
+                  onChange={(e) => setCosto(e.target.value)}
+                  placeholder="no lo sé"
+                />
+              </div>
+            </Campo>
+          ) : null}
         </div>
+
+        {/* El margen en vivo: es lo que convierte dos números sueltos en una
+            decisión. Y avisa del dedo más común, invertir compra y venta. */}
+        {margen !== null ? (
+          <p className={`ayuda ${margen < 0 ? "text-mal" : ""}`}>
+            {margen < 0
+              ? `Cuidado: se vendería a pérdida, ${aTextoConSimbolo(centimosCosto! - centimos!)} por unidad. ¿Están invertidos los precios?`
+              : `Ganancia de ${aTextoConSimbolo(centimos! - centimosCosto!)} por unidad · margen ${margen}%`}
+          </p>
+        ) : null}
 
         {tipo === "PRODUCTO" ? (
           <div className="grid grid-cols-2 gap-4">
@@ -373,7 +654,8 @@ function FormularioDeItem({
 
         {item ? (
           <p className="ayuda">
-            Cambiar el precio no afecta a las ventas ya hechas: cada una guardó el precio al que se vendió.
+            Cambiar el precio o el costo no afecta a las ventas ya hechas: cada una guardó el precio al que se vendió y
+            el costo que el producto tenía ese día.
           </p>
         ) : null}
       </div>
@@ -389,15 +671,73 @@ function FormularioDeItem({
  * (el servidor aplica la misma regla, así que no se cuela ningún duplicado).
  */
 function CampoCategoria({ valor, alCambiar }: { valor: string; alCambiar: (v: string) => void }) {
+  const categorias = useQuery({
+    queryKey: ["catalogo", "categorias"],
+    queryFn: () => api.get<RespuestaCatalogo>("/catalogo?incluirInactivos=true"),
+  });
+
+  return (
+    <CampoConSugerencias
+      valor={valor}
+      alCambiar={alCambiar}
+      opciones={categorias.data?.categorias ?? []}
+      placeholder="Elige o escribe"
+      nombreSingular="categoría"
+      capitalizar
+    />
+  );
+}
+
+/**
+ * Marca con autocompletado.
+ *
+ * Elegir de la lista en vez de teclear es lo que evita que "NIVEL TRES" y
+ * "NIVEL TRES " terminen siendo dos marcas. El servidor unifica igual, pero verlo
+ * antes de guardar ahorra la sorpresa.
+ */
+function CampoMarca({ valor, alCambiar }: { valor: string; alCambiar: (v: string) => void }) {
+  const catalogo = useQuery({
+    queryKey: ["catalogo", "marcas"],
+    queryFn: () => api.get<RespuestaCatalogo>("/catalogo?incluirInactivos=true"),
+  });
+
+  return (
+    <CampoConSugerencias
+      valor={valor}
+      alCambiar={alCambiar}
+      opciones={(catalogo.data?.marcas ?? []).map((m) => m.marca)}
+      placeholder="Sin marca"
+      nombreSingular="marca"
+    />
+  );
+}
+
+/**
+ * Un campo de texto con las opciones que ya existen al alcance.
+ *
+ * Es el mismo comportamiento para marca y categoría, y estaba escrito dos veces
+ * en versiones anteriores de esta pantalla: la segunda copia se desincronizaba
+ * de la primera cada vez que se corregía algo del despliegue.
+ */
+function CampoConSugerencias({
+  valor,
+  alCambiar,
+  opciones,
+  placeholder,
+  nombreSingular,
+  capitalizar = false,
+}: {
+  valor: string;
+  alCambiar: (v: string) => void;
+  opciones: string[];
+  placeholder: string;
+  nombreSingular: string;
+  capitalizar?: boolean;
+}) {
   const [abierto, setAbierto] = useState(false);
   const refCampo = useRef<HTMLInputElement>(null);
 
-  const categorias = useQuery({
-    queryKey: ["catalogo", "categorias"],
-    queryFn: () => api.get<{ categorias: string[] }>("/catalogo?incluirInactivos=true"),
-  });
-
-  const todas = categorias.data?.categorias ?? [];
+  const todas = opciones;
   const clave = normalizar(valor);
   const filtradas = clave ? todas.filter((c) => normalizar(c).includes(clave)) : todas;
   const exacta = clave ? todas.find((c) => normalizar(c) === clave) : undefined;
@@ -418,7 +758,7 @@ function CampoCategoria({ valor, alCambiar }: { valor: string; alCambiar: (v: st
         className="campo"
         value={valor}
         autoComplete="off"
-        placeholder="Elige o escribe"
+        placeholder={placeholder}
         onFocus={() => setAbierto(true)}
         onClick={() => setAbierto(true)}
         onChange={(e) => {
@@ -468,8 +808,10 @@ function CampoCategoria({ valor, alCambiar }: { valor: string; alCambiar: (v: st
           ))}
           {limpio && !exacta ? (
             <div className={`ayuda px-4 py-3 ${filtradas.length ? "border-t border-linea" : ""}`}>
-              {filtradas.length ? "Si no eliges una, se crea la categoría " : "Se crea la categoría nueva "}
-              <strong className="text-tinta">{limpio.charAt(0).toUpperCase() + limpio.slice(1)}</strong>
+              {filtradas.length ? `Si no eliges una, se crea la ${nombreSingular} ` : `Se crea la ${nombreSingular} nueva `}
+              <strong className="text-tinta">
+                {capitalizar ? limpio.charAt(0).toUpperCase() + limpio.slice(1) : limpio}
+              </strong>
             </div>
           ) : exacta && exacta !== valor ? (
             <div className="ayuda border-t border-linea px-4 py-3">

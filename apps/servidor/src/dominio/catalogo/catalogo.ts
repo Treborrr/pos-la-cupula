@@ -62,13 +62,42 @@ export function categoriaCanonica(p: Proyeccion, texto: string, sinContar?: stri
   return limpio.charAt(0).toLocaleUpperCase("es") + limpio.slice(1);
 }
 
+/**
+ * Unifica cómo se escribe una marca, igual que `categoriaCanonica`.
+ *
+ * Hace falta por lo que trae la planilla real: "NIVEL TRES " con espacio al final
+ * en seis filas, "WAHL " en tres, "ROCIADOR " en dos. Sin unificar, el filtro
+ * por marca mostraría "NIVEL TRES" y "NIVEL TRES " como dos marcas distintas con
+ * tres productos cada una, y el reporte de ventas por marca partiría los
+ * números de la misma marca en dos filas.
+ *
+ * Se adopta la forma que YA estaba en el catálogo: si alguien cargó "Level 3"
+ * y mañana escribe "NIVEL TRES", los productos siguen agrupados bajo la primera.
+ */
+export function marcaCanonica(p: Proyeccion, texto: string, sinContar?: string): string {
+  const limpio = String(texto ?? "").trim().replace(/\s+/g, " ");
+  const clave = normalizar(limpio);
+  if (!clave) return "";
+
+  for (const item of p.items.values()) {
+    if (item.id === sinContar) continue;
+    if (normalizar(item.marca) === clave) return item.marca;
+  }
+  return limpio;
+}
+
 export interface ItemNuevo {
   /** Vacío u omitido: lo genera el servidor (ver `siguienteCodigo`). */
   codigo?: string;
+  /** Marca comercial. Vacío en los servicios del local. */
+  marca?: string;
   nombre: string;
   tipo: TipoItem;
   categoria: string;
-  precio: Centimos;
+  /** `null` = se crea sin precio y habrá que ponérselo antes de venderlo. */
+  precio: Centimos | null;
+  /** Precio de compra. Siembra el costo promedio del producto. */
+  costo?: Centimos | null;
   stockMinimo?: number;
   orden?: number;
   /** Stock con el que arranca un PRODUCTO. Se escribe como entrada aparte. */
@@ -95,10 +124,12 @@ export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNue
       datos: {
         itemId,
         codigo,
+        marca: marcaCanonica(p, nuevo.marca ?? ""),
         nombre: nuevo.nombre.trim(),
         tipo: nuevo.tipo,
         categoria: categoriaCanonica(p, nuevo.categoria),
         precio: nuevo.precio,
+        costo: nuevo.tipo === "PRODUCTO" ? (nuevo.costo ?? null) : null,
         stockMinimo: nuevo.tipo === "PRODUCTO" ? (nuevo.stockMinimo ?? 0) : undefined,
         orden: nuevo.orden,
       },
@@ -111,6 +142,7 @@ export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNue
       datos: {
         itemId,
         cantidad: nuevo.stockInicial,
+        costoUnitario: nuevo.costo ?? undefined,
         motivo: "Stock inicial al crear el producto",
       },
     });
@@ -121,12 +153,18 @@ export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNue
 
 export interface CambiosDeItem {
   codigo?: string;
+  /** Cadena vacía = quitarle la marca. Ausente = no tocarla. */
+  marca?: string;
   nombre?: string;
   categoria?: string;
-  precio?: Centimos;
+  /** `null` = dejarlo SIN precio. Ausente = no tocar el precio. */
+  precio?: Centimos | null;
+  /** `null` = dejarlo sin costo conocido. Ausente = no tocar el costo. */
+  costo?: Centimos | null;
   stockMinimo?: number;
   orden?: number;
   motivoPrecio?: string;
+  motivoCosto?: string;
 }
 
 export function actualizarItem(p: Proyeccion, itemId: string, cambios: CambiosDeItem): EventoNuevo[] {
@@ -150,6 +188,7 @@ export function actualizarItem(p: Proyeccion, itemId: string, cambios: CambiosDe
 
   const tocaDatos =
     (codigo !== undefined && codigo !== item.codigo) ||
+    cambios.marca !== undefined ||
     cambios.nombre !== undefined ||
     cambios.categoria !== undefined ||
     cambios.stockMinimo !== undefined ||
@@ -161,9 +200,11 @@ export function actualizarItem(p: Proyeccion, itemId: string, cambios: CambiosDe
       datos: {
         itemId,
         codigo: codigo !== item.codigo ? codigo : undefined,
+        // `sinContar` es este mismo ítem: si no, al renombrar su marca o su
+        // categoría se adoptaría su propia forma vieja y el cambio no tendría
+        // efecto — corregir "NIVEL TRES " a "NIVEL TRES" no haría nada.
+        marca: cambios.marca === undefined ? undefined : marcaCanonica(p, cambios.marca, itemId),
         nombre: cambios.nombre?.trim(),
-        // `sinContar` es este mismo ítem: si no, al renombrar su categoría se
-        // adoptaría su propia forma vieja y el cambio no tendría efecto.
         categoria: cambios.categoria === undefined ? undefined : categoriaCanonica(p, cambios.categoria, itemId),
         stockMinimo: cambios.stockMinimo,
         orden: cambios.orden,
@@ -181,6 +222,20 @@ export function actualizarItem(p: Proyeccion, itemId: string, cambios: CambiosDe
         precioAnterior: item.precio,
         precioNuevo: cambios.precio,
         motivo: cambios.motivoPrecio,
+      },
+    });
+  }
+
+  // El costo, por la misma razón: sin su historia no se puede explicar por qué
+  // el margen de un producto cambió de un mes al otro.
+  if (cambios.costo !== undefined && cambios.costo !== item.costo) {
+    eventos.push({
+      tipo: "item.costo_cambiado",
+      datos: {
+        itemId,
+        costoAnterior: item.costo,
+        costoNuevo: cambios.costo,
+        motivo: cambios.motivoCosto,
       },
     });
   }

@@ -248,6 +248,85 @@ describe("ticket completo", () => {
     expect(texto).toContain("[IMAGEN]"); // el logo y el QR en bitmap
   });
 
+  it("imprime la marca en los productos y NO en los servicios", async () => {
+    // Los servicios los hace La Cúpula y su nombre ya está tres centímetros
+    // más arriba, en el encabezado: repetirlo en cada línea gasta papel para
+    // decir algo que el cliente ya leyó. En un producto es al revés — la marca
+    // es justo lo que distingue el TALCO de DON NISH del de SIRMAN.
+    const venta = ventaDePrueba({
+      lineas: [
+        {
+          itemId: "01K5A0000000000000000000A1",
+          codigo: "COR-D",
+          marca: "LA CÚPULA",
+          nombre: "CORTE DEGRADADO",
+          tipo: "SERVICIO",
+          cantidad: 1,
+          precioUnitario: 2500,
+          precioLista: 2500,
+          barberoId: null,
+          total: 2500,
+        },
+        {
+          itemId: "01K5A0000000000000000000A2",
+          codigo: "P0031",
+          marca: "DON NISH",
+          nombre: "TALCO",
+          tipo: "PRODUCTO",
+          cantidad: 1,
+          precioUnitario: 1500,
+          precioLista: 1500,
+          costoUnitario: 900,
+          barberoId: null,
+          total: 1500,
+        },
+      ],
+      subtotal: 4000,
+      total: 4000,
+      pagos: [{ medio: "EFECTIVO", monto: 4000 }],
+    });
+
+    const texto = textoDe(await renderTicketEscPos(venta, NEGOCIO, { perfil: PERFIL_GENERICO_80 }));
+
+    expect(texto).toContain("DON NISH TALCO");
+    // El servicio sale limpio: su marca no viaja al papel.
+    expect(texto).toContain("CORTE DEGRADADO");
+    expect(texto).not.toMatch(/C.PULA CORTE DEGRADADO/);
+  });
+
+  it("parte por palabra el nombre de un vape que no cabe en el papel", async () => {
+    // "VIDA POD CARTUCHO LP WATERMELON PEACH ICE" son 41 caracteres y el perfil
+    // de 58 mm tiene 32 columnas. Truncarlo dejaría al cliente con un ticket
+    // que no dice qué compró.
+    const venta = ventaDePrueba({
+      lineas: [
+        {
+          itemId: "01K5A0000000000000000000A3",
+          codigo: "P0088",
+          marca: "VIDA POD",
+          nombre: "CARTUCHO LP WATERMELON PEACH ICE",
+          tipo: "PRODUCTO",
+          cantidad: 1,
+          precioUnitario: 2500,
+          precioLista: 2500,
+          barberoId: null,
+          total: 2500,
+        },
+      ],
+      subtotal: 2500,
+      total: 2500,
+      pagos: [{ medio: "EFECTIVO", monto: 2500 }],
+    });
+
+    const texto = textoDe(await renderTicketEscPos(venta, NEGOCIO, { perfil: PERFIL_GENERICO_58 }));
+
+    // Está entero, repartido en renglones, y ninguna palabra quedó cortada.
+    for (const palabra of ["LIFE", "POD", "CARTUCHO", "WATERMELON", "PEACH", "ICE"]) {
+      expect(texto).toContain(palabra);
+    }
+    expect(texto).not.toContain("WATERME\n");
+  });
+
   it("termina en un comando de corte", async () => {
     // `GS V 66 0` — corte parcial, cuatro bytes.
     const bytes = await renderTicketEscPos(ventaDePrueba(), NEGOCIO, { perfil: PERFIL_GENERICO_80 });

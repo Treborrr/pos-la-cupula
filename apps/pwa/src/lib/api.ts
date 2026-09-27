@@ -88,10 +88,17 @@ export const api = {
 export interface Item {
   id: string;
   codigo: string;
+  /** Marca comercial. Cadena vacía = sin marca (los servicios, casi siempre). */
+  marca: string;
   nombre: string;
+  /** "MARCA NOMBRE" ya armado por el servidor, para que todas las pantallas coincidan. */
+  nombreCompleto: string;
   tipo: "SERVICIO" | "PRODUCTO";
   categoria: string;
-  precio: number;
+  /** `null` = todavía sin precio de lista. Hay que escribirlo al cobrar. */
+  precio: number | null;
+  /** Costo promedio ponderado. `null` = no se sabe a cuánto se compra. */
+  costo: number | null;
   stockMinimo: number;
   orden: number;
   activo: boolean;
@@ -101,11 +108,15 @@ export interface Item {
 export interface LineaVenta {
   itemId: string;
   codigo: string;
+  marca?: string;
   nombre: string;
   tipo: "SERVICIO" | "PRODUCTO";
   cantidad: number;
   precioUnitario: number;
-  precioLista: number;
+  /** `null` = el ítem no tenía precio y se escribió al cobrar. */
+  precioLista: number | null;
+  /** Costo congelado al momento de vender. `null` = no se conocía. */
+  costoUnitario?: number | null;
   barberoId: string | null;
   total: number;
 }

@@ -15,13 +15,25 @@ import type { Item } from "../lib/api";
 export interface LineaDelTicket {
   itemId: string;
   codigo: string;
+  marca: string;
   nombre: string;
   tipo: "SERVICIO" | "PRODUCTO";
   cantidad: number;
   /** Lo que se va a cobrar por unidad. Editable. */
   precioUnitario: number;
-  /** Lo que dice la lista. Si difieren, la pantalla lo marca. */
-  precioLista: number;
+  /**
+   * Lo que dice la lista. Si difieren, la pantalla lo marca.
+   *
+   * `null` = el ítem no tiene precio de lista y el de esta línea se escribió a
+   * mano. No hay nada contra qué compararlo, así que la pantalla no lo marca
+   * como "modificado" — no se modificó nada, se completó lo que faltaba.
+   */
+  precioLista: number | null;
+}
+
+/** Cómo se nombra una línea en pantalla: con la marca adelante si la tiene. */
+export function nombreDeLinea(l: Pick<LineaDelTicket, "marca" | "nombre">): string {
+  return l.marca ? `${l.marca} ${l.nombre}` : l.nombre;
 }
 
 interface EstadoCarrito {
@@ -47,7 +59,11 @@ interface EstadoCarrito {
    */
   claveIdempotencia: string;
 
-  agregar: (item: Item, cantidad?: number) => void;
+  /**
+   * `precioAbierto` es obligatorio cuando el ítem no tiene precio de lista.
+   * Sin él, el ítem no se agrega — es lo que evita cobrar S/ 0 por accidente.
+   */
+  agregar: (item: Item, cantidad?: number, precioAbierto?: number) => void;
   cambiarCantidad: (indice: number, cantidad: number) => void;
   cambiarPrecio: (indice: number, precio: number) => void;
   quitar: (indice: number) => void;
@@ -69,14 +85,18 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
   notas: "",
   claveIdempotencia: ulid(),
 
-  agregar: (item, cantidad = 1) =>
+  agregar: (item, cantidad = 1, precioAbierto) =>
     set((s) => {
-      // Si el ítem ya está, SUMA cantidad en vez de crear una línea repetida.
-      // El Excel creaba una fila por cada vez que se tecleaba el código, y los
-      // tickets terminaban con "CORTE CLASICO" cuatro veces seguidas.
-      const existente = s.lineas.findIndex(
-        (l) => l.itemId === item.id && l.precioUnitario === item.precio,
-      );
+      // Un ítem sin precio de lista necesita el precio de esta venta. Si no
+      // llegó, no se agrega: la pantalla tiene que pedirlo primero. Caer en 0
+      // acá sería meter un regalo en el ticket sin que nadie lo decida.
+      const precio = item.precio ?? precioAbierto;
+      if (precio === undefined || precio === null) return s;
+
+      // Si el ítem ya está AL MISMO PRECIO, suma cantidad en vez de crear una
+      // línea repetida. El Excel creaba una fila por cada vez que se tecleaba el
+      // código, y los tickets terminaban con "CORTE CLASICO" cuatro veces.
+      const existente = s.lineas.findIndex((l) => l.itemId === item.id && l.precioUnitario === precio);
 
       if (existente >= 0) {
         const lineas = [...s.lineas];
@@ -93,10 +113,11 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
           {
             itemId: item.id,
             codigo: item.codigo,
+            marca: item.marca ?? "",
             nombre: item.nombre,
             tipo: item.tipo,
             cantidad,
-            precioUnitario: item.precio,
+            precioUnitario: precio,
             precioLista: item.precio,
           },
         ],

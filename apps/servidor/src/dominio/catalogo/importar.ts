@@ -15,15 +15,19 @@
  *
  * El otro modo, AGREGAR, no toca lo que no esté en el archivo.
  *
- * La comparación es por CÓDIGO. Si la fila no trae código, se busca por nombre
- * normalizado antes de crear uno nuevo: cargar dos veces la misma planilla no
- * debe duplicar el catálogo.
+ * LA COMPARACIÓN ES POR MARCA + NOMBRE + TIPO. Antes era por código, pero la
+ * planilla que el cliente usa no tiene columna de código —el sistema los genera
+ * solos— así que la identidad tiene que salir de lo que la planilla sí trae. La
+ * marca va en la clave y no es un detalle: en este catálogo hay un TALCO de
+ * DON NISH y otro de SIRMAN, y comparando solo por nombre la segunda carga
+ * pisaría un producto con el otro.
  */
 
 import { normalizar, type EventoNuevo } from "@cupula/contratos";
 
 import type { Proyeccion } from "../../proyecciones/Proyeccion";
-import { categoriaCanonica, siguienteCodigo } from "./catalogo";
+import type { Item } from "../../proyecciones/tipos";
+import { categoriaCanonica, marcaCanonica, siguienteCodigo } from "./catalogo";
 import { ulid } from "ulid";
 
 /**
@@ -36,13 +40,15 @@ import { ulid } from "ulid";
 export interface FilaDeCatalogo {
   /** Número de fila en el archivo, para poder señalar el error donde está. */
   fila: number;
-  /** Vacío = el sistema lo genera. */
-  codigo: string;
+  /** Marca comercial. Vacío en los servicios propios del local. */
+  marca: string;
   nombre: string;
   tipo: "SERVICIO" | "PRODUCTO";
   categoria: string;
-  /** En céntimos enteros, como todo monto del sistema. */
-  precio: number;
+  /** En céntimos enteros. `null` = todavía sin precio de lista. */
+  precio: number | null;
+  /** Precio de compra en céntimos. `null` = no declarado. */
+  costo: number | null;
   stock: number | null;
   stockMinimo: number | null;
 }
@@ -62,7 +68,19 @@ export interface PlanDeImportacion {
   cambios: CambioDeImportacion[];
   /** Ítems que hoy están activos y NO vienen en el archivo. */
   aDesactivar: { codigo: string; nombre: string }[];
-  resumen: { crear: number; actualizar: number; reactivar: number; sinCambios: number; desactivar: number };
+  resumen: {
+    crear: number;
+    actualizar: number;
+    reactivar: number;
+    sinCambios: number;
+    desactivar: number;
+    /**
+     * Cuántas filas entran sin precio. Se cuenta aparte porque es lo primero
+     * que hay que decirle a quien autoriza la carga: esos ítems van a existir
+     * pero no se van a poder vender de la grilla sin escribirles un precio.
+     */
+    sinPrecio: number;
+  };
 }
 
 /**
@@ -87,17 +105,30 @@ export function planificarImportacion(
     if (!existente) {
       cambios.push({
         fila: fila.fila,
-        codigo: fila.codigo || "(automático)",
-        nombre: fila.nombre,
+        codigo: "(automático)",
+        nombre: nombreDeFila(fila),
         accion: "crear",
-        detalle: [`${fila.tipo.toLowerCase()} · ${fila.categoria} · ${soles(fila.precio)}`],
+        detalle: [
+          `${fila.tipo.toLowerCase()} · ${fila.categoria} · ${fila.precio === null ? "SIN PRECIO" : soles(fila.precio)}`,
+        ],
       });
       continue;
     }
 
     const detalle: string[] = [];
     if (existente.nombre !== fila.nombre) detalle.push(`nombre: "${existente.nombre}" → "${fila.nombre}"`);
-    if (existente.precio !== fila.precio) detalle.push(`precio: ${soles(existente.precio)} → ${soles(fila.precio)}`);
+    if (normalizar(existente.marca) !== normalizar(fila.marca)) {
+      detalle.push(`marca: ${existente.marca || "(sin marca)"} → ${fila.marca || "(sin marca)"}`);
+    }
+    // Igual que al aplicar: una celda de precio vacía no cambia nada, así que
+    // tampoco se anuncia como cambio. Un plan que promete lo que no va a hacer
+    // es peor que no tener plan.
+    if (fila.precio !== null && existente.precio !== fila.precio) {
+      detalle.push(`precio: ${precioEnPalabras(existente.precio)} → ${soles(fila.precio)}`);
+    }
+    if (fila.costo !== null && existente.costo !== fila.costo) {
+      detalle.push(`costo: ${precioEnPalabras(existente.costo)} → ${soles(fila.costo)}`);
+    }
     if (normalizar(existente.categoria) !== normalizar(fila.categoria)) {
       detalle.push(`categoría: ${existente.categoria} → ${fila.categoria}`);
     }
@@ -110,14 +141,14 @@ export function planificarImportacion(
     }
 
     const accion = !existente.activo ? "reactivar" : detalle.length > 0 ? "actualizar" : "sin cambios";
-    cambios.push({ fila: fila.fila, codigo: existente.codigo, nombre: fila.nombre, accion, detalle });
+    cambios.push({ fila: fila.fila, codigo: existente.codigo, nombre: nombreDeFila(fila), accion, detalle });
   }
 
   const aDesactivar =
     modo === "reemplazar"
       ? [...p.items.values()]
           .filter((i) => i.activo && !tocados.has(i.id))
-          .map((i) => ({ codigo: i.codigo, nombre: i.nombre }))
+          .map((i) => ({ codigo: i.codigo, nombre: p.nombreCompleto(i) }))
       : [];
 
   return {
@@ -129,6 +160,14 @@ export function planificarImportacion(
       reactivar: cambios.filter((c) => c.accion === "reactivar").length,
       sinCambios: cambios.filter((c) => c.accion === "sin cambios").length,
       desactivar: aDesactivar.length,
+      // Cuántas filas van a QUEDAR sin precio, no cuántas celdas vienen vacías.
+      // Un ítem que ya tiene precio en el sistema y llega con la celda vacía no
+      // se queda sin precio: la planilla no borra precios.
+      sinPrecio: filas.filter((f) => {
+        if (f.precio !== null) return false;
+        const existente = buscarExistente(p, f);
+        return !existente || existente.precio === null;
+      }).length,
     },
   };
 }
@@ -161,6 +200,8 @@ export function importarCatalogo(
     return c;
   };
 
+  const MOTIVO = "Importación de catálogo desde planilla";
+
   for (const fila of filas) {
     const existente = buscarExistente(p, fila);
 
@@ -170,18 +211,27 @@ export function importarCatalogo(
         tipo: "item.creado",
         datos: {
           itemId,
-          codigo: fila.codigo || codigoLibre(fila.tipo),
+          codigo: codigoLibre(fila.tipo),
+          marca: marcaCanonica(p, fila.marca),
           nombre: fila.nombre,
           tipo: fila.tipo,
           categoria: categoriaCanonica(p, fila.categoria),
           precio: fila.precio,
+          costo: fila.costo,
           stockMinimo: fila.tipo === "PRODUCTO" ? (fila.stockMinimo ?? 0) : undefined,
         },
       });
       if (fila.tipo === "PRODUCTO" && fila.stock !== null && fila.stock > 0) {
         eventos.push({
           tipo: "stock.entrada",
-          datos: { itemId, cantidad: fila.stock, motivo: "Carga inicial desde planilla" },
+          datos: {
+            itemId,
+            cantidad: fila.stock,
+            // El costo viaja también en la entrada para que el kardex diga a
+            // cuánto entraron esas unidades, no solo cuántas.
+            costoUnitario: fila.costo ?? undefined,
+            motivo: "Carga inicial desde planilla",
+          },
         });
       }
       continue;
@@ -193,6 +243,7 @@ export function importarCatalogo(
 
     const cambios: Record<string, unknown> = {};
     if (existente.nombre !== fila.nombre) cambios.nombre = fila.nombre;
+    if (normalizar(existente.marca) !== normalizar(fila.marca)) cambios.marca = marcaCanonica(p, fila.marca);
     if (normalizar(existente.categoria) !== normalizar(fila.categoria)) cambios.categoria = fila.categoria;
     if (fila.stockMinimo !== null && existente.stockMinimo !== fila.stockMinimo) {
       cambios.stockMinimo = fila.stockMinimo;
@@ -202,15 +253,42 @@ export function importarCatalogo(
     }
 
     // El precio va en su propio evento, con el anterior al lado: es lo que
-    // permite auditar después quién cambió cuánto.
-    if (existente.precio !== fila.precio) {
+    // permite auditar después quién cambió cuánto. Ponerle precio por primera
+    // vez a un ítem que no lo tenía es un cambio de precio como cualquier otro.
+    //
+    // UNA CELDA VACÍA NO BORRA EL PRECIO. Es la misma regla que el costo, y hace
+    // falta de verdad: el cliente cargó su catálogo con 119 productos sin
+    // precio, los va completando desde la pantalla de Catálogo, y en algún
+    // momento va a volver a subir su planilla —la de siempre, con esas celdas
+    // todavía vacías— para agregar productos nuevos. Si la celda vacía se
+    // interpretara como "déjalo sin precio", esa carga destruiría en silencio
+    // todo el trabajo de completarlos. La planilla puede PONER precios; para
+    // quitarle el precio a un ítem está la pantalla de Catálogo, donde se ve lo
+    // que se está haciendo.
+    if (fila.precio !== null && existente.precio !== fila.precio) {
       eventos.push({
         tipo: "item.precio_cambiado",
         datos: {
           itemId: existente.id,
           precioAnterior: existente.precio,
           precioNuevo: fila.precio,
-          motivo: "Importación de catálogo desde planilla",
+          motivo: MOTIVO,
+        },
+      });
+    }
+
+    // El costo solo se toca si la planilla LO TRAE. Una celda PRECIO COMPRA
+    // vacía significa "no lo sé", no "vale cero": borrarle el costo a un
+    // producto porque esta vez no lo escribieron destruiría el margen
+    // histórico de un ítem que sí estaba bien cargado.
+    if (fila.costo !== null && existente.costo !== fila.costo) {
+      eventos.push({
+        tipo: "item.costo_cambiado",
+        datos: {
+          itemId: existente.id,
+          costoAnterior: existente.costo,
+          costoNuevo: fila.costo,
+          motivo: MOTIVO,
         },
       });
     }
@@ -226,7 +304,7 @@ export function importarCatalogo(
             itemId: existente.id,
             cantidadContada: fila.stock,
             cantidadSistema: actual,
-            motivo: "Importación de catálogo desde planilla",
+            motivo: MOTIVO,
           },
         });
       }
@@ -247,19 +325,52 @@ export function importarCatalogo(
   return eventos;
 }
 
-/** Por código si lo trae; si no, por nombre normalizado, para no duplicar. */
-function buscarExistente(p: Proyeccion, fila: FilaDeCatalogo) {
-  if (fila.codigo) {
-    for (const item of p.items.values()) {
-      if (item.codigo === fila.codigo) return item;
-    }
-    return undefined;
-  }
-  const clave = normalizar(fila.nombre);
+/**
+ * Busca el ítem que esta fila representa: por MARCA + NOMBRE + TIPO.
+ *
+ * Mira también los desactivados a propósito: volver a cargar una planilla con
+ * un producto que se había dado de baja tiene que REACTIVARLO con su mismo id
+ * —conservando su historial de ventas— y no crear un duplicado al lado.
+ */
+function buscarExistente(p: Proyeccion, fila: FilaDeCatalogo): Item | undefined {
+  const marca = normalizar(fila.marca);
+  const nombre = normalizar(fila.nombre);
+
+  const mismoNombre: Item[] = [];
   for (const item of p.items.values()) {
-    if (normalizar(item.nombre) === clave && item.tipo === fila.tipo) return item;
+    if (item.tipo !== fila.tipo) continue;
+    if (normalizar(item.nombre) !== nombre) continue;
+    if (normalizar(item.marca) === marca) return item; // coincidencia exacta
+    mismoNombre.push(item);
   }
+
+  /**
+   * Uno de los dos lados no tiene marca y el otro sí, y hay UN SOLO candidato
+   * con ese nombre. Casi siempre es la misma cosa: alguien está completando las
+   * marcas de un catálogo que cargó sin ellas, o se las está quitando. Tratarlo
+   * como un producto nuevo duplicaría el catálogo entero en la carga siguiente.
+   *
+   * La condición de que haya UN SOLO candidato es lo que hace esto seguro. Con
+   * dos o más —el TALCO de DON NISH y el de SIRMAN— no hay forma de saber a
+   * cuál se refiere una fila que dice solo "TALCO", y adivinar fusionaría dos
+   * productos distintos. En ese caso se crea uno nuevo: un ítem de más se ve y
+   * se corrige, una fusión silenciosa mezcla el historial de ventas de dos
+   * productos y no se deshace.
+   */
+  if (mismoNombre.length === 1) {
+    const unico = mismoNombre[0];
+    if (marca === "" || normalizar(unico.marca) === "") return unico;
+  }
+
   return undefined;
+}
+
+function nombreDeFila(fila: FilaDeCatalogo): string {
+  return fila.marca ? `${fila.marca} ${fila.nombre}` : fila.nombre;
+}
+
+function precioEnPalabras(centimos: number | null): string {
+  return centimos === null ? "SIN PRECIO" : soles(centimos);
 }
 
 function soles(centimos: number): string {

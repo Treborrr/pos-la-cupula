@@ -5,7 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { coincide } from "@cupula/contratos";
+import { coincide, normalizar } from "@cupula/contratos";
 import {
   actualizarItem,
   crearItem,
@@ -37,39 +37,64 @@ export const booleanoDeQuery = () =>
 const esquemaItemNuevo = z.object({
   // Vacío u omitido: lo genera el servidor (ver `siguienteCodigo`).
   codigo: z.string().trim().max(24).optional(),
+  marca: z.string().trim().max(40).optional(),
   nombre: z.string().trim().min(1).max(80),
   tipo: z.enum(["SERVICIO", "PRODUCTO"]),
   categoria: z.string().trim().min(1).max(40),
-  precio: z.number().int().min(0),
+  /**
+   * `null` u omitido = se crea sin precio y habrá que ponérselo antes de
+   * venderlo. Se admite omitirlo porque "sin precio" es un estado válido del
+   * catálogo, y obligar a mandar `precio: null` explícitamente sería pedirle
+   * ceremonia a quien carga ítems desde un script.
+   */
+  precio: z.number().int().min(0).nullable().optional().default(null),
+  costo: z.number().int().min(0).nullable().optional(),
   stockMinimo: z.number().min(0).optional(),
   stockInicial: z.number().min(0).optional(),
   orden: z.number().int().min(0).optional(),
 });
 
+/**
+ * Cambios sobre un ítem. Campo ausente = no tocar; `null` en precio o costo =
+ * dejarlo sin valor.
+ *
+ * La distinción importa: si `precio: null` se tratara como "no tocar", no habría
+ * forma de quitarle el precio a un ítem, y si `undefined` se tratara como null,
+ * un PATCH que solo cambia el nombre le borraría el precio.
+ */
 const esquemaCambios = z.object({
   codigo: z.string().trim().min(1).max(24).optional(),
+  marca: z.string().trim().max(40).optional(),
   nombre: z.string().trim().min(1).max(80).optional(),
   categoria: z.string().trim().min(1).max(40).optional(),
-  precio: z.number().int().min(0).optional(),
+  precio: z.number().int().min(0).nullable().optional(),
+  costo: z.number().int().min(0).nullable().optional(),
   stockMinimo: z.number().min(0).optional(),
   orden: z.number().int().min(0).optional(),
   motivoPrecio: z.string().trim().max(200).optional(),
+  motivoCosto: z.string().trim().max(200).optional(),
 });
 
 export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias) {
   app.get("/catalogo", async (peticion) => {
-    const { q, incluirInactivos, tipo } = z
+    const { q, incluirInactivos, tipo, marca, soloSinPrecio } = z
       .object({
         q: z.string().optional(),
         incluirInactivos: booleanoDeQuery().optional(),
         tipo: z.enum(["SERVICIO", "PRODUCTO"]).optional(),
+        marca: z.string().optional(),
+        soloSinPrecio: booleanoDeQuery().optional(),
       })
       .parse(peticion.query);
 
     let items = [...pos.p.items.values()];
     if (!incluirInactivos) items = items.filter((i) => i.activo);
     if (tipo) items = items.filter((i) => i.tipo === tipo);
-    if (q) items = items.filter((i) => coincide(`${i.codigo} ${i.nombre} ${i.categoria}`, q));
+    if (marca) items = items.filter((i) => normalizar(i.marca) === normalizar(marca));
+    if (soloSinPrecio) items = items.filter((i) => i.precio === null);
+    // La marca entra en la búsqueda: quien escribe "bandido" espera ver las
+    // ceras de FORAJIDO, aunque la palabra no esté en el nombre de ninguna.
+    if (q) items = items.filter((i) => coincide(`${i.codigo} ${i.marca} ${i.nombre} ${i.categoria}`, q));
 
     // Orden de la grilla primero, después alfabético: el dueño puede poner los
     // servicios más vendidos adelante sin pelear con el orden alfabético.
@@ -78,10 +103,54 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
     return {
       items: items.map((i) => ({
         ...i,
+        nombreCompleto: pos.p.nombreCompleto(i),
         stock: i.tipo === "PRODUCTO" ? pos.p.stockDe(i.id) : null,
       })),
       categorias: [...new Set(items.map((i) => i.categoria))].sort((a, b) => a.localeCompare(b, "es")),
+      // Las marcas salen del catálogo COMPLETO y no de `items`: si salieran del
+      // resultado filtrado, al elegir una marca el desplegable se quedaría con
+      // esa sola y no habría cómo volver a otra.
+      marcas: pos.p.marcas(),
+      /** Cuántos ítems activos no tienen precio, para el aviso de la pantalla. */
+      sinPrecio: pos.p.sinPrecio().length,
     };
+  });
+
+  /**
+   * Pone precio a varios ítems de una sola vez.
+   *
+   * Existe por los 119 productos que el cliente cargó sin precio: hacerlo de a
+   * uno son 119 idas y vueltas al servidor, y si la número 80 falla el usuario
+   * no sabe cuáles quedaron hechas. Acá entran todos juntos en una sola tanda —
+   * o entran todos o no entra ninguno— y cada uno deja su propio evento de
+   * cambio de precio, así que la historia queda igual de auditable.
+   */
+  app.post("/catalogo/precios", async (peticion) => {
+    const { precios, motivo } = z
+      .object({
+        precios: z
+          .array(z.object({ itemId: z.string().min(1), precio: z.number().int().min(0).nullable() }))
+          .min(1)
+          .max(500),
+        motivo: z.string().trim().max(200).optional(),
+      })
+      .parse(peticion.body);
+
+    // Se validan TODOS antes de escribir uno: un id inexistente en la fila 40 no
+    // puede dejar las 39 anteriores aplicadas y el resto no.
+    for (const { itemId } of precios) {
+      if (!pos.p.items.has(itemId)) {
+        throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Uno de los ítems de la lista ya no existe.");
+      }
+    }
+
+    await pos.escribir(() =>
+      precios.flatMap(({ itemId, precio }) =>
+        actualizarItem(pos.p, itemId, { precio, motivoPrecio: motivo ?? "Carga de precios pendientes" }),
+      ),
+    );
+
+    return { actualizados: precios.length, sinPrecio: pos.p.sinPrecio().length };
   });
 
   /**

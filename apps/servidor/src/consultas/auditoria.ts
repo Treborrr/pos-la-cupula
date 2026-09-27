@@ -62,6 +62,12 @@ export interface Auditoria {
 
 const soles = (centimos: number) => Number((centimos / 100).toFixed(2));
 
+/**
+ * Un monto que puede no existir. "SIN PRECIO" y no "0.00": en una auditoría, un
+ * cero dicho donde no había dato es una afirmación falsa.
+ */
+const precioLegible = (centimos: number | null) => (centimos === null ? "SIN PRECIO" : aTexto(centimos));
+
 /** "2026-09-18T15:14:44.732-05:00" → ["2026-09-18", "15:14"] */
 function partirFecha(ts: string): [string, string] {
   return [ts.slice(0, 10), ts.slice(11, 16)];
@@ -85,6 +91,14 @@ export async function construirAuditoria(
   const reimpresiones: string[] = [];
   const bajasDePrecio: string[] = [];
   const preciosPorDebajo: string[] = [];
+  /**
+   * Cobros de ítems que NO tenían precio de lista: el monto lo escribió quien
+   * cobró. No es una irregularidad —el catálogo tiene productos sin precio y
+   * cobrarlos así es lo previsto— pero sí es el único momento en que el precio
+   * no lo decide el catálogo, y por eso queda listado: es donde mirar si la
+   * plata de un producto no cuadra.
+   */
+  const preciosAbiertos: string[] = [];
   const descuentos: string[] = [];
   const ajustesALaBaja: string[] = [];
   const mermas: string[] = [];
@@ -125,11 +139,22 @@ export async function construirAuditoria(
       p.aplicar(e);
       const v = e.datos;
       const items = v.lineas
-        .map((l) => `${l.nombre} x${l.cantidad}` + (l.precioUnitario !== l.precioLista ? ` (a ${aTexto(l.precioUnitario)}, lista ${aTexto(l.precioLista)})` : ""))
+        .map(
+          (l) =>
+            `${l.nombre} x${l.cantidad}` +
+            (l.precioUnitario !== l.precioLista ? ` (a ${aTexto(l.precioUnitario)}, lista ${precioLegible(l.precioLista)})` : ""),
+        )
         .join(", ");
 
       for (const l of v.lineas) {
-        if (l.precioUnitario < l.precioLista) {
+        // Sin precio de lista no hay "por debajo de lista" que medir: el precio
+        // se escribió a mano porque no había ninguno con el que comparar.
+        if (l.precioLista === null) {
+          señales.push(`precio escrito al cobrar: ${l.nombre}`);
+          preciosAbiertos.push(
+            `${v.correlativo} ${fecha} ${hora} · ${l.nombre}: cobrado ${aTexto(l.precioUnitario)} (el ítem no tiene precio de lista)`,
+          );
+        } else if (l.precioUnitario < l.precioLista) {
           const texto = `${v.correlativo} ${fecha} ${hora} · ${l.nombre}: cobrado ${aTexto(l.precioUnitario)} contra lista ${aTexto(l.precioLista)}`;
           señales.push(`precio por debajo de lista: ${l.nombre}`);
           preciosPorDebajo.push(texto);
@@ -211,16 +236,38 @@ export async function construirAuditoria(
     if (esDeTipo(e, "item.precio_cambiado")) {
       const nombre = nombreItem(e.datos.itemId);
       p.aplicar(e);
-      const baja = e.datos.precioNuevo < e.datos.precioAnterior;
+      const { precioAnterior: antes, precioNuevo: despues } = e.datos;
+      // Solo es una BAJADA si había un precio antes y el nuevo es menor.
+      // Ponerle precio por primera vez a un ítem que no tenía (null → 35) no es
+      // una bajada, y contarla como tal llenaría la auditoría de 119 alarmas
+      // falsas la primera vez que el cliente complete su catálogo.
+      const baja = antes !== null && despues !== null && despues < antes;
       if (baja) señales.push("bajada de precio");
-      const texto = `${fecha} ${hora} · ${nombre}: ${aTexto(e.datos.precioAnterior)} → ${aTexto(e.datos.precioNuevo)}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · SIN MOTIVO"}`;
-      if (baja) bajasDePrecio.push(texto);
+      if (despues === null) señales.push("se le quitó el precio");
+      const transicion = `${precioLegible(antes)} → ${precioLegible(despues)}`;
+      if (baja) {
+        bajasDePrecio.push(
+          `${fecha} ${hora} · ${nombre}: ${transicion}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · SIN MOTIVO"}`,
+        );
+      }
       movimientos.push({
         ...base,
         tipo: "cambio de precio",
-        detalle: `${nombre}: ${aTexto(e.datos.precioAnterior)} → ${aTexto(e.datos.precioNuevo)}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · sin motivo"}`,
+        detalle: `${nombre}: ${transicion}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · sin motivo"}`,
         turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
         ...(señales.length ? { señales } : {}),
+      });
+      continue;
+    }
+
+    if (esDeTipo(e, "item.costo_cambiado")) {
+      const nombre = nombreItem(e.datos.itemId);
+      p.aplicar(e);
+      movimientos.push({
+        ...base,
+        tipo: "cambio de costo",
+        detalle: `${nombre}: ${precioLegible(e.datos.costoAnterior)} → ${precioLegible(e.datos.costoNuevo)}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · sin motivo"}`,
+        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
       });
       continue;
     }
@@ -351,6 +398,7 @@ export async function construirAuditoria(
     { tipo: "Cierres de caja que no cuadraron", cuantas: cierresConDiferencia.length, detalle: cierresConDiferencia },
     { tipo: "Ventas cobradas con la caja cerrada", cuantas: ventasFueraDeTurno.length, detalle: ventasFueraDeTurno },
     { tipo: "Cobros por debajo del precio de lista", cuantas: preciosPorDebajo.length, detalle: preciosPorDebajo },
+    { tipo: "Cobros con el precio escrito a mano (ítems sin precio de lista)", cuantas: preciosAbiertos.length, detalle: preciosAbiertos },
     { tipo: "Descuentos aplicados a la venta", cuantas: descuentos.length, detalle: descuentos },
     { tipo: "Bajadas de precio en el catálogo", cuantas: bajasDePrecio.length, detalle: bajasDePrecio },
     { tipo: "Ajustes de stock con faltante", cuantas: ajustesALaBaja.length, detalle: ajustesALaBaja },
@@ -395,7 +443,10 @@ export async function construirAuditoria(
 }
 
 function descripcionGenerica(e: Evento, nombreItem: (id: string) => string): string | null {
-  if (esDeTipo(e, "item.creado")) return `alta de ${e.datos.tipo.toLowerCase()}: ${e.datos.codigo} ${e.datos.nombre} a ${aTexto(e.datos.precio)}`;
+  if (esDeTipo(e, "item.creado")) {
+    const marca = e.datos.marca ? `${e.datos.marca} ` : "";
+    return `alta de ${e.datos.tipo.toLowerCase()}: ${e.datos.codigo} ${marca}${e.datos.nombre} a ${precioLegible(e.datos.precio)}`;
+  }
   if (esDeTipo(e, "item.actualizado")) return `cambio en ${nombreItem(e.datos.itemId)}: ${JSON.stringify(e.datos)}`;
   if (esDeTipo(e, "item.desactivado")) return `baja de ${nombreItem(e.datos.itemId)}${e.datos.motivo ? ` · ${e.datos.motivo}` : ""}`;
   if (esDeTipo(e, "item.reactivado")) return `reactivación de ${nombreItem(e.datos.itemId)}`;

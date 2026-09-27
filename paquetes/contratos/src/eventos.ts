@@ -139,10 +139,33 @@ export const itemCreado = definir(
   z.object({
     itemId: esquemaUlid,
     codigo: esquemaCodigo,
+    /**
+     * La marca comercial, aparte del nombre: NIVEL TRES, FORAJIDO, VIDA POD.
+     *
+     * Va en su propio campo y no pegada al nombre porque el catálogo real trae
+     * nombres que se repiten entre marcas —hay un TALCO de DON NISH y otro de
+     * SIRMAN— y con un solo campo de texto esos dos productos son
+     * indistinguibles en la pantalla de cobro. Además permite preguntar cuánto
+     * se vendió de cada marca, que con 40 marcas es una pregunta de negocio.
+     */
+    marca: textoOpcional(40),
     nombre: texto(80),
     tipo: esquemaTipoItem,
     categoria: texto(40),
-    precio: esquemaCentimosPositivo,
+    /**
+     * `null` = el ítem existe pero todavía NO tiene precio de lista.
+     *
+     * No es un caso raro: el catálogo con el que arrancó La Cúpula traía 119 de
+     * 137 productos sin precio. Representarlo como `null` y no como 0 es la
+     * diferencia entre "falta ponerle precio" y "es gratis" — un 0 se cobraría
+     * en silencio, y un ítem sin precio hay que pedirlo al cobrar.
+     */
+    precio: esquemaCentimosPositivo.nullable(),
+    /**
+     * Costo unitario de partida, en céntimos. Siembra el promedio ponderado
+     * (ver `stock.entrada`); `null` = todavía no se sabe a cuánto se compra.
+     */
+    costo: esquemaCentimosPositivo.nullable().optional(),
     /** Solo tiene sentido en PRODUCTO. En SERVICIO se ignora. */
     stockMinimo: z.number().min(0).max(100_000).optional(),
     /** Posición en la grilla de la pantalla de cobro. */
@@ -161,6 +184,8 @@ export const itemActualizado = definir(
      * al momento de venderse.
      */
     codigo: esquemaCodigo.optional(),
+    /** Cadena vacía = borrarle la marca. Ausente = no tocarla. */
+    marca: textoOpcional(40),
     nombre: textoOpcional(80),
     categoria: textoOpcional(40),
     stockMinimo: z.number().min(0).max(100_000).optional(),
@@ -172,13 +197,37 @@ export const itemActualizado = definir(
  * El precio va en su propio evento y no dentro de `item.actualizado` a
  * propósito: así se puede responder "¿desde cuándo el corte cuesta 25?" sin
  * escarbar diffs.
+ *
+ * Los dos extremos son anulables porque ponerle precio por primera vez a un
+ * ítem que no tenía (null → 2500) y quitárselo son cambios de precio como
+ * cualquier otro, y tienen que quedar en la misma historia.
  */
 export const itemPrecioCambiado = definir(
   "item.precio_cambiado",
   z.object({
     itemId: esquemaUlid,
-    precioAnterior: esquemaCentimosPositivo,
-    precioNuevo: esquemaCentimosPositivo,
+    precioAnterior: esquemaCentimosPositivo.nullable(),
+    precioNuevo: esquemaCentimosPositivo.nullable(),
+    motivo: textoOpcional(200),
+  }),
+);
+
+/**
+ * El costo cambió por una decisión humana, no por una compra.
+ *
+ * Normalmente el costo lo mueve `stock.entrada` con su `costoUnitario`, y el
+ * promedio ponderado se recalcula solo. Este evento es para las dos veces en
+ * que eso no aplica: la carga inicial desde la planilla (hay costo declarado
+ * pero no hubo compra que registrar) y la corrección a mano de un costo mal
+ * cargado. Se guarda el anterior al lado por la misma razón que en el precio:
+ * sin eso, un costo corregido no se puede auditar después.
+ */
+export const itemCostoCambiado = definir(
+  "item.costo_cambiado",
+  z.object({
+    itemId: esquemaUlid,
+    costoAnterior: esquemaCentimosPositivo.nullable(),
+    costoNuevo: esquemaCentimosPositivo.nullable(),
     motivo: textoOpcional(200),
   }),
 );
@@ -198,6 +247,17 @@ export const itemReactivado = definir(
 // Inventario (solo ítems tipo PRODUCTO)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Entró mercadería.
+ *
+ * `costoUnitario` es lo que alimenta el COSTO PROMEDIO PONDERADO del producto:
+ * si había 6 unidades a 28 y entran 4 a 34, el costo pasa a 30.40, y es contra
+ * ese número que se mide la utilidad de las ventas siguientes. Una entrada sin
+ * costo declarado no ensucia el promedio —se asume que entró al costo que ya
+ * tenía—, pero tampoco lo mejora: si nunca se declara ninguno, el producto
+ * queda sin costo conocido y sus ventas se reportan como "costo no registrado"
+ * en vez de fingir un margen del 100%.
+ */
 export const stockEntrada = definir(
   "stock.entrada",
   z.object({
@@ -241,6 +301,8 @@ export const esquemaLineaVenta = z.object({
   itemId: esquemaUlid,
   /** Desnormalizado a propósito — ver regla 3 arriba. */
   codigo: esquemaCodigo,
+  /** También desnormalizada: el ticket de ayer conserva la marca de ayer. */
+  marca: textoOpcional(40),
   nombre: texto(80),
   tipo: esquemaTipoItem,
   cantidad: esquemaCantidad,
@@ -249,8 +311,25 @@ export const esquemaLineaVenta = z.object({
   /**
    * Lo que decía la lista en ese momento. Si difiere del cobrado, hubo un
    * ajuste manual — y eso es exactamente lo que se quiere poder reportar.
+   *
+   * `null` = el ítem no tenía precio de lista y el precio se escribió al
+   * cobrar. Distinguirlo de "la lista decía 0" importa: lo primero es un
+   * catálogo incompleto, lo segundo sería un regalo.
    */
-  precioLista: esquemaCentimosPositivo,
+  precioLista: esquemaCentimosPositivo.nullable(),
+  /**
+   * El costo promedio ponderado del ítem AL MOMENTO DE VENDER, congelado acá.
+   *
+   * Es lo que hace que la utilidad de un mes cerrado no se mueva nunca: si en
+   * octubre sube el costo de la cera, el reporte de septiembre sigue diciendo
+   * lo que decía en septiembre. Calcularla contra el costo de hoy haría que
+   * ningún mes se pudiera cerrar.
+   *
+   * `null` = no se conocía el costo (ventas anteriores a que existiera este
+   * campo, o productos que nunca tuvieron costo cargado). Se reporta como
+   * "costo no registrado"; tratarlo como 0 inventaría un margen del 100%.
+   */
+  costoUnitario: esquemaCentimosPositivo.nullable().optional(),
   /** Quién atendió. Solo dato: NO hay cálculo de comisiones (sueldo fijo). */
   barberoId: esquemaUlid.nullable(),
   /** cantidad × precioUnitario, ya redondeado. Se guarda para no recalcular. */
@@ -428,6 +507,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   itemCreado,
   itemActualizado,
   itemPrecioCambiado,
+  itemCostoCambiado,
   itemDesactivado,
   itemReactivado,
   stockEntrada,
@@ -471,11 +551,20 @@ export function esDeTipo<T extends TipoEvento>(
 /**
  * Versión actual de cada tipo. El almacén la pone sola si el dominio no la
  * especifica. Subir un número aquí OBLIGA a escribir el upcaster correspondiente.
+ *
+ * POR QUÉ `item.creado` SIGUE EN 1 después de sumarle marca, costo y precio
+ * anulable. Los tres son cambios que un evento viejo sobrevive sin traducción:
+ * `marca` y `costo` son opcionales, y `precio` pasó de "número" a "número o
+ * null" — todo evento ya escrito trae un número, que sigue siendo válido. No
+ * hay nada que un upcaster pudiera hacer: un ítem creado en agosto no tenía
+ * marca, y ponerle una sería inventarla. Lo que cambió es qué se puede
+ * expresar de hoy en adelante, no qué significa lo ya escrito (regla 4).
  */
 export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "item.creado": 1,
   "item.actualizado": 1,
   "item.precio_cambiado": 1,
+  "item.costo_cambiado": 1,
   "item.desactivado": 1,
   "item.reactivado": 1,
   "stock.entrada": 1,

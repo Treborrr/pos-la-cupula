@@ -13,11 +13,27 @@ import type { Centimos, MedioPago, Pago, TipoItem, LineaVenta } from "@cupula/co
 export interface Item {
   id: string;
   codigo: string;
+  /** Marca comercial. Cadena vacía = sin marca (los servicios, casi siempre). */
+  marca: string;
   nombre: string;
   tipo: TipoItem;
   categoria: string;
-  precio: Centimos;
-  /** Solo PRODUCTO. Por debajo de esto, la pantalla avisa. */
+  /**
+   * `null` = todavía no tiene precio de lista. No se puede vender desde la
+   * grilla sin escribirle un precio a mano en esa venta.
+   */
+  precio: Centimos | null;
+  /**
+   * Costo promedio ponderado móvil, en céntimos. `null` = nunca se declaró un
+   * costo, y entonces la utilidad de sus ventas se informa como "no
+   * registrada" en lugar de suponer cero.
+   */
+  costo: Centimos | null;
+  /**
+   * Solo PRODUCTO. Cuando el stock llega a este número o menos, la pantalla
+   * avisa. En 0 —el valor por defecto— avisa recién al quedarse sin unidades,
+   * que es lo que corresponde cuando la planilla no declaró un mínimo propio.
+   */
   stockMinimo: number;
   orden: number;
   activo: boolean;

@@ -301,10 +301,17 @@ function DetalleDeVenta({
           {venta.lineas.map((l, i) => (
             <div key={i} className="flex items-start justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
-                <div className="font-semibold">{l.nombre}</div>
+                <div className="font-semibold">{l.marca ? `${l.marca} ${l.nombre}` : l.nombre}</div>
                 <div className="ayuda">
                   {l.cantidad} × {aTextoConSimbolo(l.precioUnitario)}
-                  {l.precioUnitario !== l.precioLista ? ` · precio de lista ${aTextoConSimbolo(l.precioLista)}` : ""}
+                  {/* Sin precio de lista no hubo ajuste: el precio se escribió
+                      al cobrar porque el ítem no tenía ninguno. Decir "precio
+                      de lista S/ 0.00" haría parecer que se regaló algo. */}
+                  {l.precioLista === null
+                    ? " · precio escrito al cobrar"
+                    : l.precioUnitario !== l.precioLista
+                      ? ` · precio de lista ${aTextoConSimbolo(l.precioLista)}`
+                      : ""}
                 </div>
               </div>
               <span className="cifra shrink-0 font-semibold">{aTextoConSimbolo(l.total)}</span>

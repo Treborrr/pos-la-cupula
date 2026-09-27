@@ -88,23 +88,47 @@ app nativa · sincronización en la nube.
   - **SERVICIO** (corte, barba, tatuaje): no tiene stock, no se descuenta nada.
   - **PRODUCTO** (cera, vape, pipa, malla para pipa, trimmer): tiene stock y se
     descuenta al vender.
-- Campos: código, nombre, tipo, categoría, precio, activo, orden en la grilla.
+- Campos: código, **marca**, nombre, tipo, categoría, **precio de venta**,
+  **precio de compra**, activo, orden en la grilla.
+- **La marca es un campo propio, no parte del nombre.** El catálogo real tiene
+  nombres que se repiten entre marcas —un `TALCO` de DON NISH y otro de SIRMAN—
+  y con un solo campo de texto esos dos productos son indistinguibles al cobrar.
+  Además permite filtrar el catálogo por marca y reportar ventas por marca, que
+  con 35 marcas es una pregunta de negocio. En el ticket se imprime solo en los
+  productos: los servicios los hace La Cúpula y su nombre ya está arriba.
+- **Un ítem puede no tener precio, y es un estado válido.** El catálogo que
+  entregó el cliente traía 119 de 137 productos sin precio de venta. Un ítem sin
+  precio existe, aparece en el catálogo y en el inventario, y al cobrarlo la
+  pantalla **pide el precio de esa venta** en vez de cobrar S/ 0 en silencio. El
+  precio de lista se pone desde Catálogo, de a uno o en tanda desde el panel de
+  precios pendientes. `null` y `0` no son lo mismo: uno es "falta ponerle
+  precio", el otro sería "es gratis".
 - Alta, edición y **desactivación** (nunca borrado: si se borrara, las ventas
   viejas quedarían apuntando al vacío).
 - **Códigos únicos garantizados por el sistema.** En el Excel había tres códigos
   repetidos (`LANG`, `CEVC`, `MENU`) y eso volvía *invendibles* a tres
   productos, porque la búsqueda siempre devolvía el primero. Aquí el alta
-  rechaza un código ya usado.
-- Historial de precios: cambiar un precio es un evento. La venta vieja conserva
-  el precio al que se vendió, y se puede responder "¿desde cuándo el corte
-  cuesta 25?".
+  rechaza un código ya usado. La plantilla ya no trae columna de código: los
+  genera el sistema, y la identidad de una fila es `MARCA + NOMBRE + TIPO`
+  (§5.5).
+- Historial de precios **y de costos**: cambiarlos es un evento. La venta vieja
+  conserva el precio al que se vendió y el costo que el producto tenía ese día,
+  así que se puede responder "¿desde cuándo el corte cuesta 25?" y "¿por qué
+  bajó el margen de las ceras en octubre?".
+- Carga masiva desde un Excel cuya forma la definió el cliente (§5.5).
 
 ### 2.4 Inventario
 
 - Solo para ítems tipo PRODUCTO.
 - Stock actual, stock mínimo, alerta visual cuando está por debajo.
 - **Entrada de mercadería** (compré 12 ceras), **ajuste** (conté y hay 10, no
-  12) y **merma** (se rompió, se perdió), cada una con su motivo.
+  12) y **merma** (se rompió, se perdió), cada una con su motivo. La entrada
+  puede declarar su costo, y eso recalcula el promedio ponderado (§5.4).
+- **Valorizado a costo y a precio de venta**, por separado: a costo es cuánta
+  plata está inmovilizada, a precio de venta es cuánto entraría si se vendiera
+  todo. Cada total dice cuántos productos quedaron afuera por falta del dato, para
+  que un total bajo no se lea como "hay poca mercadería" cuando es "faltan
+  costos".
 - La venta descuenta automáticamente; la anulación devuelve.
 - **El stock negativo se permite pero se avisa.** Bloquear una venta porque el
   sistema cree que no hay stock es peor que vender y corregir después: el
@@ -136,6 +160,23 @@ app nativa · sincronización en la nube.
 Todos salen de las proyecciones en memoria, son instantáneos y exportables a
 CSV: ventas del día · por rango · por medio de pago · por barbero · ranking de
 servicios y productos · stock bajo · clientes frecuentes.
+
+**Períodos de calendario, no ventanas corridas.** Hoy, 7 días, este mes, mes
+pasado, este año y rango libre. Cuando el dueño pregunta cómo fue septiembre
+quiere septiembre, no los últimos 30 días. Cada cifra se compara contra el
+período anterior del mismo largo, porque "vendí S/ 8,450" no es información hasta
+saber si el mes pasado fueron 7,000 o 12,000.
+
+**Utilidad y margen** (venta − costo), desglosados por categoría, marca e ítem;
+**inventario valorizado**; **productos que no rotan** con la plata que tienen
+inmovilizada; y aviso de **lo vendido por debajo del costo**.
+
+> **La regla que atraviesa todos los reportes: lo que no se sabe se dice.** Un
+> producto sin costo cargado no tiene margen del 100% — no tiene margen
+> calculable. Cada cifra de utilidad viaja con su **cobertura** (sobre qué parte
+> de lo vendido se pudo calcular) y donde falta el dato hay una raya, no un cero.
+> Un reporte que rellena huecos con ceros es peor que no tener reporte: parece
+> confiable y no lo es.
 
 ---
 
@@ -307,7 +348,7 @@ Una línea del log, tal cual queda en disco:
 | `seq` | Entero monótono. Si el archivo salta del 12841 al 12843, hay corrupción y el sistema lo detecta al arrancar en vez de mentir en silencio |
 | `id` | ULID. Ordenable por tiempo y listo para ser `PRIMARY KEY` en Postgres |
 | `ts` | ISO 8601 **con offset `-05:00`**. Nunca hora local ambigua. El día que haya nube, no hay que adivinar la zona |
-| `v` | Versión del *tipo* de evento. Los eventos viejos jamás se editan: se escriben "upcasters" que traducen `v:1` a `v:2` al leer (§5.5) |
+| `v` | Versión del *tipo* de evento. Los eventos viejos jamás se editan: se escriben "upcasters" que traducen `v:1` a `v:2` al leer (§5.7) |
 | `actor` | Hoy siempre `mostrador`. Existe desde el día 1 para que agregar usuarios no obligue a migrar el histórico |
 | `h` | `sha256(h_anterior + evento_canónico)`, primeros 16 hex. **Cadena de hash**: si alguien edita una línea con el Bloc de notas, todas las posteriores dejan de validar. 20 líneas de código, y el dueño puede confiar en sus propios números |
 | `precioUnitario` | **Enteros en céntimos**, nunca decimales. `0.1 + 0.2 !== 0.3` en punto flotante, y en un sistema de dinero eso es un céntimo de diferencia que un día se vuelve un arqueo descuadrado |
@@ -321,7 +362,7 @@ que decía. Es exactamente lo que el Excel hacía bien y hay que conservar.
 ```
 venta.registrada          venta.anulada            venta.reimpresa
 item.creado               item.actualizado         item.precio_cambiado
-item.desactivado          item.reactivado
+item.costo_cambiado       item.desactivado         item.reactivado
 stock.entrada             stock.ajustado           stock.merma
 caja.turno_abierto        caja.turno_cerrado
 cliente.registrado        cliente.actualizado      cliente.vinculado_fidelidad
@@ -334,7 +375,76 @@ caja.egreso_registrado    venta.propina_registrada
 Reservarlos ahora no cuesta nada y evita que el día de mañana el número de
 versión del formato tenga que cambiar.
 
-### 5.4 Proyecciones (el estado consultable)
+### 5.4 El costo: promedio ponderado móvil, congelado al vender
+
+El costo de un producto **no se guarda como un número que se sobreescribe**. Se
+deriva del log, y eso resuelve dos problemas a la vez.
+
+**Cómo se calcula.** Cada `stock.entrada` puede traer su `costoUnitario`, y la
+proyección recalcula el promedio contra las unidades que había en mano:
+
+```
+había 6 a S/ 28 y entran 4 a S/ 34  →  (6×28 + 4×34) / 10  =  S/ 30.40
+```
+
+Vender no mueve el promedio. Contar tampoco: un `stock.ajustado` dice cuántas
+unidades hay, no a cuánto se compraron. Solo lo mueve una compra a otro precio.
+Una entrada **sin** costo declarado no lo toca — suponerle costo cero a la
+mercadería que entró sin factura a mano abarataría el promedio e inventaría una
+ganancia que no existe.
+
+**Por qué se congela en la venta.** La línea de venta guarda `costoUnitario`: el
+promedio que el producto tenía **al momento de venderse**. Es la misma decisión
+que desnormalizar `codigo` y `nombre`, y por la misma razón. Si el reporte
+calculara contra el costo de hoy, subir el precio de compra en octubre
+reescribiría la utilidad de septiembre, y **ningún mes se podría cerrar**: el
+mismo reporte impreso dos veces daría cifras distintas.
+
+**`null` no es cero.** Un producto sin costo conocido se informa como "costo no
+registrado", nunca como costo cero. Tratarlo como cero daría un margen del 100%
+y el dueño decidiría sobre una ganancia inventada. Por eso cada cifra de utilidad
+viaja con su **cobertura**: sobre qué parte de lo vendido se pudo calcular.
+
+Los servicios nunca llevan costo —no hay mercadería que comprar— así que quedan
+fuera del margen por definición. Es deliberado: mezclarlos como si costaran cero
+daría un margen global inflado, inútil para decidir sobre la reventa.
+
+### 5.5 La planilla de catálogo pone datos, no los borra
+
+El catálogo se carga desde un Excel cuya forma **la definió el cliente**:
+
+```
+MARCA | NOMBRE | TIPO | CATEGORÍA | PRECIO VENTA | PRECIO COMPRA | STOCK | STOCK MÍNIMO
+```
+
+Sin columna de código —el sistema los genera solos— así que la **identidad de una
+fila es `MARCA + NOMBRE + TIPO`**. La marca va en la clave y no es un detalle: el
+catálogo real tiene un `TALCO` de DON NISH y otro de SIRMAN, y comparando solo por
+nombre la segunda carga pisaría un producto con el otro.
+
+Tres reglas que hacen que reimportar sea seguro, que es lo que más veces va a
+pasar:
+
+1. **Una celda de precio vacía significa "no lo sé", no "déjalo en nada".** El
+   catálogo llegó con 119 de 137 productos sin precio; el dueño los completa
+   desde la pantalla de Catálogo y después va a volver a subir la misma planilla
+   —con esas celdas todavía vacías— para agregar productos nuevos. Si la celda
+   vacía borrara el precio, esa carga destruiría en silencio todo ese trabajo.
+   La planilla puede **poner** precios y costos; para quitarlos está la pantalla,
+   donde se ve lo que se está haciendo.
+2. **El stock se ajusta, no se suma.** La columna dice cuántas unidades hay, no
+   cuántas entraron. Sumarlas duplicaría el inventario en cada reimportación.
+3. **Nada se borra: lo que no viene se desactiva.** Un ítem desactivado sale de
+   la pantalla de cobro pero sigue existiendo, así que un ticket del mes pasado
+   se puede seguir mostrando. Si mañana vuelve a cargarlo, se reactiva con su
+   mismo id.
+
+Y `STOCK` acepta `ILIMITADO`: es lo que el cliente escribió en sus siete
+servicios de barbería, y tiene razón — un corte de pelo no se agota. El sistema
+ya sabe que un servicio no lleva stock, pero tratar la palabra como un error
+haría que su planilla no cargara por haber sido explícito.
+
+### 5.6 Proyecciones (el estado consultable)
 
 Al arrancar, el servidor lee la última instantánea y reproduce los eventos
 posteriores, armando en memoria:
@@ -352,7 +462,7 @@ instantánea cada 5 000 eventos para que el arranque nunca crezca sin techo.
 Las consultas del front pegan a las proyecciones, jamás al disco. Una pantalla
 de ventas del día responde en microsegundos.
 
-### 5.5 Evolución del esquema
+### 5.7 Evolución del esquema
 
 Regla dura: **un evento escrito nunca se modifica ni se borra.** Si el negocio
 cambia, se sube `v` y se escribe un upcaster:

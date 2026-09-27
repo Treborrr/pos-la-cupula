@@ -49,14 +49,31 @@ async function posDePrueba() {
   await pos.transaccion(() => {
     const r = crearItem(pos.p, {
       codigo: "CERA",
+      marca: "NIVEL TRES",
       nombre: "CERA MODELADORA",
       tipo: "PRODUCTO",
       categoria: "Productos",
       precio: 3500,
+      costo: 2000,
       stockMinimo: 3,
       stockInicial: 10,
     });
     ids["CERA"] = r.itemId;
+    return { eventos: r.eventos, resultado: null };
+  });
+
+  // Un producto SIN precio, como los 119 que trajo la planilla del cliente.
+  await pos.transaccion(() => {
+    const r = crearItem(pos.p, {
+      codigo: "ROJA",
+      marca: "FORAJIDO",
+      nombre: "CERA ROJA",
+      tipo: "PRODUCTO",
+      categoria: "Productos",
+      precio: null,
+      stockInicial: 5,
+    });
+    ids["ROJA"] = r.itemId;
     return { eventos: r.eventos, resultado: null };
   });
 
@@ -86,6 +103,86 @@ describe("cobrar", () => {
     expect(r.venta.total).toBe(5000);
     expect(r.venta.lineas[0].cantidad).toBe(2);
     expect(r.duplicada).toBe(false);
+    await pos.cerrar();
+  });
+
+  it("cobra un ítem sin precio con el precio escrito en el momento", async () => {
+    // Es lo que permite empezar a usar el POS con un catálogo al que le faltan
+    // 119 precios: el producto está en la grilla y el precio se escribe al vender.
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["ROJA"], cantidad: 1, precioUnitario: 3500 }],
+      pagos: [{ medio: "EFECTIVO", monto: 3500 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.total).toBe(3500);
+    expect(r.venta.lineas[0].precioUnitario).toBe(3500);
+    // `null` y no 0: la lista no decía cero, no decía nada. La auditoría los
+    // distingue —uno es un regalo, el otro un catálogo incompleto.
+    expect(r.venta.lineas[0].precioLista).toBeNull();
+    await pos.cerrar();
+  });
+
+  it("se niega a cobrar un ítem sin precio si no se indica cuánto", async () => {
+    // Caer en 0 en silencio sería regalar mercadería.
+    const { pos, ids } = await posDePrueba();
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["ROJA"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 0 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/no tiene precio/);
+    await pos.cerrar();
+  });
+
+  it("congela el costo del producto en la línea de venta", async () => {
+    // Es lo que hace que la utilidad de un mes cerrado no se mueva nunca.
+    const { pos, ids } = await posDePrueba();
+
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 2 }],
+      pagos: [{ medio: "EFECTIVO", monto: 7000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(r.venta.lineas[0].costoUnitario).toBe(2000);
+    // La marca también viaja desnormalizada: el ticket de ayer conserva la de ayer.
+    expect(r.venta.lineas[0].marca).toBe("NIVEL TRES");
+    await pos.cerrar();
+  });
+
+  it("la venta de ayer conserva su costo aunque hoy suba el del producto", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    const antes = await pos.cobrar({
+      lineas: [{ itemId: ids["CERA"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 3500 }],
+      claveIdempotencia: ulid(),
+    });
+
+    // Entra mercadería más cara: el promedio ponderado del producto sube.
+    await pos.escribir(() => [
+      { tipo: "stock.entrada", datos: { itemId: ids["CERA"], cantidad: 9, costoUnitario: 4000, motivo: "Compra" } },
+    ]);
+    expect(pos.p.items.get(ids["CERA"])!.costo).toBeGreaterThan(2000);
+
+    // Y la venta vieja sigue diciendo lo que decía.
+    expect(pos.p.ventas.get(antes.venta.id)!.lineas[0].costoUnitario).toBe(2000);
+    await pos.cerrar();
+  });
+
+  it("un SERVICIO no lleva costo en la línea", async () => {
+    const { pos, ids } = await posDePrueba();
+    const r = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(r.venta.lineas[0].costoUnitario).toBeNull();
     await pos.cerrar();
   });
 

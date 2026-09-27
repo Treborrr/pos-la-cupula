@@ -14,6 +14,8 @@ export type CodigoError =
   | "ITEM_NO_EXISTE"
   | "CODIGO_REPETIDO"
   | "ITEM_INACTIVO"
+  /** Se intentó cobrar un ítem sin precio de lista y sin indicar cuánto cobrar. */
+  | "ITEM_SIN_PRECIO"
   | "VENTA_SIN_LINEAS"
   | "PAGOS_NO_CUADRAN"
   | "EFECTIVO_INSUFICIENTE"
