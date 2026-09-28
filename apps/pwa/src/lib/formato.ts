@@ -52,6 +52,24 @@ export function cantidad(n: number): string {
 }
 
 /**
+ * Cómo se nombra un ítem o una línea de venta en pantalla: "DON NISH TALCO".
+ *
+ * Una sola función porque hay siete lugares que muestran lo mismo —la grilla de
+ * cobro, el ticket en curso, el historial, el lector de tickets, el kardex, los
+ * reportes— y cada uno resolvía por su cuenta si poner la marca o no. El
+ * resultado era que el mismo producto se llamaba distinto según la pantalla, y
+ * con dos TALCO de marcas distintas en el catálogo eso no es cosmético: es no
+ * poder saber cuál de los dos se vendió.
+ *
+ * El ticket IMPRESO es la excepción y tiene su propia regla en el servidor: ahí
+ * la marca solo sale en los productos, porque los servicios los hace La Cúpula
+ * y su nombre ya está en el encabezado del papel.
+ */
+export function nombreConMarca(x: { marca?: string | null; nombre: string }): string {
+  return x.marca ? `${x.marca} ${x.nombre}` : x.nombre;
+}
+
+/**
  * Un monto que puede no existir.
  *
  * Existe para que las cinco pantallas que muestran precios digan LO MISMO

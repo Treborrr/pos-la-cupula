@@ -31,10 +31,6 @@ export interface LineaDelTicket {
   precioLista: number | null;
 }
 
-/** Cómo se nombra una línea en pantalla: con la marca adelante si la tiene. */
-export function nombreDeLinea(l: Pick<LineaDelTicket, "marca" | "nombre">): string {
-  return l.marca ? `${l.marca} ${l.nombre}` : l.nombre;
-}
 
 interface EstadoCarrito {
   lineas: LineaDelTicket[];

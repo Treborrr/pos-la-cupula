@@ -206,6 +206,55 @@ describe("enrutador de escaneos", () => {
     expect(r.json().item.nombre).toBe("CORTE DEGRADADO");
   });
 
+  it("el ítem escaneado viene completo, igual que el del catálogo", async () => {
+    // El escaneo devolvía el ítem CRUDO, sin `nombreCompleto` ni `stock`,
+    // mientras `/catalogo` los incluía. La pantalla de cobro usa los dos: al
+    // escanear un producto sin precio mostraba "undefined no tiene precio".
+    const { app } = await apiDePrueba();
+    await app.inject({
+      method: "POST",
+      url: "/api/catalogo",
+      payload: {
+        codigo: "LACA",
+        marca: "FORAJIDO",
+        nombre: "LACA DORADA",
+        tipo: "PRODUCTO",
+        categoria: "Productos",
+        precio: null,
+        stockInicial: 4,
+      },
+    });
+
+    const escaneado = (await app.inject({ method: "GET", url: "/api/escaneo?valor=LACA" })).json().item;
+    const delCatalogo = (await app.inject({ method: "GET", url: "/api/catalogo" })).json().items[0];
+
+    expect(escaneado.nombreCompleto).toBe("FORAJIDO LACA DORADA");
+    expect(escaneado.stock).toBe(4);
+    expect(escaneado.precio).toBeNull();
+    // La forma tiene que ser la MISMA: es el mismo objeto para la misma pantalla.
+    expect(Object.keys(escaneado).sort()).toEqual(Object.keys(delCatalogo).sort());
+  });
+
+  it("crear y editar un ítem también devuelven la forma completa", async () => {
+    const { app } = await apiDePrueba();
+    const creado = (
+      await app.inject({
+        method: "POST",
+        url: "/api/catalogo",
+        payload: { marca: "NIVEL TRES", nombre: "CERA", tipo: "PRODUCTO", categoria: "P", precio: 4500, stockInicial: 3 },
+      })
+    ).json().item;
+
+    expect(creado.nombreCompleto).toBe("NIVEL TRES CERA");
+    expect(creado.stock).toBe(3);
+
+    const editado = (
+      await app.inject({ method: "PATCH", url: `/api/catalogo/${creado.id}`, payload: { marca: "FORAJIDO" } })
+    ).json().item;
+    expect(editado.nombreCompleto).toBe("FORAJIDO CERA");
+    expect(editado.stock).toBe(3);
+  });
+
   it("identifica al cliente por el nombre que trae el QR de fidelidad", async () => {
     // El programa de La Cúpula está en modo qrContent:"nombre".
     const { app } = await apiDePrueba();
@@ -301,6 +350,8 @@ describe("inventario y caja por HTTP", () => {
 
     const inventario = await app.inject({ method: "GET", url: "/api/inventario" });
     expect(inventario.json().productos[0].stock).toBe(2);
+    // Mínimo 3 y quedan 2: por debajo. (Y con 3 también avisaría: el campo se
+    // llama "avisar cuando queden", así que en 3 hay que avisar.)
     expect(inventario.json().productos[0].bajoMinimo).toBe(true);
 
     const kardex = await app.inject({ method: "GET", url: `/api/inventario/${item.id}/kardex` });
@@ -337,6 +388,103 @@ describe("inventario y caja por HTTP", () => {
     });
     expect(cierre.json().diferencia).toBe(-50);
     expect(cierre.json().integridad.ok).toBe(true);
+  });
+});
+
+describe("«stock bajo» dice lo mismo en todos lados", () => {
+  /**
+   * Tres pantallas mostraban tres respuestas a la misma pregunta: sobre el
+   * catálogo real, el encabezado avisaba "0 con stock bajo" mientras la tabla
+   * de inventario marcaba 28 productos. Dos números contradictorios en la misma
+   * pantalla hacen que el dueño deje de creerle a los dos.
+   */
+  async function conProductos(app: Awaited<ReturnType<typeof apiDePrueba>>["app"]) {
+    const alta = (codigo: string, stockMinimo: number, stockInicial: number) =>
+      app.inject({
+        method: "POST",
+        url: "/api/catalogo",
+        payload: { codigo, nombre: codigo, tipo: "PRODUCTO", categoria: "P", precio: 1000, stockMinimo, stockInicial },
+      });
+
+    await alta("SINMIN", 0, 0); // sin mínimo fijado y agotado
+    await alta("ENMIN", 2, 2); // justo en su mínimo
+    await alta("SOBRE", 2, 5); // por encima
+    await alta("VACIO", 3, 0); // agotado y con mínimo
+  }
+
+  const nombresAlerta = (r: { alertas: { nombre: string }[] }) => r.alertas.map((a) => a.nombre).sort();
+
+  it("el encabezado, la tabla y el reporte cuentan lo mismo", async () => {
+    const { app } = await apiDePrueba();
+    await conProductos(app);
+
+    const inventario = (await app.inject({ method: "GET", url: "/api/inventario" })).json();
+    const estado = (await app.inject({ method: "GET", url: "/api/estado" })).json();
+    const hoy = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const reporte = (
+      await app.inject({ method: "GET", url: `/api/reportes/resumen?desde=${hoy}&hasta=${hoy}` })
+    ).json();
+
+    const enTabla = inventario.productos.filter((p: { bajoMinimo: boolean }) => p.bajoMinimo).length;
+
+    expect(enTabla).toBe(inventario.alertas.length);
+    expect(enTabla).toBe(estado.alertasDeStock);
+    expect(enTabla).toBe(reporte.inventario.bajoMinimo);
+  });
+
+  it("un mínimo en 0 significa «no me avises», no «avísame en cero»", async () => {
+    // Es el valor por defecto de todo producto que entra sin la columna STOCK
+    // MÍNIMO, o sea el catálogo entero del cliente. Si avisara, los agotados
+    // saldrían dos veces y la alerta dejaría de señalar lo que el dueño pidió.
+    const { app } = await apiDePrueba();
+    await conProductos(app);
+
+    const inventario = (await app.inject({ method: "GET", url: "/api/inventario" })).json();
+
+    expect(nombresAlerta(inventario)).toEqual(["ENMIN", "VACIO"]);
+    // SINMIN está agotado y no aparece como alerta, pero sí como agotado.
+    expect(inventario.productos.find((p: { codigo: string }) => p.codigo === "SINMIN").stock).toBe(0);
+  });
+
+  it("avisa AL LLEGAR al mínimo, no al pasarlo", async () => {
+    // El campo se llama "avisar cuando queden": si dice 2, en 2 hay que avisar.
+    // Antes era `<` y el aviso llegaba un producto tarde.
+    const { app } = await apiDePrueba();
+    await conProductos(app);
+
+    const inventario = (await app.inject({ method: "GET", url: "/api/inventario" })).json();
+    const enMin = inventario.productos.find((p: { codigo: string }) => p.codigo === "ENMIN");
+    const sobre = inventario.productos.find((p: { codigo: string }) => p.codigo === "SOBRE");
+
+    expect(enMin.bajoMinimo).toBe(true);
+    expect(sobre.bajoMinimo).toBe(false);
+  });
+
+  it("el stock negativo siempre alerta, aunque no haya mínimo fijado", async () => {
+    const { app } = await apiDePrueba();
+    const item = (
+      await app.inject({
+        method: "POST",
+        url: "/api/catalogo",
+        payload: { codigo: "NEG", nombre: "NEG", tipo: "PRODUCTO", categoria: "P", precio: 1000, stockInicial: 1 },
+      })
+    ).json().item;
+
+    // Se vende más de lo que había: el POS no bloquea, pero el saldo queda en −2.
+    await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId: item.id, cantidad: 3 }],
+        pagos: [{ medio: "EFECTIVO", monto: 3000 }],
+        claveIdempotencia: ulid(),
+      },
+    });
+
+    const inventario = (await app.inject({ method: "GET", url: "/api/inventario" })).json();
+    expect(inventario.productos[0].stock).toBe(-2);
+    expect(inventario.productos[0].bajoMinimo).toBe(true);
+    expect(inventario.alertas).toHaveLength(1);
   });
 });
 

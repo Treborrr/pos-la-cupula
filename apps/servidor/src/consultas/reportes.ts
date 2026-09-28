@@ -19,6 +19,7 @@
  */
 
 import { mediosEnCero, type Item, type TotalesPorMedio, type Venta } from "../proyecciones/tipos";
+import { bajoMinimo as estaBajoMinimo } from "../dominio/inventario/inventario";
 import type { Proyeccion } from "../proyecciones/Proyeccion";
 import type { Centimos } from "@cupula/contratos";
 
@@ -260,7 +261,9 @@ function valorizarInventario(p: Proyeccion): Inventario {
     const positivo = Math.max(0, stock);
     if (stock <= 0) agotados += 1;
     if (stock < 0) enNegativo += 1;
-    if (stock <= item.stockMinimo) bajoMinimo += 1;
+    // La misma definición que la alerta del encabezado y la tabla de
+    // inventario, importada del dominio en vez de reescrita acá.
+    if (estaBajoMinimo(stock, item.stockMinimo)) bajoMinimo += 1;
 
     if (item.costo === null) {
       if (stock > 0) sinCosto += 1;

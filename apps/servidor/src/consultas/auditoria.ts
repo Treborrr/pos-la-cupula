@@ -92,11 +92,14 @@ export async function construirAuditoria(
   const bajasDePrecio: string[] = [];
   const preciosPorDebajo: string[] = [];
   /**
-   * Cobros de ítems que NO tenían precio de lista: el monto lo escribió quien
-   * cobró. No es una irregularidad —el catálogo tiene productos sin precio y
-   * cobrarlos así es lo previsto— pero sí es el único momento en que el precio
-   * no lo decide el catálogo, y por eso queda listado: es donde mirar si la
-   * plata de un producto no cuadra.
+   * Cobros de ítems que NO tenían precio de lista.
+   *
+   * El sistema de hoy NO puede producir esto: un ítem sin precio no se vende.
+   * Si aparece en el log, es una venta escrita por otra versión del programa o
+   * un archivo tocado por fuera — o sea, justo lo que una auditoría existe para
+   * encontrar. Por eso la rama se queda aunque la operación normal nunca la
+   * dispare: cuesta cuatro líneas y es la clase de anomalía que no conviene que
+   * pase desapercibida.
    */
   const preciosAbiertos: string[] = [];
   const descuentos: string[] = [];
@@ -150,9 +153,10 @@ export async function construirAuditoria(
         // Sin precio de lista no hay "por debajo de lista" que medir: el precio
         // se escribió a mano porque no había ninguno con el que comparar.
         if (l.precioLista === null) {
-          señales.push(`precio escrito al cobrar: ${l.nombre}`);
+          señales.push(`venta sin precio de lista: ${l.nombre}`);
           preciosAbiertos.push(
-            `${v.correlativo} ${fecha} ${hora} · ${l.nombre}: cobrado ${aTexto(l.precioUnitario)} (el ítem no tiene precio de lista)`,
+            `${v.correlativo} ${fecha} ${hora} · ${l.nombre}: cobrado ${aTexto(l.precioUnitario)} sin precio de lista. ` +
+              `El sistema actual no permite esto: revisar de dónde salió esta venta.`,
           );
         } else if (l.precioUnitario < l.precioLista) {
           const texto = `${v.correlativo} ${fecha} ${hora} · ${l.nombre}: cobrado ${aTexto(l.precioUnitario)} contra lista ${aTexto(l.precioLista)}`;
@@ -398,7 +402,7 @@ export async function construirAuditoria(
     { tipo: "Cierres de caja que no cuadraron", cuantas: cierresConDiferencia.length, detalle: cierresConDiferencia },
     { tipo: "Ventas cobradas con la caja cerrada", cuantas: ventasFueraDeTurno.length, detalle: ventasFueraDeTurno },
     { tipo: "Cobros por debajo del precio de lista", cuantas: preciosPorDebajo.length, detalle: preciosPorDebajo },
-    { tipo: "Cobros con el precio escrito a mano (ítems sin precio de lista)", cuantas: preciosAbiertos.length, detalle: preciosAbiertos },
+    { tipo: "ANOMALÍA: ventas de ítems sin precio de lista", cuantas: preciosAbiertos.length, detalle: preciosAbiertos },
     { tipo: "Descuentos aplicados a la venta", cuantas: descuentos.length, detalle: descuentos },
     { tipo: "Bajadas de precio en el catálogo", cuantas: bajasDePrecio.length, detalle: bajasDePrecio },
     { tipo: "Ajustes de stock con faltante", cuantas: ajustesALaBaja.length, detalle: ajustesALaBaja },

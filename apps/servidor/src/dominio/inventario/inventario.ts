@@ -105,16 +105,43 @@ export function registrarMerma(
   ];
 }
 
+/**
+ * ¿Este producto está por debajo del mínimo que le fijaron?
+ *
+ * LA ÚNICA DEFINICIÓN DE "STOCK BAJO" DEL SISTEMA. Existía escrita tres veces
+ * —la alerta del encabezado, la tabla de inventario y el reporte— y las tres no
+ * decían lo mismo: sobre el catálogo real, el encabezado avisaba "0 con stock
+ * bajo" mientras la tabla marcaba 28 productos. Dos números contradictorios en
+ * la misma pantalla no son un detalle: el dueño deja de creerle a los dos.
+ *
+ * Dos reglas:
+ *
+ *  · `mínimo = 0` significa "no fijé ningún mínimo", no "avísame en cero". Es
+ *    el valor por defecto de todo producto que entra sin la columna STOCK
+ *    MÍNIMO, o sea el catálogo entero del cliente. Si avisara, los 28 agotados
+ *    aparecerían dos veces —como agotados y como bajo mínimo— y la alerta
+ *    dejaría de señalar lo que el dueño pidió que le señalen. Que esté agotado
+ *    se informa aparte, que es una cosa distinta.
+ *
+ *  · Con un mínimo fijado, avisa AL LLEGAR a ese número, no al pasarlo. El
+ *    campo se llama "avisar cuando queden" en la pantalla: si dice 2, en 2 hay
+ *    que avisar. Antes era `<` y el aviso llegaba un producto tarde.
+ */
+export function bajoMinimo(stock: number, stockMinimo: number): boolean {
+  // El negativo siempre se marca: significa que se vendió más de lo que el
+  // sistema creía tener, y eso hay que mirarlo aunque no haya mínimo fijado.
+  if (stock < 0) return true;
+  return stockMinimo > 0 && stock <= stockMinimo;
+}
+
 /** Productos por debajo de su mínimo. Alimenta la alerta de la pantalla. */
 export function stockBajo(p: Proyeccion): { itemId: string; nombre: string; stock: number; minimo: number }[] {
   const salida = [];
   for (const item of p.items.values()) {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
     const stock = p.stockDe(item.id);
-    // El mínimo en 0 significa "no me avises", salvo que el stock esté
-    // negativo: eso siempre es algo que hay que mirar.
-    if (stock < item.stockMinimo || stock < 0) {
-      salida.push({ itemId: item.id, nombre: item.nombre, stock, minimo: item.stockMinimo });
+    if (bajoMinimo(stock, item.stockMinimo)) {
+      salida.push({ itemId: item.id, nombre: p.nombreCompleto(item), stock, minimo: item.stockMinimo });
     }
   }
   return salida.sort((a, b) => a.stock - b.stock);

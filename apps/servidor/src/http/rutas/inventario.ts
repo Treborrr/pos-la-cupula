@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import {
   ajustarStock,
+  bajoMinimo,
   registrarEntrada,
   registrarMerma,
   stockBajo,
@@ -22,12 +23,14 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
         const stock = pos.p.stockDe(i.id);
         const positivo = Math.max(0, stock);
         return {
-          ...i,
-          nombreCompleto: pos.p.nombreCompleto(i),
+          ...pos.p.itemParaPantalla(i),
           stock,
-          bajoMinimo: stock <= i.stockMinimo,
-          // El negativo siempre se marca, aunque el mínimo esté en 0: significa
-          // que se vendió más de lo que el sistema creía tener y hay que contar.
+          // La MISMA definición que usa la alerta del encabezado. Cuando cada
+          // uno la calculaba por su lado, la tabla marcaba 28 productos y el
+          // encabezado decía 0.
+          bajoMinimo: bajoMinimo(stock, i.stockMinimo),
+          // El negativo se marca aparte además: significa que se vendió más de
+          // lo que el sistema creía tener y hay que contar.
           enNegativo: stock < 0,
           // Dos valorizaciones, que responden preguntas distintas: a costo es
           // cuánta plata hay inmovilizada, a precio de venta es cuánto entraría

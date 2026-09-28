@@ -123,7 +123,10 @@ export async function rutasSistema(
 
     // 3. Código del catálogo: agrega la línea al ticket en curso.
     const item = pos.p.itemPorCodigo(texto);
-    if (item && item.activo) return { tipo: "item", item };
+    // `itemParaPantalla` y no el ítem crudo: la pantalla de cobro espera el
+    // mismo objeto que le da `/catalogo` —con `nombreCompleto` y `stock`— y
+    // devolverlo a medias hacía que un escaneo mostrara "undefined".
+    if (item && item.activo) return { tipo: "item", item: pos.p.itemParaPantalla(item) };
 
     // 4. Tarjeta de fidelidad, por serial o por nombre.
     const identificacion = identificarPorEscaneo(pos.p, texto);

@@ -76,6 +76,12 @@ const esquemaCambios = z.object({
 });
 
 export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias) {
+  /** Un ítem por su id, con `nombreCompleto` y `stock` resueltos. */
+  const paraPantalla = (id: string) => {
+    const item = pos.p.items.get(id);
+    return item ? pos.p.itemParaPantalla(item) : undefined;
+  };
+
   app.get("/catalogo", async (peticion) => {
     const { q, incluirInactivos, tipo, marca, soloSinPrecio } = z
       .object({
@@ -239,27 +245,27 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
       const r = crearItem(pos.p, datos);
       return { eventos: r.eventos, resultado: r.itemId };
     });
-    return respuesta.status(201).send({ item: pos.p.items.get(itemId) });
+    return respuesta.status(201).send({ item: paraPantalla(itemId) });
   });
 
   app.patch("/catalogo/:id", async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const cambios = esquemaCambios.parse(peticion.body);
     await pos.escribir(() => actualizarItem(pos.p, id, cambios));
-    return { item: pos.p.items.get(id) };
+    return { item: paraPantalla(id) };
   });
 
   app.post("/catalogo/:id/desactivar", async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { motivo } = z.object({ motivo: z.string().trim().max(200).optional() }).parse(peticion.body ?? {});
     await pos.escribir(() => desactivarItem(pos.p, id, motivo));
-    return { item: pos.p.items.get(id) };
+    return { item: paraPantalla(id) };
   });
 
   app.post("/catalogo/:id/reactivar", async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     await pos.escribir(() => reactivarItem(pos.p, id));
-    return { item: pos.p.items.get(id) };
+    return { item: paraPantalla(id) };
   });
 
   // ── Barberos: solo atribución, sin comisiones (D6) ────────────────────────

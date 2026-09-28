@@ -225,7 +225,7 @@ function FichaDeProducto({ producto, alCerrar }: { producto: ProductoConStock; a
   const stock = kardex.data?.stock ?? producto.stock;
 
   return (
-    <Modal titulo={producto.nombre} subtitulo={producto.codigo} alCerrar={alCerrar} ancho="max-w-3xl">
+    <Modal titulo={producto.nombreCompleto} subtitulo={producto.codigo} alCerrar={alCerrar} ancho="max-w-3xl">
       <div className="space-y-6">
         <div className="flex items-center justify-between rounded-2xl bg-hueso px-6 py-5">
           <div>

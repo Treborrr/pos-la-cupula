@@ -44,10 +44,10 @@ import {
   type RespuestaEscaneo,
   type Venta,
 } from "../lib/api";
-import { aCentimos, aTexto, aTextoConSimbolo, cantidad as fmtCantidad } from "../lib/formato";
+import { aCentimos, aTexto, aTextoConSimbolo, cantidad as fmtCantidad, nombreConMarca } from "../lib/formato";
 import { useAtajos, useEscaner } from "../lib/escaneo";
 import { abrirLector, esQrDeTicket } from "../lib/lector";
-import { nombreDeLinea, subtotalDe, totalDe, usarCarrito } from "../estado/carrito";
+import { subtotalDe, totalDe, usarCarrito } from "../estado/carrito";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { BotonesDeMedio, DetalleDePagos, MEDIOS } from "../componentes/PanelDePago";
 import { CampoCliente, normalizarNombre } from "../componentes/CampoCliente";
@@ -209,7 +209,7 @@ export function Cobrar() {
 
       if (r.tipo === "item") {
         agregarItem(r.item);
-        setMensaje({ tono: "bien", texto: `${r.item.nombre} agregado` });
+        setMensaje({ tono: "bien", texto: `${r.item.nombreCompleto} agregado` });
       } else if (r.tipo === "cliente") {
         carrito.ponerCliente(r.cliente.id, r.cliente.nombre);
         setMensaje({
@@ -637,7 +637,7 @@ function LineaDelTicket({
   return (
     <div className="px-5 py-4">
       <div className="flex items-start justify-between gap-3">
-        <span className="min-w-0 flex-1 pt-2 leading-snug font-semibold">{nombreDeLinea(linea)}</span>
+        <span className="min-w-0 flex-1 pt-2 leading-snug font-semibold">{nombreConMarca(linea)}</span>
         <span className="cifra pt-2 text-lg font-semibold">
           {aTextoConSimbolo(Math.round(linea.precioUnitario * linea.cantidad))}
         </span>
@@ -647,7 +647,7 @@ function LineaDelTicket({
             alCambiar();
           }}
           className="boton-icono -mr-2 hover:text-mal"
-          aria-label={`Quitar ${linea.nombre}`}
+          aria-label={`Quitar ${nombreConMarca(linea)}`}
           title="Quitar"
         >
           <X className="h-5 w-5" />

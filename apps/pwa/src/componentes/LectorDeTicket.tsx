@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, ScanLine, Search, UserRound } from "lucide-react";
 
 import { api, type Barbero, type FichaCliente, type ResultadoImpresion, type Venta } from "../lib/api";
-import { aTextoConSimbolo, cuandoFue, fechaYHora } from "../lib/formato";
+import { aTextoConSimbolo, cuandoFue, fechaYHora, nombreConMarca } from "../lib/formato";
 import { correlativoDe, escucharLector, marcarLectorAbierto } from "../lib/lector";
 import { Aviso, Modal } from "./Modal";
 import { Pastilla } from "./Piezas";
@@ -232,7 +232,7 @@ function LectorDeTicket({
                 {v.lineas.map((l, i) => (
                   <div key={i} className="flex items-start justify-between gap-4 px-4 py-3">
                     <div className="min-w-0">
-                      <div className="font-semibold">{l.nombre}</div>
+                      <div className="font-semibold">{nombreConMarca(l)}</div>
                       <div className="ayuda">
                         {l.cantidad} × {aTextoConSimbolo(l.precioUnitario)}
                         {!barberoUnico && l.barberoId && nombreBarbero[l.barberoId]

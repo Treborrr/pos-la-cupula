@@ -566,6 +566,83 @@ describe("reconstrucción", () => {
     await revivido.cerrar();
   });
 
+  it("el costo promedio y la marca sobreviven a la reconstrucción", async () => {
+    // El promedio ponderado NO se guarda como un número suelto: se deriva del
+    // log, ponderando cada entrada contra el stock que había en ese momento.
+    // O sea que reproducir el log tiene que dar exactamente el mismo número, o
+    // el margen de los reportes cambiaría solo con reiniciar el programa.
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+
+    let ceraId = "";
+    {
+      const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+      const { itemId } = await pos.transaccion(() => {
+        const r = crearItem(pos.p, {
+          codigo: "CERA",
+          marca: "NIVEL TRES",
+          nombre: "CERA MATE",
+          tipo: "PRODUCTO",
+          categoria: "P",
+          precio: 4500,
+          costo: 2800,
+          stockInicial: 6,
+        });
+        return { eventos: r.eventos, resultado: r };
+      });
+      ceraId = itemId;
+
+      // Entran 4 a 34 sobre 6 a 28 → (6×28 + 4×34) / 10 = 30.40
+      await pos.escribir(() => [
+        { tipo: "stock.entrada", datos: { itemId, cantidad: 4, costoUnitario: 3400, motivo: "Compra" } },
+      ]);
+      expect(pos.p.items.get(itemId)!.costo).toBe(3040);
+      await pos.cerrar();
+    }
+
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    const item = revivido.p.items.get(ceraId)!;
+
+    expect(item.costo).toBe(3040);
+    expect(item.marca).toBe("NIVEL TRES");
+    expect(revivido.p.stockDe(ceraId)).toBe(10);
+    // Y el índice de marcas se rehace: si no, el filtro del catálogo quedaría
+    // vacío después de cada reinicio.
+    expect(revivido.p.marcas()).toEqual([{ marca: "NIVEL TRES", items: 1 }]);
+    await revivido.cerrar();
+  });
+
+  it("un ítem sin precio sigue sin precio después de reiniciar", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+
+    let id = "";
+    {
+      const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+      const { itemId } = await pos.transaccion(() => {
+        const r = crearItem(pos.p, {
+          codigo: "LACA",
+          marca: "FORAJIDO",
+          nombre: "LACA DORADA",
+          tipo: "PRODUCTO",
+          categoria: "P",
+          precio: null,
+          stockInicial: 3,
+        });
+        return { eventos: r.eventos, resultado: r };
+      });
+      id = itemId;
+      await pos.cerrar();
+    }
+
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    // `null` y no 0: si se reconstruyera como 0, un producto al que le falta el
+    // precio pasaría a ser un producto gratis al reiniciar el programa.
+    expect(revivido.p.items.get(id)!.precio).toBeNull();
+    expect(revivido.p.sinPrecio()).toHaveLength(1);
+    await revivido.cerrar();
+  });
+
   it("ignora una instantánea de otro formato y reconstruye desde el log", async () => {
     const dir = await carpetaTemporal();
     aBorrar.push(dir);

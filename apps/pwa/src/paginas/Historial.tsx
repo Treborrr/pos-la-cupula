@@ -12,7 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Printer, Receipt, ScanLine, Search, X } from "lucide-react";
 
 import { api, type ResultadoImpresion, type Venta } from "../lib/api";
-import { aTextoConSimbolo, diasAtras, fecha, fechaYHora, hora, hoy } from "../lib/formato";
+import { aTextoConSimbolo, diasAtras, fecha, fechaYHora, hora, hoy, nombreConMarca } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { useEscaner } from "../lib/escaneo";
 import { EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
@@ -149,7 +149,7 @@ export function Historial() {
                       {rango === "hoy" && !buscando ? hora(v.ts) : `${fecha(v.ts)} ${hora(v.ts)}`}
                     </td>
                     <td className="max-w-md truncate">
-                      {v.lineas.map((l) => `${l.cantidad > 1 ? `${l.cantidad} × ` : ""}${l.nombre}`).join(", ")}
+                      {v.lineas.map((l) => `${l.cantidad > 1 ? `${l.cantidad} × ` : ""}${nombreConMarca(l)}`).join(", ")}
                     </td>
                     <td className="whitespace-nowrap text-tinta/65">
                       {v.pagos.map((p) => NOMBRE_MEDIO[p.medio] ?? p.medio).join(" + ")}
@@ -301,7 +301,7 @@ function DetalleDeVenta({
           {venta.lineas.map((l, i) => (
             <div key={i} className="flex items-start justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
-                <div className="font-semibold">{l.marca ? `${l.marca} ${l.nombre}` : l.nombre}</div>
+                <div className="font-semibold">{nombreConMarca(l)}</div>
                 <div className="ayuda">
                   {l.cantidad} × {aTextoConSimbolo(l.precioUnitario)}
                   {/* Sin precio de lista no hubo ajuste: el precio se escribió

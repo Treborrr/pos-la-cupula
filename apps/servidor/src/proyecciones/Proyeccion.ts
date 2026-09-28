@@ -494,6 +494,24 @@ export class Proyeccion {
     return item.marca ? `${item.marca} ${item.nombre}` : item.nombre;
   }
 
+  /**
+   * Un ítem tal como lo espera la pantalla, con lo derivado ya resuelto.
+   *
+   * TODAS las rutas que devuelven un ítem pasan por acá. No es ceremonia: cada
+   * una lo serializaba a su manera y `/escaneo` devolvía el ítem crudo, sin
+   * `nombreCompleto` ni `stock`. Al escanear el código de un producto sin
+   * precio, la pantalla mostraba "undefined todavía no tiene precio". El bug no
+   * estaba en el mensaje: estaba en que había seis formas de contestar la misma
+   * pregunta y una se quedó atrás.
+   */
+  itemParaPantalla(item: Item): Item & { nombreCompleto: string; stock: number | null } {
+    return {
+      ...item,
+      nombreCompleto: this.nombreCompleto(item),
+      stock: item.tipo === "PRODUCTO" ? this.stockDe(item.id) : null,
+    };
+  }
+
   /** Ítems activos que todavía no tienen precio: no se pueden vender de la grilla. */
   sinPrecio(): Item[] {
     return [...this.items.values()]
