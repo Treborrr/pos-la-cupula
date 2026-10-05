@@ -12,6 +12,11 @@ apps/servidor/pwa/
 # copia de la entrega v0.1.0 que se guardó en historia/.
 /entrega/
 
+# El paquete liviano para mandarle al cliente. Se regenera con:
+#   node herramientas/empaquetar-correo.mjs
+# Lleva adentro el .exe y nssm.exe, que no se versionan.
+/entrega-correo/
+
 # Datos de desarrollo: son el log de eventos de pruebas locales, no del negocio.
 /datos-dev/
 /datos/

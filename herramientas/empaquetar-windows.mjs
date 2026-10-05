@@ -22,7 +22,7 @@
  */
 
 import { exec } from "node:child_process";
-import { cp, mkdir, rm, writeFile, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -31,7 +31,14 @@ const correr = promisify(exec);
 const RAIZ = fileURLToPath(new URL("..", import.meta.url));
 const ENTREGA = join(RAIZ, "entrega");
 
-const VERSION = "0.3.0";
+/**
+ * La versión sale del `package.json`, no escrita a mano acá.
+ *
+ * Estaba duplicada y se quedó en 0.3.0 mientras el proyecto iba en 0.4.0, así
+ * que el instalador anunciaba una versión y entregaba otra. Es el tipo de dato
+ * que nunca hay que tener dos veces.
+ */
+const VERSION = JSON.parse(await readFile(join(RAIZ, "package.json"), "utf8")).version;
 const NOMBRE_SERVICIO = "POSCupula";
 const PUERTO = 7070;
 const CARPETA_INSTALACION = "C:\\POSCupula";
@@ -199,7 +206,7 @@ echo   ========================================
 echo.
 echo    El POS quedo instalado y arranca solo con Windows.
 echo.
-echo    Ábrelo desde el acceso directo del escritorio,
+echo    Abrelo desde el acceso directo del escritorio,
 echo    o entra a:  http://localhost:${PUERTO}
 echo.
 echo    Desde un celular en el mismo WiFi, con la IP de esta PC:
@@ -593,10 +600,42 @@ DESINSTALAR
   Los datos NO se borran.
 `;
 
-await writeFile(join(ENTREGA, "INSTALAR.cmd"), instalar.replace(/\n/g, "\r\n"), "latin1");
-await writeFile(join(ENTREGA, "DESINSTALAR.cmd"), desinstalar.replace(/\n/g, "\r\n"), "latin1");
-await writeFile(join(ENTREGA, "ACCESO-REMOTO.cmd"), accesoRemoto.replace(/\n/g, "\r\n"), "latin1");
-await writeFile(join(ENTREGA, "AUDITORIA.cmd"), auditoria.replace(/\n/g, "\r\n"), "latin1");
+/**
+ * Escribe un .cmd para Windows: CRLF y SIN caracteres acentuados.
+ *
+ * Lo segundo no es pereza tipográfica, es un bug que ya pasó. Los scripts
+ * arrancan con `chcp 65001` —que pone la consola en UTF-8— pero se escribían
+ * en `latin1`. Mientras el texto fue ASCII puro las dos cosas coincidieron por
+ * casualidad; el día que alguien escribió "Ábrelo", ese `Á` quedó como un byte
+ * 0xC1 suelto que en UTF-8 no significa nada, y el cliente veía un carácter
+ * roto justo en el mensaje de "listo, ya está instalado".
+ *
+ * La salida de una consola de Windows es el peor lugar para pelear con
+ * codificaciones: hay tres code pages en juego (la del sistema, la del
+ * archivo y la que impone `chcp`) y la combinación depende de la versión de
+ * Windows. Así que acá no se negocia: los .cmd van en ASCII y las tildes viven
+ * en el LEEME, que se abre con un editor de texto y no con cmd.exe.
+ *
+ * El guardia FALLA el empaquetado en vez de avisar. Un paquete que se genera
+ * con un carácter roto adentro es un paquete que se manda sin que nadie lo
+ * note.
+ */
+async function escribirCmd(nombre, contenido) {
+  const acentos = [...contenido].filter((c) => c.codePointAt(0) > 127);
+  if (acentos.length > 0) {
+    throw new Error(
+      `${nombre} tiene caracteres no-ASCII (${[...new Set(acentos)].join(" ")}). ` +
+        `En un .cmd salen rotos en la consola del cliente: escribilos sin tilde, o ponelos en el LEEME.`,
+    );
+  }
+  await writeFile(join(ENTREGA, nombre), contenido.replace(/\n/g, "\r\n"), "ascii");
+}
+
+await escribirCmd("INSTALAR.cmd", instalar);
+await escribirCmd("DESINSTALAR.cmd", desinstalar);
+await escribirCmd("ACCESO-REMOTO.cmd", accesoRemoto);
+await escribirCmd("AUDITORIA.cmd", auditoria);
+// El LEEME sí va en UTF-8: lo abre el Bloc de notas, no cmd.exe.
 await writeFile(join(ENTREGA, "LEEME.txt"), leeme.replace(/\n/g, "\r\n"), "utf8");
 
 console.log(`\n✓ Paquete listo en entrega/\n`);

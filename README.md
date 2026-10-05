@@ -188,6 +188,28 @@ El instalador registra el POS como servicio de Windows, así que arranca solo al
 encender la PC y se reinicia solo si se cae. Reinstalar por encima **no toca la
 carpeta de datos**.
 
+### Mandárselo al cliente para que lo instale solo
+
+```bash
+node herramientas/empaquetar-correo.mjs        # ZIP liviano en entrega-correo/
+```
+
+Es `entrega/` sin lo que el cliente no necesita para instalar: se va el
+instalador de Tailscale (37 MB) y su script, porque el acceso remoto hay que
+configurarlo en sitio —se inicia sesión una vez en esa PC—. Quedan 22 MB, con
+un LEEME corto de instalación en vez del de 180 líneas.
+
+> **Gmail no deja adjuntarlo.** Rechaza los mensajes con un ejecutable adjunto,
+> y adentro hay un `.exe` y dos `.cmd`. No alcanza con comprimirlo: Gmail abre
+> el ZIP y mira adentro. Se sube a Drive y se manda el enlace — es además lo más
+> fácil para el cliente, porque Windows abre ZIPs normales sin instalar nada.
+>
+> Con `--clave MICLAVE` sale cifrado y Gmail lo deja pasar, pero el Explorador
+> de Windows no abre ZIPs con contraseña y el cliente tendría que instalar
+> 7-Zip. `entrega-correo/COMO-ENVIARLO.txt` explica las dos vías y lo que hay
+> que avisarle antes (la pantalla de "Windows protegió tu PC", y que hay que
+> descomprimir antes de instalar).
+
 ## Verificar
 
 ```bash
