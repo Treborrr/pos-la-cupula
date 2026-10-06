@@ -471,7 +471,7 @@ export class Proyeccion {
    * alfabéticamente. Es lo que llena el desplegable de filtro del catálogo.
    *
    * Devuelve la forma CANÓNICA de cada marca —la del primer ítem que la usó— y
-   * no la clave normalizada: el filtro tiene que decir "NIVEL TRES", no "level 3".
+   * no la clave normalizada: el filtro tiene que decir "NIVEL TRES", no "nivel tres".
    */
   marcas(): { marca: string; items: number }[] {
     const salida: { marca: string; items: number }[] = [];

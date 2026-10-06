@@ -50,7 +50,7 @@ async function posDePrueba() {
     const r = crearItem(pos.p, {
       codigo: "CERA",
       marca: "NIVEL TRES",
-      nombre: "CERA MODELADORA",
+      nombre: "PASTA MODELADORA",
       tipo: "PRODUCTO",
       categoria: "Productos",
       precio: 3500,
@@ -67,7 +67,7 @@ async function posDePrueba() {
     const r = crearItem(pos.p, {
       codigo: "ROJA",
       marca: "FORAJIDO",
-      nombre: "CERA ROJA",
+      nombre: "PASTA ROJA",
       tipo: "PRODUCTO",
       categoria: "Productos",
       precio: null,
@@ -581,7 +581,7 @@ describe("reconstrucción", () => {
         const r = crearItem(pos.p, {
           codigo: "CERA",
           marca: "NIVEL TRES",
-          nombre: "CERA MATE",
+          nombre: "PASTA MATE",
           tipo: "PRODUCTO",
           categoria: "P",
           precio: 4500,
@@ -623,7 +623,7 @@ describe("reconstrucción", () => {
         const r = crearItem(pos.p, {
           codigo: "LACA",
           marca: "FORAJIDO",
-          nombre: "LACA DORADA",
+          nombre: "FIJADOR DORADO",
           tipo: "PRODUCTO",
           categoria: "P",
           precio: null,

@@ -21,8 +21,15 @@ import { PLANTILLA_POR_DEFECTO, reemplazar } from "../src/adaptadores/impresora/
 import type { Venta } from "../src/proyecciones/tipos";
 import type { DatosDelNegocio } from "../src/puertos/Impresora";
 
+/**
+ * Un negocio de prueba, INVENTADO.
+ *
+ * Los acentos y la Ñ están ahí a propósito: la mitad de lo que prueba este
+ * archivo es que el texto sobreviva la traducción a CP850, que es la tabla de
+ * caracteres que habla la ticketera. Un negocio llamado "ACME" no probaría nada.
+ */
 const NEGOCIO: DatosDelNegocio = {
-  nombre: "LA CÚPULA TATTOO BARBER SHOP",
+  nombre: "BARBERÍA EL AÑO DEL ÑANDÚ",
   direccion: "AV. SIEMPRE VIVA 742",
   ciudad: "Lima - Lima - Miraflores",
   ruc: "20100000001",
@@ -235,7 +242,7 @@ describe("ticket completo", () => {
     const bytes = await renderTicketEscPos(ventaDePrueba(), NEGOCIO, { perfil: PERFIL_GENERICO_80 });
     const texto = textoDe(bytes);
 
-    expect(texto).toContain("LA C"); // el nombre, con la Ú ya en CP850
+    expect(texto).toContain("BARBER"); // el nombre, con la Í y la Ñ ya en CP850
     expect(texto).toContain("AV. SIEMPRE VIVA 742");
     expect(texto).toContain("RUC 20100000001");
     expect(texto).toContain("NV000030");
@@ -258,7 +265,7 @@ describe("ticket completo", () => {
         {
           itemId: "01K5A0000000000000000000A1",
           codigo: "COR-D",
-          marca: "LA CÚPULA",
+          marca: "LA BARBERÍA",
           nombre: "CORTE DEGRADADO",
           tipo: "SERVICIO",
           cantidad: 1,
@@ -295,7 +302,7 @@ describe("ticket completo", () => {
   });
 
   it("parte por palabra el nombre de un vape que no cabe en el papel", async () => {
-    // "VIDA POD CARTUCHO LP WATERMELON PEACH ICE" son 41 caracteres y el perfil
+    // "VIDA POD CARTUCHO VP SANDIA DURAZNO" son 35 caracteres y el perfil
     // de 58 mm tiene 32 columnas. Truncarlo dejaría al cliente con un ticket
     // que no dice qué compró.
     const venta = ventaDePrueba({
@@ -304,7 +311,7 @@ describe("ticket completo", () => {
           itemId: "01K5A0000000000000000000A3",
           codigo: "P0088",
           marca: "VIDA POD",
-          nombre: "CARTUCHO LP WATERMELON PEACH ICE",
+          nombre: "CARTUCHO VP SANDIA DURAZNO",
           tipo: "PRODUCTO",
           cantidad: 1,
           precioUnitario: 2500,
@@ -321,10 +328,10 @@ describe("ticket completo", () => {
     const texto = textoDe(await renderTicketEscPos(venta, NEGOCIO, { perfil: PERFIL_GENERICO_58 }));
 
     // Está entero, repartido en renglones, y ninguna palabra quedó cortada.
-    for (const palabra of ["LIFE", "POD", "CARTUCHO", "WATERMELON", "PEACH", "ICE"]) {
+    for (const palabra of ["VIDA", "POD", "CARTUCHO", "SANDIA", "DURAZNO"]) {
       expect(texto).toContain(palabra);
     }
-    expect(texto).not.toContain("WATERME\n");
+    expect(texto).not.toContain("SAND\n");
   });
 
   it("termina en un comando de corte", async () => {

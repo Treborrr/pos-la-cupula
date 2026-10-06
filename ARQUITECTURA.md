@@ -1,7 +1,7 @@
 # POS La Cúpula — Arquitectura
 
-Sistema de punto de venta para **LA CÚPULA TATTOO BARBER SHOP** (Av. Gerardo
-Unger 3917, SMP — Lima). Reemplaza el archivo `NOTA DE VENTA CUPULA.xlsm`.
+Sistema de punto de venta para **LA CÚPULA TATTOO BARBER SHOP**, una barbería
+de Lima. Reemplaza la planilla de Excel con macros que usaban para cobrar.
 
 **Estado:** los ocho hitos implementados y probados. Lo único pendiente es
 **confirmar el perfil de la ticketera con el modelo real** — la impresión está
@@ -200,7 +200,7 @@ inmovilizada; y aviso de **lo vendido por debajo del costo**.
 | Windows con **4 GB de RAM** | Sin Docker, sin Postgres, sin Electron. Un proceso Node + una ventana de navegador |
 | **Sin internet garantizado** | Todo funciona offline. Internet es opcional y solo para la integración de fidelidad |
 | **Un operador no técnico** | Instalador de un clic, arranque automático con Windows, cero terminal, cero mantenimiento |
-| **Cortes de luz** (Lima, SMP) | Cada venta se confirma solo después de estar físicamente en disco (`fsync`). Ver §6.2 |
+| **Cortes de luz** | Cada venta se confirma solo después de estar físicamente en disco (`fsync`). Ver §6.2 |
 | **Migrar a nube y a BD real** | El dominio no toca archivos. Habla con un puerto (§4.2). Cambiar de archivos a Postgres es cambiar una implementación |
 
 **Presupuesto de RAM medido contra el objetivo de 4 GB:**

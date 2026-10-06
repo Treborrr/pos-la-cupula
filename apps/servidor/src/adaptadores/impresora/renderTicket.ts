@@ -165,7 +165,7 @@ async function pintar(
       // La descripción se PARTE en varias líneas en vez de truncarse. El Excel
       // cortaba a 18 caracteres con Left() y nombres largos salían mutilados
       // en el papel del cliente. Hace falta de verdad acá: "VIDA POD CARTUCHO
-      // LP WATERMELON PEACH ICE" son 41 caracteres.
+      // VP SANDIA DURAZNO" son 35 caracteres.
       for (const trozo of partir(descripcion(linea), salida.columnas)) salida.linea(trozo);
 
       salida.dosColumnas(
@@ -225,7 +225,7 @@ async function pintar(
  * —está en el encabezado del ticket, tres centímetros más arriba— así que
  * repetir la marca en cada línea de servicio gastaría papel para decir algo que
  * el cliente ya leyó. En un producto es lo contrario: la marca es justo lo que
- * distingue el TALCO de DON NISH del de SIRMAN.
+ * distingue el TALCO de una marca del de otra.
  *
  * La marca sale de la LÍNEA y no del catálogo, como el nombre y el código: el
  * ticket de ayer tiene que seguir diciendo lo que decía ayer.

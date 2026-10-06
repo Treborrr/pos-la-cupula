@@ -19,6 +19,23 @@ apps/servidor/pwa/
 
 # Datos de desarrollo: son el log de eventos de pruebas locales, no del negocio.
 /datos-dev/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NADA DE DATOS DE UN NEGOCIO REAL EN EL REPOSITORIO
+#
+# Este repositorio es público. Lo que entra acá queda en el historial de git
+# para siempre, y sacarlo después obliga a reescribirlo.
+#
+# Los archivos que un cliente manda —su catálogo, su planilla de ventas, su
+# lista de precios— son SUS datos, no nuestros. Viven en el disco de quien los
+# recibe, nunca acá. Para las pruebas hay un catálogo de ejemplo en
+# `apps/servidor/pruebas/fijos/`: tiene la misma estructura que un archivo real
+# de Excel y los mismos casos raros, con nombres inventados.
+# ─────────────────────────────────────────────────────────────────────────────
+*.xlsm
+/PLANTILLA-CATALOGO.xlsx
+/datos-ejemplo/catalogo-del-excel.json
+*-del-cliente.xlsx
 /datos/
 
 # Lo que genera el extractor a partir del Excel. Se regenera con:

@@ -128,8 +128,8 @@ export function generarPlantilla(): Buffer {
         [...COLUMNAS],
         ["", "CORTE CLASICO", "SERVICIO", "Barbería", 20, "", "ILIMITADO", ""],
         ["", "BARBA", "SERVICIO", "Barbería", 10, "", "ILIMITADO", ""],
-        ["NIVEL TRES", "CERA MATE FINISH", "PRODUCTO", "Barbería", 45, 28, 2, 1],
-        ["VIDA POD", "CARTUCHO LP BLUE RAZZ", "PRODUCTO", "Vapes", 25, 16, 2, 4],
+        ["NIVEL TRES", "PASTA MATE FIRME", "PRODUCTO", "Barbería", 45, 28, 2, 1],
+        ["VIDA POD", "CARTUCHO VP FRAMBUESA", "PRODUCTO", "Vapes", 25, 16, 2, 4],
         ...Array.from({ length: 14 }, () => ["", "", "", "", "", "", "", ""]),
       ],
     },
@@ -145,12 +145,12 @@ export function generarPlantilla(): Buffer {
         ["COLUMNA", "QUÉ VA"],
         [
           "MARCA",
-          "La marca del producto: NIVEL TRES, FORAJIDO, VIDA POD. Déjala vacía en los servicios que hace la barbería.",
+          "La marca del producto. Déjala vacía en los servicios que hace la barbería.",
         ],
         ["", "Sirve para dos cosas: filtrar el catálogo por marca y saber cuánto se vende de cada una."],
         [
           "",
-          "También distingue productos con el mismo nombre: el TALCO de DON NISH y el de SIRMAN son dos cosas distintas.",
+          "También distingue dos productos con el mismo nombre: un TALCO de una marca y el TALCO de otra.",
         ],
         ["NOMBRE", "Obligatorio. Es lo que sale en el ticket y en la pantalla de cobro, después de la marca."],
         ["TIPO", "SERVICIO o PRODUCTO. Un SERVICIO no lleva stock; un PRODUCTO sí."],
@@ -356,8 +356,8 @@ export function leerPlantilla(datos: Buffer): LecturaDeCatalogo {
     const marcaLimpia = limpiar(marca);
 
     // La identidad de una fila es MARCA + NOMBRE + TIPO, porque la planilla ya
-    // no trae código. Sin la marca en la clave, el TALCO de DON NISH y el de
-    // SIRMAN serían la misma fila repetida.
+    // no trae código. Sin la marca en la clave, el TALCO de una marca y el de
+    // otra serían la misma fila repetida.
     if (nombreLimpio !== "" && tipoValido) {
       const clave = `${normalizar(marcaLimpia)}|${normalizar(nombreLimpio)}|${tipoNormalizado}`;
       const antes = vistos.get(clave);

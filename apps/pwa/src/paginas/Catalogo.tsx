@@ -101,7 +101,7 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
       (tipo === "todos" || i.tipo === tipo) &&
       (!marca || i.marca === marca) &&
       (!soloSinPrecio || i.precio === null) &&
-      // La marca entra en la búsqueda: quien escribe "bandido" espera ver sus
+      // La marca entra en la búsqueda: quien escribe "forajido" espera ver sus
       // ceras, aunque la palabra no esté en el nombre de ninguna.
       (!termino || `${i.codigo} ${i.marca} ${i.nombre} ${i.categoria}`.toLowerCase().includes(termino)),
   );
@@ -561,7 +561,7 @@ function FormularioDeItem({
 
         {/* Cómo va a verse en el ticket y en la grilla de cobro. Se muestra
             porque marca y nombre se escriben en dos campos y se leen juntos: sin
-            esto, nadie se da cuenta de que quedó "FORAJIDO FORAJIDO CERA". */}
+            esto, nadie se da cuenta de que quedó "FORAJIDO FORAJIDO PASTA". */}
         {marca.trim() && nombre.trim() ? (
           <p className="ayuda">
             Se va a ver como <strong className="text-tinta">{`${marca.trim()} ${nombre.trim()}`}</strong>

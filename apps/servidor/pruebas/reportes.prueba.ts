@@ -50,7 +50,7 @@ async function posConCatalogo() {
   // Un producto con costo: vende a 45, cuesta 28 → utilidad 17, margen 37.8%.
   await alta("CERA", {
     marca: "NIVEL TRES",
-    nombre: "CERA MATE FINISH",
+    nombre: "PASTA MATE FIRME",
     tipo: "PRODUCTO",
     categoria: "Barbería",
     precio: 4500,
@@ -61,7 +61,7 @@ async function posConCatalogo() {
   // Un producto SIN costo cargado: se vende, pero su margen no se puede calcular.
   await alta("VAPE", {
     marca: "VIDA POD",
-    nombre: "CARTUCHO LP BLUE RAZZ",
+    nombre: "CARTUCHO VP FRAMBUESA",
     tipo: "PRODUCTO",
     categoria: "Vapes",
     precio: 2500,
@@ -72,7 +72,7 @@ async function posConCatalogo() {
   // Un producto con stock que nunca se vende: es el que debe salir en rotación.
   await alta("DORMIDO", {
     marca: "FORAJIDO",
-    nombre: "LACA DORADA",
+    nombre: "FIJADOR DORADO",
     tipo: "PRODUCTO",
     categoria: "Barbería",
     precio: 3000,
@@ -206,13 +206,13 @@ describe("agrupaciones", () => {
   });
 
   it("un servicio marcado con el nombre del local NO entra al ranking de marcas", async () => {
-    // El catálogo real marca los siete servicios de barbería con "LA CÚPULA".
+    // El catálogo real marca los siete servicios de barbería con "LA BARBERÍA".
     // Como los servicios son el grueso de la facturación, esa fila encabezaría
     // el ranking siempre y taparía a las marcas que de verdad se revenden.
     const { pos, ids } = await posConCatalogo();
     await pos.transaccion(() => {
       const r = crearItem(pos.p, {
-        marca: "LA CÚPULA",
+        marca: "LA BARBERÍA",
         nombre: "CEJAS",
         tipo: "SERVICIO",
         categoria: "Barbería",
@@ -232,7 +232,7 @@ describe("agrupaciones", () => {
     expect(r.porMarca.map((m) => m.clave)).toEqual(["NIVEL TRES"]);
     // Pero la marca SÍ quedó guardada en el ítem y en la línea de venta: no se
     // pierde el dato, solo no se mezcla en este ranking.
-    expect(cejas.marca).toBe("LA CÚPULA");
+    expect(cejas.marca).toBe("LA BARBERÍA");
     await pos.cerrar();
   });
 
@@ -241,7 +241,7 @@ describe("agrupaciones", () => {
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 }]);
 
     const r = construirReporte(pos.p, hoy(), hoy());
-    expect(r.ranking[0].etiqueta).toBe("NIVEL TRES CERA MATE FINISH");
+    expect(r.ranking[0].etiqueta).toBe("NIVEL TRES PASTA MATE FIRME");
     await pos.cerrar();
   });
 });
@@ -255,7 +255,7 @@ describe("señales", () => {
     const r = construirReporte(pos.p, hoy(), hoy());
 
     expect(r.bajoCosto).toHaveLength(1);
-    expect(r.bajoCosto[0]).toMatchObject({ nombre: "NIVEL TRES CERA MATE FINISH", perdida: 1600 });
+    expect(r.bajoCosto[0]).toMatchObject({ nombre: "NIVEL TRES PASTA MATE FIRME", perdida: 1600 });
     // Y la utilidad del período es negativa, sin disimulo.
     expect(r.utilidad.utilidad).toBe(-1600);
     await pos.cerrar();
@@ -270,7 +270,7 @@ describe("señales", () => {
     await pos.transaccion(() => {
       const r = crearItem(pos.p, {
         marca: "FORAJIDO",
-        nombre: "CERA ROJA",
+        nombre: "PASTA ROJA",
         tipo: "PRODUCTO",
         categoria: "Barbería",
         precio: null,
@@ -278,7 +278,7 @@ describe("señales", () => {
       });
       return { eventos: r.eventos, resultado: r.itemId };
     });
-    const sinPrecio = [...pos.p.items.values()].find((i) => i.nombre === "CERA ROJA")!;
+    const sinPrecio = [...pos.p.items.values()].find((i) => i.nombre === "PASTA ROJA")!;
 
     await expect(cobrar(pos, [{ itemId: sinPrecio.id, cantidad: 1, precioUnitario: 3500 }])).rejects.toThrow(
       /no se puede vender/,
@@ -287,7 +287,7 @@ describe("señales", () => {
     const r = construirReporte(pos.p, hoy(), hoy());
     expect(r.total).toBe(0);
     expect(r.inventario.sinPrecio).toBe(1);
-    expect(r.sinRotar.map((s) => s.nombre)).toContain("FORAJIDO CERA ROJA");
+    expect(r.sinRotar.map((s) => s.nombre)).toContain("FORAJIDO PASTA ROJA");
     await pos.cerrar();
   });
 });
@@ -314,15 +314,15 @@ describe("inventario y rotación", () => {
     const r = construirReporte(pos.p, hoy(), hoy());
     const nombres = r.sinRotar.map((s) => s.nombre);
 
-    expect(nombres).toContain("FORAJIDO LACA DORADA");
-    expect(nombres).not.toContain("NIVEL TRES CERA MATE FINISH"); // se vendió
+    expect(nombres).toContain("FORAJIDO FIJADOR DORADO");
+    expect(nombres).not.toContain("NIVEL TRES PASTA MATE FIRME"); // se vendió
     await pos.cerrar();
   });
 
   it("dice cuánta plata hay parada en lo que no rota", async () => {
     const { pos } = await posConCatalogo();
     const r = construirReporte(pos.p, hoy(), hoy());
-    const dormido = r.sinRotar.find((s) => s.nombre === "FORAJIDO LACA DORADA")!;
+    const dormido = r.sinRotar.find((s) => s.nombre === "FORAJIDO FIJADOR DORADO")!;
 
     expect(dormido.inmovilizado).toBe(6000); // 4 × 15.00
     expect(dormido.diasSinVender).toBeNull(); // no se vendió nunca
@@ -338,7 +338,7 @@ describe("inventario y rotación", () => {
     ]);
 
     const r = construirReporte(pos.p, hoy(), hoy());
-    expect(r.sinRotar.map((s) => s.nombre)).not.toContain("FORAJIDO LACA DORADA");
+    expect(r.sinRotar.map((s) => s.nombre)).not.toContain("FORAJIDO FIJADOR DORADO");
     await pos.cerrar();
   });
 });

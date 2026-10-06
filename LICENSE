@@ -1,0 +1,27 @@
+Copyright (c) 2026 Robert (Treborrr)
+
+Todos los derechos reservados.
+
+Este repositorio se publica para que el código pueda LEERSE: el porqué de cada
+decisión está escrito en los comentarios y en ARQUITECTURA.md, y eso no sirve
+de nada guardado en un disco. Sos libre de leerlo, estudiarlo, citarlo y
+aprender de él.
+
+Lo que no se concede es permiso para usarlo, copiarlo, modificarlo ni
+distribuirlo —en todo o en parte, con o sin fines comerciales— sin permiso
+escrito del autor.
+
+Si querés usar algo de acá para tu propio proyecto, escribime: la respuesta
+probablemente sea sí.
+
+EL SOFTWARE SE PROVEE "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO.
+
+────────────────────────────────────────────────────────────────────────────────
+
+Nota sobre terceros
+
+El logotipo y el nombre LA CÚPULA TATTOO BARBER SHOP son de la barbería y se
+incluyen porque este sistema se hizo para ella. No están cubiertos por este
+aviso ni se conceden derechos sobre ellos.
+
+Las dependencias de `package.json` tienen cada una su propia licencia.

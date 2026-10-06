@@ -26,11 +26,24 @@ import type { Venta } from "../proyecciones/tipos";
 const EVENTOS_POR_INSTANTANEA = 5_000;
 
 export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
-  // Sacado del encabezado del ticket que ya imprimía el Excel.
-  "negocio.nombre": "LA CÚPULA TATTOO BARBER SHOP",
-  "negocio.direccion": "AV. SIEMPRE VIVA 742",
-  "negocio.ciudad": "Lima - Lima - Miraflores",
-  "negocio.ruc": "20100000001",
+  /**
+   * Los datos del negocio arrancan VACÍOS y se cargan en Ajustes al instalar.
+   *
+   * Estaban escritos acá con los valores reales del primer cliente —nombre,
+   * dirección y RUC— y eso estaba mal por dos razones. La chica: cualquier otra
+   * instalación arrancaba imprimiendo tickets con los datos de otro negocio
+   * hasta que alguien se diera cuenta. La grande: un RUC peruano que empieza
+   * con 10 es de persona natural y lleva el DNI del dueño adentro, así que era
+   * un documento de identidad viviendo en el código fuente.
+   *
+   * La configuración de un negocio es un dato de la instalación, no del
+   * programa. Vacío, además, es lo que hace que el asistente de primeros pasos
+   * los pida en vez de dejarlos pasar.
+   */
+  "negocio.nombre": "",
+  "negocio.direccion": "",
+  "negocio.ciudad": "",
+  "negocio.ruc": "",
   "negocio.pie": "¡GRACIAS POR TU VISITA!",
 
   /**

@@ -19,7 +19,7 @@
  * planilla que el cliente usa no tiene columna de código —el sistema los genera
  * solos— así que la identidad tiene que salir de lo que la planilla sí trae. La
  * marca va en la clave y no es un detalle: en este catálogo hay un TALCO de
- * DON NISH y otro de SIRMAN, y comparando solo por nombre la segunda carga
+ * una marca y otro de otra, y comparando solo por nombre la segunda carga
  * pisaría un producto con el otro.
  */
 
@@ -351,7 +351,7 @@ function buscarExistente(p: Proyeccion, fila: FilaDeCatalogo): Item | undefined 
    * como un producto nuevo duplicaría el catálogo entero en la carga siguiente.
    *
    * La condición de que haya UN SOLO candidato es lo que hace esto seguro. Con
-   * dos o más —el TALCO de DON NISH y el de SIRMAN— no hay forma de saber a
+   * dos o más —el TALCO de dos marcas distintas— no hay forma de saber a
    * cuál se refiere una fila que dice solo "TALCO", y adivinar fusionaría dos
    * productos distintos. En ese caso se crea uno nuevo: un ítem de más se ve y
    * se corrige, una fusión silenciosa mezcla el historial de ventas de dos

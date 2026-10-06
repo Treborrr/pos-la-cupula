@@ -81,7 +81,10 @@ describe("catálogo", () => {
 
 describe("cobrar por HTTP", () => {
   it("cobra, devuelve el correlativo y la vista previa del ticket", async () => {
-    const { app } = await apiDePrueba();
+    const { app, pos } = await apiDePrueba();
+    // Los datos del negocio arrancan vacíos y se cargan al instalar, así que
+    // la prueba los pone: lo que verifica es que lo CONFIGURADO llegue al papel.
+    await pos.guardarConfig("negocio.nombre", "BARBERÍA DE PRUEBA");
     const itemId = await crearServicio(app, "COR-D", "CORTE DEGRADADO", 2500);
 
     const r = await app.inject({
@@ -100,7 +103,7 @@ describe("cobrar por HTTP", () => {
     expect(cuerpo.venta.total).toBe(5000);
     // La ticketera todavía no está configurada, pero el ticket se genera igual.
     expect(cuerpo.impresion.impreso).toBe(false);
-    expect(cuerpo.impresion.vistaPrevia).toContain("LA CÚPULA TATTOO BARBER SHOP");
+    expect(cuerpo.impresion.vistaPrevia).toContain("BARBERÍA DE PRUEBA");
     expect(cuerpo.impresion.vistaPrevia).toContain("CUP1|V|NV000030");
   });
 
@@ -217,7 +220,7 @@ describe("enrutador de escaneos", () => {
       payload: {
         codigo: "LACA",
         marca: "FORAJIDO",
-        nombre: "LACA DORADA",
+        nombre: "FIJADOR DORADO",
         tipo: "PRODUCTO",
         categoria: "Productos",
         precio: null,
@@ -228,7 +231,7 @@ describe("enrutador de escaneos", () => {
     const escaneado = (await app.inject({ method: "GET", url: "/api/escaneo?valor=LACA" })).json().item;
     const delCatalogo = (await app.inject({ method: "GET", url: "/api/catalogo" })).json().items[0];
 
-    expect(escaneado.nombreCompleto).toBe("FORAJIDO LACA DORADA");
+    expect(escaneado.nombreCompleto).toBe("FORAJIDO FIJADOR DORADO");
     expect(escaneado.stock).toBe(4);
     expect(escaneado.precio).toBeNull();
     // La forma tiene que ser la MISMA: es el mismo objeto para la misma pantalla.
@@ -328,7 +331,7 @@ describe("inventario y caja por HTTP", () => {
         url: "/api/catalogo",
         payload: {
           codigo: "CERA",
-          nombre: "CERA MODELADORA",
+          nombre: "PASTA MODELADORA",
           tipo: "PRODUCTO",
           categoria: "Productos",
           precio: 3500,

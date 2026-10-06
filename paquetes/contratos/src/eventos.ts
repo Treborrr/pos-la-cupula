@@ -140,11 +140,11 @@ export const itemCreado = definir(
     itemId: esquemaUlid,
     codigo: esquemaCodigo,
     /**
-     * La marca comercial, aparte del nombre: NIVEL TRES, FORAJIDO, VIDA POD.
+     * La marca comercial, aparte del nombre.
      *
      * Va en su propio campo y no pegada al nombre porque el catálogo real trae
-     * nombres que se repiten entre marcas —hay un TALCO de DON NISH y otro de
-     * SIRMAN— y con un solo campo de texto esos dos productos son
+     * nombres que se repiten entre marcas —dos marcas pueden vender cada una su
+     * TALCO— y con un solo campo de texto esos dos productos son
      * indistinguibles en la pantalla de cobro. Además permite preguntar cuánto
      * se vendió de cada marca, que con 40 marcas es una pregunta de negocio.
      */

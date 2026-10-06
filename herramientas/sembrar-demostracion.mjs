@@ -66,15 +66,15 @@ const SERVICIOS = [
  * así— y cómo se cobra escribiendo el precio en el momento.
  */
 const PRODUCTOS = [
-  { codigo: "CERA", marca: "NIVEL TRES", nombre: "CERA MODELADORA", precio: 2500, costo: 1400, stockMinimo: 3, stockInicial: 12, categoria: "Productos", orden: 100 },
-  { codigo: "GEL", marca: "ROLDA", nombre: "GEL FIJADOR", precio: 1800, costo: 1000, stockMinimo: 3, stockInicial: 8, categoria: "Productos", orden: 110 },
+  { codigo: "CERA", marca: "NIVEL TRES", nombre: "PASTA MODELADORA", precio: 2500, costo: 1400, stockMinimo: 3, stockInicial: 12, categoria: "Productos", orden: 100 },
+  { codigo: "GEL", marca: "ROLBA", nombre: "GOMINA FIJADORA", precio: 1800, costo: 1000, stockMinimo: 3, stockInicial: 8, categoria: "Productos", orden: 110 },
   { codigo: "SHAMP", marca: "DON NISH", nombre: "SHAMPOO", precio: 3200, costo: 2100, stockMinimo: 2, stockInicial: 2, categoria: "Productos", orden: 120 },
   { codigo: "VAPE", marca: "OXBIR", nombre: "VAPE DESECHABLE", precio: 4500, costo: 2800, stockMinimo: 5, stockInicial: 20, categoria: "Vapes", orden: 200 },
-  { codigo: "PIPA", marca: "VPRO", nombre: "PIPA", precio: 3500, costo: 2000, stockMinimo: 2, stockInicial: 7, categoria: "Vapes", orden: 210 },
-  { codigo: "MALLA", marca: "VPRO", nombre: "MALLA PARA PIPA", precio: 200, costo: 80, stockMinimo: 20, stockInicial: 100, categoria: "Vapes", orden: 220 },
-  { codigo: "TRIM", marca: "KEMEI", nombre: "TRIMMER", precio: 12000, costo: 8500, stockMinimo: 1, stockInicial: 3, categoria: "Equipos", orden: 300 },
+  { codigo: "PIPA", marca: "VPRA", nombre: "PIPA", precio: 3500, costo: 2000, stockMinimo: 2, stockInicial: 7, categoria: "Vapes", orden: 210 },
+  { codigo: "MALLA", marca: "VPRA", nombre: "MALLA PARA PIPA", precio: 200, costo: 80, stockMinimo: 20, stockInicial: 100, categoria: "Vapes", orden: 220 },
+  { codigo: "TRIM", marca: "KEMOI", nombre: "TRIMMER", precio: 12000, costo: 8500, stockMinimo: 1, stockInicial: 3, categoria: "Equipos", orden: 300 },
   // Sin precio y sin costo: el caso que hay que poder ver funcionando.
-  { codigo: "LACA", marca: "FORAJIDO", nombre: "LACA DORADA", precio: null, stockMinimo: 2, stockInicial: 6, categoria: "Productos", orden: 130 },
+  { codigo: "LACA", marca: "FORAJIDO", nombre: "FIJADOR DORADO", precio: null, stockMinimo: 2, stockInicial: 6, categoria: "Productos", orden: 130 },
 ];
 
 const items = {};

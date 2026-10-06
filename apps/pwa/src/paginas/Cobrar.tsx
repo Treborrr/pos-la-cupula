@@ -116,7 +116,7 @@ export function Cobrar() {
       if (i.precio === null) return false;
       if (categoria && i.categoria !== categoria) return false;
       if (!termino) return true;
-      // La marca entra en la búsqueda: quien escribe "bandido" espera ver sus
+      // La marca entra en la búsqueda: quien escribe "forajido" espera ver sus
       // ceras aunque la palabra no esté en el nombre de ninguna.
       const texto = `${i.codigo} ${i.marca} ${i.nombre}`.toLowerCase();
       return termino.split(/\s+/).every((p) => texto.includes(p));
@@ -593,8 +593,8 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
         </span>
       ) : null}
       <span className={enTicket > 0 ? "pr-9" : ""}>
-        {/* La marca va arriba y más chica: distingue el TALCO de DON NISH del de
-            SIRMAN sin robarle espacio al nombre, que es lo que se busca con la
+        {/* La marca va arriba y más chica: distingue el TALCO de una marca del de
+            otra sin robarle espacio al nombre, que es lo que se busca con la
             vista. */}
         {item.marca ? (
           <span className="mb-0.5 block truncate text-xs font-semibold tracking-wide text-tinta/45 uppercase">

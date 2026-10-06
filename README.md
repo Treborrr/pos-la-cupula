@@ -1,7 +1,13 @@
 # POS La Cúpula
 
-Punto de venta de **LA CÚPULA TATTOO BARBER SHOP** (Av. Siempre Viva 742,
-SMP — Lima). Reemplaza el archivo `NOTA DE VENTA CUPULA.xlsm`.
+Punto de venta de **LA CÚPULA TATTOO BARBER SHOP**, una barbería de Lima.
+Reemplaza la planilla de Excel con macros que usaban para cobrar.
+
+> Los datos del negocio —nombre, dirección, RUC— se cargan al instalar, no
+> están en el código. Y los archivos que el cliente manda (su catálogo, su
+> planilla de ventas) no viven en este repositorio: son sus datos. Para las
+> pruebas hay un catálogo de ejemplo con la misma estructura y nombres
+> inventados.
 
 Corre **local** en una PC con Windows y 4 GB de RAM, **sin base de datos**: los
 datos viven en un log de eventos append-only en archivos, diseñado para migrar
@@ -25,15 +31,15 @@ nada.
 | H10 | Rediseño de la interfaz, primeros pasos guiados, lector de tickets | ✅ |
 | H11 | Auditoría exportable y acceso remoto por Tailscale | ✅ |
 
-**107 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**191 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
-respaldos y auditoría.
+importación de catálogo, reportes de margen, respaldos y auditoría.
 
 ### Lo que queda pendiente
 
-**La lista real de productos con sus precios y los nombres de los barberos.**
-El sistema arranca vacío a propósito: `datos-ejemplo/plantilla-productos.json`
-tiene precios inventados y hay que reemplazarla.
+**Los datos del negocio y el catálogo real.** El sistema arranca vacío a
+propósito: nombre, dirección y RUC se cargan en Ajustes al instalar, y el
+catálogo se sube desde el Excel (Ajustes → Catálogo).
 
 La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 (`advance80`, 48 columnas) viene elegido por defecto. Al instalar:
@@ -51,8 +57,8 @@ El cliente devolvió la plantilla de la v0.3.0 reescrita: sin la columna `Códig
 necesita y que el sistema no tenía. De ahí sale todo lo demás:
 
 - **Marca** como campo propio, no pegada al nombre. Hace falta porque el
-  catálogo real tiene nombres repetidos entre marcas —hay un `TALCO` de DON NISH
-  y otro de SIRMAN— y con un solo campo de texto esos dos productos son
+  catálogo real tiene nombres repetidos entre marcas —dos marcas distintas
+  venden cada una su `TALCO`— y con un solo campo de texto esos dos productos son
   indistinguibles al cobrar. Permite filtrar el catálogo por marca y reportar
   ventas por marca. En el ticket se imprime solo en los productos: los servicios
   los hace La Cúpula y su nombre ya está en el encabezado.
@@ -127,8 +133,8 @@ y esa carpeta ya no crece.
 ```bash
 npm test                                      # las pruebas primero
 # subir "version" en package.json (raíz, apps/*, paquetes/*)
-git commit -am "v0.3.0: …"
-git tag -a v0.3.0 -m "…"
+git commit -am "v0.5.0: …"
+git tag -a v0.5.0 -m "…"
 node herramientas/empaquetar-windows.mjs      # el .exe sale del código etiquetado
 ```
 
@@ -152,20 +158,36 @@ npm run dev:pwa
 En desarrollo los datos van a `datos-dev/` (no se versiona). En Windows, a
 `C:\POSCupula\datos`. Se puede forzar con `POS_DATOS=/ruta/que/sea`.
 
-### Cargar un catálogo
+### Llenarlo con datos para probar
 
 ```bash
-# Extrae del Excel los servicios de barbería y detecta los códigos repetidos
-python3 herramientas/extraer-catalogo-excel.py
-
-# Los carga por el API (idempotente: se puede correr dos veces)
-node herramientas/cargar-catalogo.mjs datos-ejemplo/catalogo-del-excel.json
-node herramientas/cargar-catalogo.mjs datos-ejemplo/plantilla-productos.json
+npm run dev                                    # en otra terminal
+node herramientas/sembrar-demostracion.mjs     # catálogo, ventas, caja y clientes
 ```
 
-> ⚠️ `plantilla-productos.json` tiene **precios inventados**. Los productos que
-> vende la barbería (ceras, vapes, pipas, mallas, trimmers) no estaban en el
-> Excel. Hay que reemplazarla por la lista real antes de instalar.
+Siembra por el API —las mismas validaciones que una venta hecha a mano— un
+catálogo con marcas y costos, un producto sin precio para ver ese caso, once
+ventas, un turno de caja y clientes inventados. Alcanza para que los reportes
+muestren márgenes de verdad.
+
+Para probar la carga desde Excel, en **Ajustes → Catálogo** se descarga la
+plantilla y se sube llena. El catálogo de ejemplo de las pruebas sirve también
+para esto:
+
+```
+apps/servidor/pruebas/fijos/catalogo-de-ejemplo.xlsx
+```
+
+Son 137 filas con los casos que traía el archivo real del primer cliente —119
+productos sin precio, `ILIMITADO` en el stock de los servicios, marcas escritas
+con espacios de más, dos marcas con un producto del mismo nombre— y nombres
+inventados.
+
+> `herramientas/extraer-catalogo-excel.py` es la herramienta de migración que se
+> usó una sola vez, para sacar los servicios del Excel con macros que la
+> barbería usaba antes. Ese archivo no está en el repositorio (ver la nota del
+> encabezado), así que el script no corre tal cual: queda como registro de cómo
+> se hizo la migración.
 
 ## Compilar y entregar
 

@@ -3,7 +3,7 @@
  *
  * Esta es la capa que no puede fallar: si pierde una venta, todo lo que está
  * construido encima miente. Las pruebas están escritas contra los modos de
- * falla REALES de una PC de barbería en SMP —corte de luz a mitad de
+ * falla REALES de la PC de una barbería —corte de luz a mitad de
  * escritura, dos instancias abiertas, alguien editando el archivo con el Bloc
  * de notas— y no contra el camino feliz.
  */

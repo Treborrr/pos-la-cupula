@@ -1,0 +1,20 @@
+# Para que el formato no dependa del editor de quien abra el repositorio.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+# En Markdown, dos espacios al final de una línea son un salto de línea
+# deliberado: recortarlos cambia el texto.
+trim_trailing_whitespace = false
+
+# Los scripts de Windows van con CRLF y sin acentos (ver empaquetar-windows.mjs).
+[*.cmd]
+end_of_line = crlf
+charset = latin1

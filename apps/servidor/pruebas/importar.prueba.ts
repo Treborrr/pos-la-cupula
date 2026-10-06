@@ -7,12 +7,20 @@
  * sistema que da de baja cosas en bloque, y equivocarse deja a la barbería sin
  * catálogo en hora pico.
  *
- * La tercera es nueva y es la que motivó todo este cambio: EL ARCHIVO REAL DEL
- * CLIENTE. Está guardado en `fijos/catalogo-del-cliente.xlsx` tal como lo
- * mandó, con sus 137 filas, sus marcas con espacios de más, sus "ILIMITADO" y
- * sus 119 productos sin precio. Hay una prueba que lo carga entero. Si alguien
- * endurece la lectura y ese archivo deja de entrar, la prueba se cae acá — que
- * es exactamente lo que no pasó la primera vez.
+ * La tercera es nueva y es la que motivó todo este cambio: UN CATÁLOGO DE
+ * VERDAD. `fijos/catalogo-de-ejemplo.xlsx` reproduce el archivo que mandó el
+ * primer cliente —137 filas, marcas escritas con espacios de más, "ILIMITADO"
+ * en el stock de los servicios, 119 productos sin precio— con los nombres
+ * cambiados por inventados. Hay una prueba que lo carga entero: si alguien
+ * endurece la lectura y ese archivo deja de entrar, se cae acá, que es
+ * exactamente lo que no pasó la primera vez.
+ *
+ * El archivo CONSERVA la estructura que produjo Excel: `sharedStrings.xml`,
+ * `styles.xml`, `theme1.xml`. Eso no es un detalle — es la mitad del valor de
+ * la prueba. Nuestro escritor de XLSX produce otra cosa (cadenas en línea, sin
+ * estilos ni tema), así que regenerarlo con él convertiría "sabemos leer lo que
+ * Excel escribe" en "sabemos leer lo que nosotros escribimos", que no prueba
+ * nada. Se reemplazaron solo las cadenas, en sus mismos índices.
  */
 
 import { readFileSync } from "node:fs";
@@ -83,8 +91,8 @@ describe("xlsx", () => {
     expect(filas.map((f) => f.nombre)).toEqual([
       "CORTE CLASICO",
       "BARBA",
-      "CERA MATE FINISH",
-      "CARTUCHO LP BLUE RAZZ",
+      "PASTA MATE FIRME",
+      "CARTUCHO VP FRAMBUESA",
     ]);
   });
 });
@@ -104,7 +112,7 @@ describe("lectura de la planilla", () => {
   it("un PRECIO VENTA vacío entra como SIN PRECIO, no como cero", async () => {
     // Es el caso de 119 de las 137 filas del cliente. Un 0 se cobraría en
     // silencio; null obliga a escribir el precio al vender.
-    const filas = filasDe(planilla([["FORAJIDO", "CERA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]));
+    const filas = filasDe(planilla([["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]));
     expect(filas).toHaveLength(1);
     expect(filas[0].precio).toBeNull();
   });
@@ -122,14 +130,14 @@ describe("lectura de la planilla", () => {
   });
 
   it("lee la marca y el precio de compra", async () => {
-    const filas = filasDe(planilla([["NIVEL TRES", "CERA MATE", "PRODUCTO", "Barbería", "45", "28", "2", "1"]]));
+    const filas = filasDe(planilla([["NIVEL TRES", "PASTA MATE", "PRODUCTO", "Barbería", "45", "28", "2", "1"]]));
     expect(filas[0]).toMatchObject({ marca: "NIVEL TRES", precio: 4500, costo: 2800, stock: 2, stockMinimo: 1 });
   });
 
   it("limpia los espacios de más de la marca", async () => {
     // En el archivo del cliente, "NIVEL TRES " viene con espacio al final en seis
     // filas. Sin limpiarlo, el filtro por marca muestra dos marcas distintas.
-    const filas = filasDe(planilla([["  LEVEL   3  ", "CERA", "PRODUCTO", "B", "45", "", "1", ""]]));
+    const filas = filasDe(planilla([["  NIVEL   TRES  ", "CERA", "PRODUCTO", "B", "45", "", "1", ""]]));
     expect(filas[0].marca).toBe("NIVEL TRES");
   });
 
@@ -166,7 +174,7 @@ describe("lectura de la planilla", () => {
   });
 
   it("el mismo nombre con marcas distintas NO es un duplicado", async () => {
-    // El caso literal del catálogo: hay un TALCO de DON NISH y otro de SIRMAN.
+    // El caso literal del catálogo real: dos marcas, cada una con su TALCO.
     const filas = filasDe(
       planilla([
         ["DON NISH", "TALCO", "PRODUCTO", "Barbería", "15", "", "1", ""],
@@ -178,7 +186,7 @@ describe("lectura de la planilla", () => {
 
   it("avisa si el precio de venta quedó por debajo del de compra", async () => {
     const { filas, problemas } = leerPlantilla(
-      planilla([["ROLDA", "GEL", "PRODUCTO", "B", "11", "13", "1", ""]]),
+      planilla([["ROLBA", "GEL", "PRODUCTO", "B", "11", "13", "1", ""]]),
     );
     expect(problemas[0].problema).toMatch(/menor que el de compra/);
     // Avisa, pero NO frena la carga: puede ser una liquidación de verdad.
@@ -227,8 +235,8 @@ describe("lectura de la planilla", () => {
   });
 });
 
-describe("el archivo real del cliente", () => {
-  const archivo = () => readFileSync(new URL("./fijos/catalogo-del-cliente.xlsx", import.meta.url));
+describe("un catálogo de verdad, como el que mandó el cliente", () => {
+  const archivo = () => readFileSync(new URL("./fijos/catalogo-de-ejemplo.xlsx", import.meta.url));
 
   it("entra completo y sin un solo problema", async () => {
     const { filas, problemas } = leerPlantilla(archivo());
@@ -270,8 +278,8 @@ describe("el archivo real del cliente", () => {
 
     expect(pos.p.items.size).toBe(137);
     expect(pos.p.sinPrecio()).toHaveLength(119);
-    // 35 marcas y no 39: "NIVEL TRES ", "WAHL ", "ROCIADOR " y "SOPLAPELOS " venían
-    // con un espacio al final y sin unificarlas serían marcas aparte.
+    // 35 marcas y no 39: cuatro venían escritas con un espacio al final, y
+    // sin unificarlas serían marcas aparte.
     expect(pos.p.marcas()).toHaveLength(35);
     expect(pos.p.marcas().some((m) => m.marca !== m.marca.trim())).toBe(false);
 
@@ -418,7 +426,7 @@ describe("importar", () => {
     // celdas todavía vacías— para agregar productos nuevos. Si la celda vacía
     // borrara el precio, esa carga destruiría en silencio todo ese trabajo.
     const pos = await posVacio();
-    const sinPrecio = planilla([["FORAJIDO", "CERA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
+    const sinPrecio = planilla([["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
 
     await pos.escribir(() => importarCatalogo(pos.p, filasDe(sinPrecio), "agregar"));
     const id = pos.p.itemPorCodigo("P0001")!.id;
@@ -438,7 +446,7 @@ describe("importar", () => {
 
   it("el plan no anuncia un cambio de precio que no va a hacer", async () => {
     const pos = await posVacio();
-    const sinPrecio = planilla([["FORAJIDO", "CERA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
+    const sinPrecio = planilla([["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
     await pos.escribir(() => importarCatalogo(pos.p, filasDe(sinPrecio), "agregar"));
     const id = pos.p.itemPorCodigo("P0001")!.id;
     await pos.escribir(() => actualizarItem(pos.p, id, { precio: 3500 }));
@@ -650,7 +658,7 @@ describe("plan de importación", () => {
     const filas = filasDe(
       planilla([
         ["", "CORTE", "SERVICIO", "B", "20", "", "", ""],
-        ["FORAJIDO", "CERA ROJA", "PRODUCTO", "B", "", "", "2", ""],
+        ["FORAJIDO", "PASTA ROJA", "PRODUCTO", "B", "", "", "2", ""],
         ["FORAJIDO", "CERA AZUL", "PRODUCTO", "B", "", "", "2", ""],
       ]),
     );

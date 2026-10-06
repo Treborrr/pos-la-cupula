@@ -65,13 +65,13 @@ export function categoriaCanonica(p: Proyeccion, texto: string, sinContar?: stri
 /**
  * Unifica cómo se escribe una marca, igual que `categoriaCanonica`.
  *
- * Hace falta por lo que trae la planilla real: "NIVEL TRES " con espacio al final
- * en seis filas, "WAHL " en tres, "ROCIADOR " en dos. Sin unificar, el filtro
- * por marca mostraría "NIVEL TRES" y "NIVEL TRES " como dos marcas distintas con
+ * Hace falta por lo que trae la planilla real: una marca con espacio al final
+ * en seis filas, otra en tres, otra en dos. Sin unificar, el filtro por marca
+ * mostraría "NIVEL TRES" y "NIVEL TRES " como dos marcas distintas con
  * tres productos cada una, y el reporte de ventas por marca partiría los
  * números de la misma marca en dos filas.
  *
- * Se adopta la forma que YA estaba en el catálogo: si alguien cargó "Level 3"
+ * Se adopta la forma que YA estaba en el catálogo: si alguien cargó "Nivel Tres"
  * y mañana escribe "NIVEL TRES", los productos siguen agrupados bajo la primera.
  */
 export function marcaCanonica(p: Proyeccion, texto: string, sinContar?: string): string {

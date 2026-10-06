@@ -98,8 +98,8 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
     if (tipo) items = items.filter((i) => i.tipo === tipo);
     if (marca) items = items.filter((i) => normalizar(i.marca) === normalizar(marca));
     if (soloSinPrecio) items = items.filter((i) => i.precio === null);
-    // La marca entra en la búsqueda: quien escribe "bandido" espera ver las
-    // ceras de FORAJIDO, aunque la palabra no esté en el nombre de ninguna.
+    // La marca entra en la búsqueda: quien escribe "forajido" espera ver las
+    // pastas de FORAJIDO, aunque la palabra no esté en el nombre de ninguna.
     if (q) items = items.filter((i) => coincide(`${i.codigo} ${i.marca} ${i.nombre} ${i.categoria}`, q));
 
     // Orden de la grilla primero, después alfabético: el dueño puede poner los
