@@ -48,6 +48,34 @@ la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
 
+**v0.5.0** — un ítem sin precio no se vende, una sola respuesta por pregunta, y
+el repositorio sin datos de nadie.
+
+- **Un producto sin precio no se puede vender** hasta que alguien le ponga
+  precio desde Catálogo. Cambia la decisión de la v0.4.0, donde aparecía en la
+  grilla y el cajero escribía el importe. El precio de lista es una decisión del
+  dueño, no del mostrador: con precio abierto, el mismo producto se cobraba
+  distinto según quién atendiera y el margen del reporte dejaba de significar
+  algo. La regla vive en el dominio, así que la grilla, la pistola de escaneo y
+  cualquier integración futura pasan por la misma validación.
+- **Tres definiciones de «stock bajo» que no coincidían.** Sobre el catálogo
+  real, el encabezado avisaba «0 con stock bajo» mientras la tabla de inventario
+  marcaba 28 productos. Ahora hay una sola, en el dominio. De paso: mínimo 0
+  significa «no fijé ningún mínimo» —que es el valor por defecto de un catálogo
+  cargado sin esa columna— y con un mínimo fijado avisa al LLEGAR a ese número,
+  no al pasarlo.
+- **Seis rutas serializaban un ítem cada una a su manera**, y `/escaneo`
+  devolvía el crudo: al escanear un producto sin precio, la pantalla mostraba
+  «undefined todavía no tiene precio». Ahora todas pasan por el mismo lugar.
+- **El mismo producto se llamaba distinto según la pantalla.** Las líneas de
+  venta llevan marca desde la v0.4.0 y solo el detalle del historial la usaba.
+- **Paquete liviano para mandarle al cliente** (`empaquetar-correo.mjs`): 22 MB
+  en vez de 97, sin el instalador de Tailscale, que necesita configurarse en
+  sitio. Avisa además que Gmail bloquea los `.exe` incluso dentro de un ZIP.
+- **Fuera del repositorio todo dato de un negocio real**, para poder publicarlo:
+  los datos del negocio se cargan al instalar y ya no están en el código, y el
+  catálogo de prueba es de ejemplo.
+
 **v0.4.0** — la plantilla del catálogo tomó la forma que le dio el cliente, y el
 sistema aprendió los dos campos que le faltaban.
 
