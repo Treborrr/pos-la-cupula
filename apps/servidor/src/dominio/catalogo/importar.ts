@@ -44,6 +44,11 @@ export interface FilaDeCatalogo {
   marca: string;
   nombre: string;
   tipo: "SERVICIO" | "PRODUCTO";
+  /**
+   * Vacía si la planilla no la trae. El valor por defecto lo pone esta capa
+   * —ver `categoriaDe`— y no el lector, para que el plan de importación pueda
+   * avisar cuántas filas van a caer en una categoría que nadie eligió.
+   */
   categoria: string;
   /** En céntimos enteros. `null` = todavía sin precio de lista. */
   precio: number | null;
@@ -54,6 +59,21 @@ export interface FilaDeCatalogo {
 }
 
 export type ModoDeImportacion = "agregar" | "reemplazar";
+
+/**
+ * La categoría de una fila, con su valor por defecto si no trae ninguna.
+ *
+ * La categoría agrupa los botones de la pantalla de cobro, así que una fila sin
+ * categoría tiene que caer en ALGUNA: dejarla vacía produciría una pestaña sin
+ * nombre. Pero el default es una decisión del sistema, no del dueño —en el
+ * catálogo real fueron 22 productos de una misma línea que terminaron juntos en
+ * una pestaña llamada "Productos" que nadie pidió—, así que el plan lo cuenta
+ * aparte y la pantalla lo avisa antes de aplicar.
+ */
+export function categoriaDe(fila: FilaDeCatalogo): string {
+  if (fila.categoria) return fila.categoria;
+  return fila.tipo === "PRODUCTO" ? "Productos" : "Servicios";
+}
 
 export interface CambioDeImportacion {
   fila: number;
@@ -80,6 +100,13 @@ export interface PlanDeImportacion {
      * pero no se van a poder vender de la grilla sin escribirles un precio.
      */
     sinPrecio: number;
+    /**
+     * Cuántas filas no traen categoría y van a caer en una puesta por el
+     * sistema. Se avisa antes de aplicar porque la categoría define las
+     * pestañas de la pantalla de cobro: 22 productos en una pestaña genérica
+     * son 22 productos que el cajero va a tardar en encontrar.
+     */
+    sinCategoria: number;
   };
 }
 
@@ -109,7 +136,7 @@ export function planificarImportacion(
         nombre: nombreDeFila(fila),
         accion: "crear",
         detalle: [
-          `${fila.tipo.toLowerCase()} · ${fila.categoria} · ${fila.precio === null ? "SIN PRECIO" : soles(fila.precio)}`,
+          `${fila.tipo.toLowerCase()} · ${categoriaDe(fila)} · ${fila.precio === null ? "SIN PRECIO" : soles(fila.precio)}`,
         ],
       });
       continue;
@@ -129,8 +156,8 @@ export function planificarImportacion(
     if (fila.costo !== null && existente.costo !== fila.costo) {
       detalle.push(`costo: ${precioEnPalabras(existente.costo)} → ${soles(fila.costo)}`);
     }
-    if (normalizar(existente.categoria) !== normalizar(fila.categoria)) {
-      detalle.push(`categoría: ${existente.categoria} → ${fila.categoria}`);
+    if (normalizar(existente.categoria) !== normalizar(categoriaDe(fila))) {
+      detalle.push(`categoría: ${existente.categoria} → ${categoriaDe(fila)}`);
     }
     if (fila.stockMinimo !== null && existente.stockMinimo !== fila.stockMinimo) {
       detalle.push(`stock mínimo: ${existente.stockMinimo} → ${fila.stockMinimo}`);
@@ -168,6 +195,7 @@ export function planificarImportacion(
         const existente = buscarExistente(p, f);
         return !existente || existente.precio === null;
       }).length,
+      sinCategoria: filas.filter((f) => !f.categoria).length,
     },
   };
 }
@@ -215,7 +243,7 @@ export function importarCatalogo(
           marca: marcaCanonica(p, fila.marca),
           nombre: fila.nombre,
           tipo: fila.tipo,
-          categoria: categoriaCanonica(p, fila.categoria),
+          categoria: categoriaCanonica(p, categoriaDe(fila)),
           precio: fila.precio,
           costo: fila.costo,
           stockMinimo: fila.tipo === "PRODUCTO" ? (fila.stockMinimo ?? 0) : undefined,
@@ -244,7 +272,7 @@ export function importarCatalogo(
     const cambios: Record<string, unknown> = {};
     if (existente.nombre !== fila.nombre) cambios.nombre = fila.nombre;
     if (normalizar(existente.marca) !== normalizar(fila.marca)) cambios.marca = marcaCanonica(p, fila.marca);
-    if (normalizar(existente.categoria) !== normalizar(fila.categoria)) cambios.categoria = fila.categoria;
+    if (normalizar(existente.categoria) !== normalizar(categoriaDe(fila))) cambios.categoria = categoriaDe(fila);
     if (fila.stockMinimo !== null && existente.stockMinimo !== fila.stockMinimo) {
       cambios.stockMinimo = fila.stockMinimo;
     }

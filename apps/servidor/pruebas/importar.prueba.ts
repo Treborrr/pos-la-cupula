@@ -667,6 +667,30 @@ describe("plan de importación", () => {
     await pos.cerrar();
   });
 
+  it("avisa cuántas filas no traen categoría, antes de inventarles una", async () => {
+    // La categoría define las pestañas de la pantalla de cobro. En el catálogo
+    // real fueron 22 productos de una misma línea —pipas, papeles, mallas— que
+    // habrían terminado juntos en una pestaña "Productos" que nadie pidió, sin
+    // que nadie se enterara hasta ir a cobrar.
+    const pos = await posVacio();
+    const filas = filasDe(
+      planilla([
+        ["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "35", "", "2", ""],
+        ["", "PIPA DE VIDRIO", "PRODUCTO", "", "", "", "3", ""],
+        ["", "PAPELES", "PRODUCTO", "", "", "", "9", ""],
+      ]),
+    );
+
+    expect(planificarImportacion(pos.p, filas, "agregar").resumen).toMatchObject({ crear: 3, sinCategoria: 2 });
+
+    // Y al aplicar, caen en una categoría de verdad: una pestaña sin nombre
+    // sería peor que una genérica.
+    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
+    const categorias = [...pos.p.items.values()].map((i) => i.categoria).sort();
+    expect(categorias).toEqual(["Barbería", "Productos", "Productos"]);
+    await pos.cerrar();
+  });
+
   it("muestra el cambio de marca y de costo en el detalle", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>

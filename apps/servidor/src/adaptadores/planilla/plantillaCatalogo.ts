@@ -154,7 +154,10 @@ export function generarPlantilla(): Buffer {
         ],
         ["NOMBRE", "Obligatorio. Es lo que sale en el ticket y en la pantalla de cobro, después de la marca."],
         ["TIPO", "SERVICIO o PRODUCTO. Un SERVICIO no lleva stock; un PRODUCTO sí."],
-        ["CATEGORÍA", "Agrupa los botones en la pantalla de cobro. Por ejemplo: Barbería, Vapes, Tatuajes."],
+        ["CATEGORÍA", "Agrupa los botones en la pantalla de cobro: es cada pestaña de arriba."],
+        ["", "Por ejemplo: Barbería, Vapes, Tatuajes, Bebidas, Snacks."],
+        ["", "Si la dejas vacía, el sistema los pone todos juntos en una pestaña «Productos». Funciona,"],
+        ["", "pero conviene llenarla: con muchos productos en una sola pestaña, encontrarlos al cobrar cuesta."],
         ["PRECIO VENTA", "En soles, a cuánto lo vendes. Usa punto o coma para los decimales: 25.50 o 25,50."],
         ["", "Si todavía no le pusiste precio, déjalo VACÍO. El producto se carga igual y su stock se lleva,"],
         ["", "pero NO SE VA A PODER VENDER hasta que le pongas precio desde el sistema (Catálogo)."],
@@ -381,7 +384,10 @@ export function leerPlantilla(datos: Buffer): LecturaDeCatalogo {
       marca: marcaLimpia,
       nombre: nombreLimpio,
       tipo: tipoNormalizado,
-      categoria: limpiar(categoria) || (esProducto ? "Productos" : "Servicios"),
+      // Vacía se deja VACÍA: el valor por defecto lo pone el dominio al crear.
+      // Resolverlo acá escondía el dato de que la fila no traía categoría, y
+      // entonces el plan de importación no podía avisarlo antes de aplicar.
+      categoria: limpiar(categoria),
       precio,
       costo: esProducto ? costo : null,
       stock: esProducto && !stockSinControl ? stockNumero : null,

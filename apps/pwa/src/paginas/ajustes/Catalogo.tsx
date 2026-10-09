@@ -41,6 +41,8 @@ interface Respuesta {
       desactivar: number;
       /** Cuántos ítems van a QUEDAR sin precio de lista después de esta carga. */
       sinPrecio: number;
+      /** Cuántas filas no traen categoría y van a caer en una puesta por el sistema. */
+      sinCategoria: number;
     };
   };
 }
@@ -233,6 +235,21 @@ export function SeccionCatalogo() {
           {/* Se avisa ANTES de aceptar la carga, no después. Con un catálogo al
               que le faltan la mayoría de los precios, enterarse recién al ir a
               cobrar es enterarse con el cliente delante. */}
+          {/* La categoría define las pestañas de la pantalla de cobro, así que
+              una fila sin categoría no es un detalle: son productos que el
+              cajero va a tardar en encontrar. El sistema les pone una, pero lo
+              dice antes de aplicar en vez de inventarla en silencio. */}
+          {r && r.sinCategoria > 0 ? (
+            <Aviso
+              tono="aviso"
+              titulo={`${r.sinCategoria} ${r.sinCategoria === 1 ? "fila no trae" : "filas no traen"} categoría`}
+            >
+              Van a quedar agrupadas bajo <strong>Productos</strong>, una pestaña que el sistema crea por su cuenta en
+              la pantalla de cobro. Si prefieres agruparlas de otra forma, llena la columna CATEGORÍA del Excel y
+              vuelve a subirlo: puedes hacerlo las veces que quieras.
+            </Aviso>
+          ) : null}
+
           {r && r.sinPrecio > 0 ? (
             <Aviso
               tono="aviso"
