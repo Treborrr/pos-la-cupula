@@ -30,16 +30,17 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 
 ### Fuera de alcance en v1 (decidido, no olvidado)
 
-Agenda de citas · promociones y paquetes · propinas · egresos de caja ·
-comisiones · facturación electrónica · multiusuario y roles · multisucursal ·
+Agenda de citas · promociones y paquetes · propinas · devoluciones
+parciales · comisiones · facturación electrónica · multiusuario y roles · multisucursal ·
 app nativa · sincronización en la nube.
 
-> **Advertencia honesta sobre los egresos.** Sin registrar las salidas de
-> efectivo (compra de insumos, adelanto a un barbero, el taxi), el arqueo de
-> caja **nunca va a cuadrar** contra el dinero real del cajón: el sistema va a
-> decir S/ 480 y en el cajón van a haber S/ 430, y no habrá manera de saber por
-> qué. El tipo de evento queda reservado en el log (§5.3) para poder encenderlo
-> en una tarde, pero mientras tanto el arqueo es una referencia, no una verdad.
+> **Los egresos se encendieron en la v0.6.0.** Eran el defecto más grande del
+> sistema: sin registrar las salidas de efectivo (compra de insumos, adelanto a
+> un barbero, el taxi), el arqueo decía S/ 480 cuando en el cajón había S/ 430 y
+> nadie podía explicar la diferencia. Hoy el efectivo esperado es
+> `inicial + cobrado − lo que salió`, y la pantalla muestra la cuenta
+> desglosada. Haber reservado el tipo de evento desde el día 1 es lo que
+> permitió encenderlo sin tocar nada de lo ya escrito en disco.
 
 ---
 

@@ -5,17 +5,21 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { abrirTurno, arquear, cerrarTurno } from "../../dominio/caja/caja";
+import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../../dominio/caja/caja";
 import type { Dependencias } from "../app";
 
 /**
- * Se repite en cada respuesta de caja a propósito: la persona que cuadra el
- * cajón tiene que ver por qué el número puede no dar, en el mismo lugar donde
- * lee la diferencia. Escondido en un manual no sirve.
+ * Los egresos del turno, del más reciente al más viejo.
+ *
+ * Se devuelven con el arqueo y no en una ruta aparte: quien cuadra el cajón
+ * necesita ver EN QUÉ se fue la plata en el mismo lugar donde lee cuánto
+ * falta. Un total de egresos sin el detalle obliga a confiar en el número.
  */
-const ADVERTENCIA_EGRESOS =
-  "El efectivo esperado no descuenta las salidas de dinero del cajón (compras, adelantos, taxi), " +
-  "porque esta versión todavía no registra egresos. Toma la diferencia como referencia.";
+function egresosDelTurno(pos: Dependencias["pos"], turnoId: string) {
+  return [...pos.p.egresos.values()]
+    .filter((e) => e.turnoId === turnoId)
+    .sort((a, b) => b.ts.localeCompare(a.ts));
+}
 
 export async function rutasCaja(app: FastifyInstance, { pos, respaldos }: Dependencias) {
   app.get("/caja", async () => {
@@ -23,11 +27,35 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos }: Depend
       const ultimo = [...pos.p.turnos.values()].sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
       return { abierto: false, ultimoTurno: ultimo ?? null };
     }
-    return {
-      abierto: true,
-      arqueo: arquear(pos.p),
-      advertencia: ADVERTENCIA_EGRESOS,
-    };
+    const arqueo = arquear(pos.p);
+    return { abierto: true, arqueo, egresos: egresosDelTurno(pos, arqueo.turnoId) };
+  });
+
+  /**
+   * Registra una salida de efectivo del cajón.
+   *
+   * No exige turno abierto: negarse a registrar un gasto porque nadie abrió la
+   * caja haría que el gasto no quede en ningún lado, y eso es justo lo que
+   * rompía el arqueo antes de que esto existiera.
+   */
+  app.post("/caja/egreso", async (peticion, respuesta) => {
+    const datos = z
+      .object({
+        monto: z.number().int().min(1),
+        motivo: z.string().trim().min(1).max(200),
+        comprobante: z.string().trim().max(80).optional(),
+      })
+      .parse(peticion.body);
+
+    const egresoId = await pos.transaccion(() => {
+      const r = registrarEgreso(pos.p, datos);
+      return { eventos: r.eventos, resultado: r.egresoId };
+    });
+
+    return respuesta.status(201).send({
+      egreso: pos.p.egresos.get(egresoId),
+      arqueo: pos.p.turnoAbierto ? arquear(pos.p) : null,
+    });
   });
 
   app.post("/caja/abrir", async (peticion, respuesta) => {
@@ -82,8 +110,8 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos }: Depend
     return {
       turno: pos.p.turnos.get(cierre.arqueo.turnoId),
       arqueo: cierre.arqueo,
+      egresos: egresosDelTurno(pos, cierre.arqueo.turnoId),
       diferencia: cierre.diferencia,
-      advertencia: ADVERTENCIA_EGRESOS,
       integridad: { ok: integridad.ok, eventos: integridad.eventos, ultimaSeq: integridad.ultimaSeq },
     };
   });

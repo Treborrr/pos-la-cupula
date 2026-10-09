@@ -106,6 +106,15 @@ export async function construirAuditoria(
   const ajustesALaBaja: string[] = [];
   const mermas: string[] = [];
   const cierresConDiferencia: string[] = [];
+  /**
+   * Las salidas de efectivo del cajón. Van TODAS a la auditoría, no solo las
+   * grandes: el egreso es la única forma de sacar plata de la caja sin que
+   * aparezca como venta, así que es exactamente donde hay que mirar. Los
+   * registrados con la caja cerrada se marcan aparte porque no los ve ningún
+   * arqueo del día.
+   */
+  const egresos: string[] = [];
+  const egresosSinTurno: string[] = [];
   const ventasFueraDeTurno: string[] = [];
   const cambiosDeConfig: string[] = [];
   const fueraDeHorario: string[] = [];
@@ -320,6 +329,28 @@ export async function construirAuditoria(
       continue;
     }
 
+    if (esDeTipo(e, "caja.egreso_registrado")) {
+      p.aplicar(e);
+      const d = e.datos;
+      const linea =
+        `${fecha} ${hora} · ${aTexto(d.monto)} · ${d.motivo}` +
+        (d.comprobante ? ` · comprobante ${d.comprobante}` : " · SIN COMPROBANTE");
+      egresos.push(linea);
+      if (d.turnoId === null) {
+        señales.push("egreso con la caja cerrada");
+        egresosSinTurno.push(linea);
+      }
+      movimientos.push({
+        ...base,
+        tipo: "EGRESO DE CAJA",
+        detalle: `${d.motivo}${d.comprobante ? ` · comprobante ${d.comprobante}` : ""}`,
+        turno: etiquetaTurno(d.turnoId),
+        monto: `-${aTexto(d.monto)}`,
+        ...(señales.length ? { señales } : {}),
+      });
+      continue;
+    }
+
     if (esDeTipo(e, "caja.turno_cerrado")) {
       p.aplicar(e);
       const d = e.datos;
@@ -332,7 +363,12 @@ export async function construirAuditoria(
       movimientos.push({
         ...base,
         tipo: "CIERRE DE CAJA",
-        detalle: `esperado ${aTexto(d.esperado.efectivoEnCajon)}, contado ${aTexto(d.contadoEfectivo)} · ${d.cantidadVentas} ventas · efectivo ${aTexto(d.esperado.efectivo)}, yape ${aTexto(d.esperado.yape)}, tarjeta ${aTexto(d.esperado.tarjeta)}${d.notas ? ` · ${d.notas}` : ""}`,
+        detalle:
+          `esperado ${aTexto(d.esperado.efectivoEnCajon)}, contado ${aTexto(d.contadoEfectivo)} · ` +
+          `${d.cantidadVentas} ventas · efectivo ${aTexto(d.esperado.efectivo)}, yape ${aTexto(d.esperado.yape)}, ` +
+          `tarjeta ${aTexto(d.esperado.tarjeta)}` +
+          (d.esperado.egresos ? `, egresos -${aTexto(d.esperado.egresos)}` : "") +
+          (d.notas ? ` · ${d.notas}` : ""),
         turno: etiquetaTurno(d.turnoId),
         monto: aTexto(d.diferencia),
         ...(señales.length ? { señales } : {}),
@@ -400,6 +436,8 @@ export async function construirAuditoria(
   const señales = [
     { tipo: "Anulaciones", cuantas: anulaciones.length, detalle: anulaciones },
     { tipo: "Cierres de caja que no cuadraron", cuantas: cierresConDiferencia.length, detalle: cierresConDiferencia },
+    { tipo: "Salidas de efectivo del cajón", cuantas: egresos.length, detalle: egresos },
+    { tipo: "Egresos registrados con la caja cerrada", cuantas: egresosSinTurno.length, detalle: egresosSinTurno },
     { tipo: "Ventas cobradas con la caja cerrada", cuantas: ventasFueraDeTurno.length, detalle: ventasFueraDeTurno },
     { tipo: "Cobros por debajo del precio de lista", cuantas: preciosPorDebajo.length, detalle: preciosPorDebajo },
     { tipo: "ANOMALÍA: ventas de ítems sin precio de lista", cuantas: preciosAbiertos.length, detalle: preciosAbiertos },

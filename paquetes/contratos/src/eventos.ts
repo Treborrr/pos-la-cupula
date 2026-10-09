@@ -408,6 +408,36 @@ export const cajaTurnoAbierto = definir(
   }),
 );
 
+/**
+ * Salió plata del cajón que no es una venta: insumos, un adelanto, el taxi.
+ *
+ * Es el evento que hace que el arqueo signifique algo. Sin él, el sistema
+ * calculaba el efectivo esperado como "inicial + cobrado en efectivo" e
+ * ignoraba todo lo que salió, así que decía S/ 480 cuando en el cajón había
+ * S/ 430 y nadie podía explicar la diferencia. Una caja que nunca cuadra es
+ * una caja que nadie mira, y entonces un faltante de verdad pasa inadvertido.
+ *
+ * El MOTIVO es obligatorio y no tiene valor por defecto: un egreso sin motivo
+ * es indistinguible de plata que falta, que es exactamente lo que esto viene a
+ * resolver.
+ */
+export const cajaEgresoRegistrado = definir(
+  "caja.egreso_registrado",
+  z.object({
+    egresoId: esquemaUlid,
+    /**
+     * El turno del que sale la plata. Puede ser null si la caja estaba
+     * cerrada: igual que con las ventas, negarse a registrarlo haría que el
+     * dato se pierda, y un egreso no registrado es peor que uno sin turno.
+     */
+    turnoId: esquemaUlid.nullable(),
+    monto: esquemaCentimosPositivo.min(1),
+    motivo: texto(200),
+    /** Número de boleta o factura del gasto, si lo hay. */
+    comprobante: textoOpcional(80),
+  }),
+);
+
 export const cajaTurnoCerrado = definir(
   "caja.turno_cerrado",
   z.object({
@@ -419,6 +449,9 @@ export const cajaTurnoCerrado = definir(
       yape: esquemaCentimosPositivo,
       tarjeta: esquemaCentimosPositivo,
       totalVendido: esquemaCentimosPositivo,
+      /** Lo que salió del cajón en el turno. Opcional: los cierres anteriores
+       *  a que existieran los egresos no lo traen. */
+      egresos: esquemaCentimosPositivo.optional(),
       efectivoEnCajon: esquemaCentimosPositivo,
     }),
     /** Lo que la persona contó de verdad. */
@@ -517,6 +550,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   ventaAnulada,
   ventaReimpresa,
   cajaTurnoAbierto,
+  cajaEgresoRegistrado,
   cajaTurnoCerrado,
   clienteRegistrado,
   clienteActualizado,
@@ -574,6 +608,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "venta.anulada": 1,
   "venta.reimpresa": 1,
   "caja.turno_abierto": 1,
+  "caja.egreso_registrado": 1,
   "caja.turno_cerrado": 1,
   "cliente.registrado": 1,
   "cliente.actualizado": 1,
@@ -585,14 +620,12 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
 };
 
 /**
- * Reservados: NO están implementados en la v1 (decisión de alcance), pero el
- * nombre queda apartado para que encenderlos mañana no obligue a cambiar el
- * formato del log.
+ * Reservados: NO están implementados (decisión de alcance), pero el nombre
+ * queda apartado para que encenderlos mañana no obligue a cambiar el formato
+ * del log.
  *
- * `caja.egreso_registrado` es el que más falta hace: sin él, el arqueo compara
- * contra un efectivo esperado que ignora las salidas de dinero del cajón.
+ * `caja.egreso_registrado` salió de esta lista en la v0.6.0: era el que más
+ * falta hacía y ya está implementado. Reservarlo desde el día 1 fue lo que
+ * permitió encenderlo sin tocar nada de lo ya escrito en disco.
  */
-export const EVENTOS_RESERVADOS = [
-  "caja.egreso_registrado",
-  "venta.propina_registrada",
-] as const;
+export const EVENTOS_RESERVADOS = ["venta.propina_registrada"] as const;

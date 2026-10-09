@@ -30,8 +30,9 @@ nada.
 | H9 | Ticketera Advance ADV-8010N: perfil de 48 columnas e impresión RAW por la cola de Windows | ✅ |
 | H10 | Rediseño de la interfaz, primeros pasos guiados, lector de tickets | ✅ |
 | H11 | Auditoría exportable y acceso remoto por Tailscale | ✅ |
+| H12 | Egresos de caja, margen real, reposición y ventas por hora | ✅ |
 
-**191 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**205 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
 importación de catálogo, reportes de margen, respaldos y auditoría.
 
@@ -47,6 +48,34 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.6.0** — que la caja cuadre, y que los reportes respondan qué comprar y a
+qué hora.
+
+- **Egresos de caja.** Era el agujero que la propia arquitectura marcaba como
+  el más grande. El efectivo esperado pasa de `inicial + cobrado` a
+  `inicial + cobrado − lo que salió`, y la pantalla muestra la cuenta
+  desglosada en vez de un número solo: quien cuenta el cajón tiene que poder
+  seguir de dónde sale la cifra contra la que lo comparan. El motivo es
+  obligatorio — un egreso sin motivo es indistinguible de un faltante — y todas
+  las salidas van a la auditoría, porque es la única forma de sacar plata de la
+  caja sin que aparezca como venta.
+- **El precio de compra se carga en tanda, junto al de venta.** El panel de
+  precios tenía una sola columna, así que el costo había que cargarlo de a uno
+  desde el formulario de edición: nadie lo hacía, y todo el reporte de margen
+  quedaba en blanco. Ahora van las dos columnas juntas, porque los dos datos se
+  cargan juntos — quien tiene el producto en la mano sabe a cuánto lo compró y a
+  cuánto lo vende — y el margen aparece en vivo a medida que se escriben.
+- **A qué hora se vende.** El dato estaba en el log desde el primer día y no se
+  mostraba. Es la pregunta de gestión más barata de una barbería: cuándo
+  conviene tener dos barberos y cuándo uno.
+- **Qué hay que comprar.** No es la lista de agotados —esa es un número que no
+  sirve para ir al proveedor— sino qué reponer, cuántas, cuánto costaría, y
+  ordenado por lo que más se vende. Se copia de un botón para mandarla por
+  WhatsApp.
+- Y un arreglo: el ticket ya no imprime una etiqueta que se quedó sin su dato
+  (un `RUC` suelto, sin número), y el asistente de primeros pasos pide los datos
+  del negocio antes que nada.
 
 **v0.5.0** — un ítem sin precio no se vende, una sola respuesta por pregunta, y
 el repositorio sin datos de nadie.

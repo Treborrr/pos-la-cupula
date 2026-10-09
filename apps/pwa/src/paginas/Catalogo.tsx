@@ -76,6 +76,7 @@ interface RespuestaCatalogo {
   categorias: string[];
   marcas: { marca: string; items: number }[];
   sinPrecio: number;
+  sinCosto: number;
 }
 
 function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuevo: () => void }) {
@@ -94,6 +95,7 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
   const todos = catalogo.data?.items ?? [];
   const marcas = catalogo.data?.marcas ?? [];
   const sinPrecio = catalogo.data?.sinPrecio ?? 0;
+  const sinCosto = catalogo.data?.sinCosto ?? 0;
 
   const termino = busqueda.trim().toLowerCase();
   const items = todos.filter(
@@ -108,19 +110,33 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
 
   return (
     <>
-      {/* El aviso de precios faltantes va ARRIBA de la tabla y no escondido en
-          una columna: con 119 de 137 productos sin precio, es el estado del
-          catálogo, no un detalle de una fila. */}
-      {sinPrecio > 0 ? (
+      {/* Los avisos van ARRIBA de la tabla y no escondidos en una columna: con
+          169 de 187 productos sin precio, es el estado del catálogo, no un
+          detalle de una fila. */}
+      {sinPrecio > 0 || sinCosto > 0 ? (
         <div className="mb-6">
           <Aviso
             tono="aviso"
-            titulo={`${sinPrecio} ${sinPrecio === 1 ? "ítem no tiene" : "ítems no tienen"} precio de lista`}
+            titulo={
+              sinPrecio > 0
+                ? `${sinPrecio} ${sinPrecio === 1 ? "ítem no tiene" : "ítems no tienen"} precio de venta`
+                : `${sinCosto} ${sinCosto === 1 ? "producto no tiene" : "productos no tienen"} precio de compra`
+            }
           >
-            <p>
-              <strong>No se pueden vender hasta que se lo pongas</strong>: no aparecen en la pantalla de cobro. Están
-              en el catálogo y en el inventario, así que su stock sí se lleva. Ponles precio y pasan a la grilla.
-            </p>
+            {sinPrecio > 0 ? (
+              <p>
+                <strong>No se pueden vender hasta que se lo pongas</strong>: no aparecen en la pantalla de cobro.
+                Están en el catálogo y en el inventario, así que su stock sí se lleva. Ponles precio y pasan a la
+                grilla.
+              </p>
+            ) : null}
+            {sinCosto > 0 ? (
+              <p className={sinPrecio > 0 ? "mt-2" : ""}>
+                {sinPrecio > 0 ? `Y a ${sinCosto} les falta el precio de compra. ` : ""}
+                Sin él, los reportes dicen cuánto vendiste pero no cuánto <strong>ganaste</strong>: el margen aparece
+                en blanco porque el sistema no inventa una ganancia que no puede calcular.
+              </p>
+            ) : null}
             <button className="boton-primario mt-3" onClick={() => setCompletandoPrecios(true)}>
               <Tags className="h-5 w-5" />
               Completar precios
@@ -260,7 +276,10 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
 
       {completandoPrecios ? (
         <CompletarPrecios
-          items={todos.filter((i) => i.precio === null && i.activo)}
+          // Entran los que les falta CUALQUIERA de los dos datos: si solo
+          // entraran los sin precio, el precio de compra nunca se cargaría de
+          // los productos que ya tienen precio de venta.
+          items={todos.filter((i) => i.activo && (i.precio === null || (i.tipo === "PRODUCTO" && i.costo === null)))}
           alCerrar={() => setCompletandoPrecios(false)}
         />
       ) : null}
@@ -275,23 +294,51 @@ function margenDe(i: Item): number | null {
 }
 
 /**
- * Poner precio a muchos ítems de una vez.
+ * Poner precio de venta y de compra a muchos ítems de una vez.
  *
- * Existe porque el catálogo del cliente llegó con 119 productos sin precio, y
- * abrir 119 veces el formulario de edición no es una tarea que alguien vaya a
+ * Existe porque el catálogo del cliente llegó con 169 productos sin precio, y
+ * abrir 169 veces el formulario de edición no es una tarea que alguien vaya a
  * terminar. Van agrupados por marca —que es como está ordenada la cabeza de
  * quien los va a tipear, no alfabéticamente— y se guardan todos en una sola
  * tanda: si algo falla, no queda la mitad hecha.
+ *
+ * LAS DOS COLUMNAS VAN JUNTAS porque los dos datos se cargan juntos: quien
+ * tiene el producto en la mano sabe a cuánto lo compró y a cuánto lo vende.
+ * Cuando el precio de compra vivía solo en el formulario de a uno, nadie lo
+ * cargaba, y todo el reporte de utilidad y margen quedaba en blanco.
  */
-function CompletarPrecios({ items, alCerrar }: { items: Item[]; alCerrar: () => void }) {
+function CompletarPrecios({
+  items,
+  alCerrar,
+}: {
+  items: Item[];
+  alCerrar: () => void;
+}) {
   const qc = useQueryClient();
-  const [valores, setValores] = useState<Record<string, string>>({});
+  const [precios, setPrecios] = useState<Record<string, string>>({});
+  const [costos, setCostos] = useState<Record<string, string>>({});
 
-  const escritos = Object.entries(valores)
-    .map(([itemId, texto]) => ({ itemId, precio: aCentimos(texto), texto }))
-    .filter((v) => v.texto.trim() !== "");
-  const invalidos = escritos.filter((v) => v.precio === null);
-  const listos = escritos.filter((v) => v.precio !== null) as { itemId: string; precio: number }[];
+  /** Lo escrito en una columna, separando lo que es número de lo que no. */
+  const leer = (valores: Record<string, string>) => {
+    const escritos = Object.entries(valores)
+      .map(([itemId, texto]) => ({ itemId, centimos: aCentimos(texto), texto }))
+      .filter((v) => v.texto.trim() !== "");
+    return {
+      malos: escritos.filter((v) => v.centimos === null).length,
+      buenos: escritos.filter((v) => v.centimos !== null) as { itemId: string; centimos: number }[],
+    };
+  };
+
+  const p = leer(precios);
+  const c = leer(costos);
+  const invalidos = p.malos + c.malos;
+
+  // Una fila por ítem, con lo que se haya escrito de cada columna. Mandar las
+  // dos juntas deja un solo evento por campo y una sola tanda.
+  const cambios = new Map<string, { itemId: string; precio?: number; costo?: number }>();
+  for (const v of p.buenos) cambios.set(v.itemId, { itemId: v.itemId, precio: v.centimos });
+  for (const v of c.buenos) cambios.set(v.itemId, { ...cambios.get(v.itemId), itemId: v.itemId, costo: v.centimos });
+  const listos = [...cambios.values()];
 
   const guardar = useMutation({
     mutationFn: () => api.post("/catalogo/precios", { precios: listos, motivo: "Carga de precios pendientes" }),
@@ -311,32 +358,34 @@ function CompletarPrecios({ items, alCerrar }: { items: Item[]; alCerrar: () => 
   }
 
   const fallo = guardar.error as FalloDeApi | undefined;
+  const sinPrecio = items.filter((i) => i.precio === null).length;
+  const sinCosto = items.filter((i) => i.tipo === "PRODUCTO" && i.costo === null).length;
 
   return (
     <Modal
       titulo="Completar precios"
-      subtitulo={`${items.length} ${items.length === 1 ? "ítem" : "ítems"} sin precio de lista`}
+      subtitulo={`${sinPrecio} sin precio de venta · ${sinCosto} sin precio de compra`}
       alCerrar={alCerrar}
       pie={
         <div className="space-y-3">
-          {invalidos.length > 0 ? (
+          {invalidos > 0 ? (
             <p className="ayuda text-center text-mal">
-              {invalidos.length} {invalidos.length === 1 ? "precio no es un número" : "precios no son números"}. Escribe
-              solo la cifra, por ejemplo 35 o 35.50
+              {invalidos} {invalidos === 1 ? "valor no es un número" : "valores no son números"}. Escribe solo la
+              cifra, por ejemplo 35 o 35.50
             </p>
           ) : null}
           <div className="flex items-center gap-3">
             <span className="ayuda">
               {listos.length === 0
-                ? "Escribe los precios que sepas; los demás pueden quedar para después."
-                : `${listos.length} ${listos.length === 1 ? "precio listo" : "precios listos"} para guardar`}
+                ? "Escribe lo que sepas; lo demás puede quedar para después."
+                : `${listos.length} ${listos.length === 1 ? "producto listo" : "productos listos"} para guardar`}
             </span>
             <button className="boton-suave ml-auto" onClick={alCerrar}>
               Cancelar
             </button>
             <button
               className="boton-primario"
-              disabled={listos.length === 0 || invalidos.length > 0 || guardar.isPending}
+              disabled={listos.length === 0 || invalidos > 0 || guardar.isPending}
               onClick={() => guardar.mutate()}
             >
               <Check className="h-5 w-5" />
@@ -354,45 +403,91 @@ function CompletarPrecios({ items, alCerrar }: { items: Item[]; alCerrar: () => 
         ) : null}
 
         <p className="ayuda">
-          No hace falta completarlos todos de una vez: lo que guardes queda, y los que dejes vacíos siguen apareciendo
-          acá la próxima vez.
+          No hace falta completarlos todos de una vez: lo que guardes queda, y lo que dejes vacío sigue apareciendo
+          acá la próxima vez. El <strong>precio de compra</strong> es lo que hace que los reportes puedan decirte
+          cuánto ganas, no solo cuánto vendes.
         </p>
 
         {[...porMarca.entries()].map(([marca, deLaMarca]) => (
           <div key={marca}>
-            <h3 className="etiqueta mb-2 border-b border-linea pb-2">
-              {marca} · {deLaMarca.length}
-            </h3>
+            <div className="mb-2 flex items-baseline gap-3 border-b border-linea pb-2">
+              <h3 className="etiqueta">
+                {marca} · {deLaMarca.length}
+              </h3>
+              <span className="ayuda ml-auto w-32 text-center">Compra</span>
+              <span className="ayuda w-32 text-center">Venta</span>
+            </div>
             <div className="divide-y divide-linea">
               {deLaMarca.map((i) => (
-                <div key={i.id} className="flex items-center gap-4 py-2">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{i.nombre}</span>
-                    <span className="ayuda cifra">
-                      {i.codigo}
-                      {i.costo !== null ? ` · compra ${aTextoConSimbolo(i.costo)}` : ""}
-                      {i.tipo === "PRODUCTO" && i.stock !== null ? ` · ${i.stock} en stock` : ""}
-                    </span>
-                  </span>
-                  <div className="relative w-36 shrink-0">
-                    <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta/40">
-                      S/
-                    </span>
-                    <input
-                      className="campo cifra pl-10 text-right"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={valores[i.id] ?? ""}
-                      onChange={(e) => setValores((v) => ({ ...v, [i.id]: e.target.value }))}
-                    />
-                  </div>
-                </div>
+                <FilaDePrecio
+                  key={i.id}
+                  item={i}
+                  precio={precios[i.id] ?? ""}
+                  costo={costos[i.id] ?? ""}
+                  alCambiarPrecio={(v) => setPrecios((x) => ({ ...x, [i.id]: v }))}
+                  alCambiarCosto={(v) => setCostos((x) => ({ ...x, [i.id]: v }))}
+                />
               ))}
             </div>
           </div>
         ))}
       </div>
     </Modal>
+  );
+}
+
+function FilaDePrecio({
+  item,
+  precio,
+  costo,
+  alCambiarPrecio,
+  alCambiarCosto,
+}: {
+  item: Item;
+  precio: string;
+  costo: string;
+  alCambiarPrecio: (v: string) => void;
+  alCambiarCosto: (v: string) => void;
+}) {
+  // El margen aparece en cuanto los dos campos tienen número: es la devolución
+  // inmediata de por qué vale la pena cargar el precio de compra, y delata el
+  // dedo más común —invertir los dos— en el momento, no en el reporte.
+  const pv = aCentimos(precio) ?? item.precio;
+  const pc = aCentimos(costo) ?? item.costo;
+  const margen = pv !== null && pc !== null && pv > 0 ? Math.round(((pv - pc) / pv) * 1000) / 10 : null;
+
+  const campo = (valor: string, alCambiar: (v: string) => void, placeholder: string, resaltar: boolean) => (
+    <div className="relative w-32 shrink-0">
+      <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-tinta/40">S/</span>
+      <input
+        className={`campo cifra pl-8 text-right ${resaltar ? "border-aviso" : ""}`}
+        inputMode="decimal"
+        placeholder={placeholder}
+        value={valor}
+        onChange={(e) => alCambiar(e.target.value)}
+      />
+    </div>
+  );
+
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{item.nombre}</span>
+        <span className="ayuda cifra">
+          {item.codigo}
+          {item.tipo === "PRODUCTO" && item.stock !== null ? ` · ${item.stock} en stock` : ""}
+          {margen !== null ? (
+            <span className={margen < 0 ? "text-mal" : "text-tinta/55"}> · margen {margen}%</span>
+          ) : null}
+        </span>
+      </span>
+      {item.tipo === "PRODUCTO"
+        ? campo(costo, alCambiarCosto, item.costo !== null ? aTexto(item.costo) : "no lo sé", false)
+        : // Un servicio no tiene precio de compra: el hueco deja la columna
+          // alineada sin fingir que el dato podría existir.
+          <span className="w-32 shrink-0 text-center text-tinta/25">—</span>}
+      {campo(precio, alCambiarPrecio, item.precio !== null ? aTexto(item.precio) : "0.00", item.precio === null)}
+    </div>
   );
 }
 

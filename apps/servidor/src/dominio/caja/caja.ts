@@ -1,15 +1,17 @@
 /**
- * Caja: apertura de turno, arqueo y cierre.
+ * Caja: apertura de turno, egresos, arqueo y cierre.
  *
- * ADVERTENCIA QUE HAY QUE SOSTENER A LA VISTA (está también en ARQUITECTURA.md
- * §1): la v1 NO registra egresos de caja. El efectivo esperado que calcula
- * este módulo ignora las salidas de dinero del cajón —compra de insumos,
- * adelanto a un barbero, el taxi—, así que la diferencia del arqueo es una
- * referencia, no una verdad. El evento `caja.egreso_registrado` está reservado
- * en el contrato para encenderlo cuando el cliente lo pida.
+ * EL EFECTIVO ESPERADO ES: inicial + cobrado en efectivo − lo que salió.
  *
- * Por eso la pantalla de cierre muestra la advertencia junto a la diferencia,
- * en vez de presentarla como un faltante.
+ * Ese último término faltó hasta la v0.6.0 y era el defecto más grande del
+ * sistema. Sin registrar las salidas —compra de insumos, un adelanto a un
+ * barbero, el taxi— el arqueo decía S/ 480 cuando en el cajón había S/ 430, y
+ * nadie podía explicar la diferencia. El problema no era el número equivocado:
+ * era que una caja que nunca cuadra es una caja que nadie mira, y entonces un
+ * faltante de verdad pasa inadvertido entre el ruido.
+ *
+ * Un egreso lleva MOTIVO obligatorio por la misma razón: un egreso sin motivo
+ * es indistinguible de plata que falta.
  */
 
 import type { Centimos, EventoNuevo } from "@cupula/contratos";
@@ -43,6 +45,48 @@ export function abrirTurno(
   };
 }
 
+/**
+ * Registra una salida de efectivo del cajón.
+ *
+ * NO exige turno abierto. Igual que con las ventas: negarse a registrarlo
+ * porque nadie abrió la caja haría que el gasto no quede en ningún lado, y un
+ * egreso sin turno es infinitamente mejor que un egreso sin registrar. El
+ * arqueo del turno siguiente lo reporta aparte, como ya hace con las ventas
+ * cobradas con la caja cerrada.
+ */
+export function registrarEgreso(
+  p: Proyeccion,
+  datos: { monto: Centimos; motivo: string; comprobante?: string },
+): { eventos: EventoNuevo[]; egresoId: string } {
+  if (!(datos.monto > 0)) {
+    throw new ErrorDeNegocio("DATO_INVALIDO", "El monto del egreso tiene que ser mayor a cero.");
+  }
+  if (!datos.motivo?.trim()) {
+    throw new ErrorDeNegocio(
+      "DATO_INVALIDO",
+      "Falta decir para qué salió la plata.",
+      "Un egreso sin motivo es indistinguible de un faltante al cerrar la caja.",
+    );
+  }
+
+  const egresoId = ulid();
+  return {
+    egresoId,
+    eventos: [
+      {
+        tipo: "caja.egreso_registrado",
+        datos: {
+          egresoId,
+          turnoId: p.turnoAbierto?.id ?? null,
+          monto: datos.monto,
+          motivo: datos.motivo.trim(),
+          comprobante: datos.comprobante?.trim() || undefined,
+        },
+      },
+    ],
+  };
+}
+
 export interface ArqueoDelTurno {
   turnoId: string;
   abiertoEn: string;
@@ -50,7 +94,10 @@ export interface ArqueoDelTurno {
   medios: ReturnType<typeof mediosEnCero>;
   totalVendido: Centimos;
   cantidadVentas: number;
-  /** Lo que debería haber en el cajón: inicial + cobrado en efectivo. */
+  /** Lo que salió del cajón en este turno. */
+  egresos: Centimos;
+  cantidadEgresos: number;
+  /** Lo que debería haber en el cajón: inicial + efectivo cobrado − egresos. */
   efectivoEnCajon: Centimos;
   ventasAnuladas: number;
   /** Ventas cobradas con la caja cerrada. No entran en `efectivoEnCajon`. */
@@ -58,6 +105,8 @@ export interface ArqueoDelTurno {
   totalFueraDeTurno: Centimos;
   /** Efectivo de esas ventas. Está en el cajón aunque el arqueo no lo espere. */
   efectivoFueraDeTurno: Centimos;
+  /** Egresos registrados con la caja cerrada: también salieron del cajón. */
+  egresosFueraDeTurno: Centimos;
 }
 
 /**
@@ -81,6 +130,9 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
   let ventasFueraDeTurno = 0;
   let totalFueraDeTurno = 0;
   let efectivoFueraDeTurno = 0;
+  let egresos = 0;
+  let cantidadEgresos = 0;
+  let egresosFueraDeTurno = 0;
 
   /**
    * Las ventas cobradas con la caja cerrada se reportan en el turno SIGUIENTE:
@@ -122,6 +174,24 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
     for (const pago of venta.pagos) medios[pago.medio] += pago.monto;
   }
 
+  // Los egresos siguen exactamente las mismas reglas que las ventas: los del
+  // turno se restan del efectivo esperado, y los registrados con la caja
+  // cerrada se reportan aparte en el turno siguiente. Tratarlos distinto haría
+  // que la plata que salió antes de abrir la caja no la esperara nadie.
+  for (const egreso of p.egresos.values()) {
+    if (turno.cerradoEn && egreso.ts > turno.cerradoEn) continue;
+
+    if (egreso.turnoId === null) {
+      if (egreso.ts >= desdeFuera) egresosFueraDeTurno += egreso.monto;
+      continue;
+    }
+    if (egreso.turnoId !== turno.id) continue;
+    if (egreso.ts < turno.abiertoEn) continue;
+
+    cantidadEgresos++;
+    egresos += egreso.monto;
+  }
+
   return {
     turnoId: turno.id,
     abiertoEn: turno.abiertoEn,
@@ -129,11 +199,14 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
     medios,
     totalVendido,
     cantidadVentas,
-    efectivoEnCajon: turno.montoInicial + medios.EFECTIVO,
+    egresos,
+    cantidadEgresos,
+    efectivoEnCajon: turno.montoInicial + medios.EFECTIVO - egresos,
     ventasAnuladas,
     ventasFueraDeTurno,
     totalFueraDeTurno,
     efectivoFueraDeTurno,
+    egresosFueraDeTurno,
   };
 }
 
@@ -163,6 +236,7 @@ export function cerrarTurno(
             yape: arqueo.medios.YAPE,
             tarjeta: arqueo.medios.TARJETA,
             totalVendido: arqueo.totalVendido,
+            egresos: arqueo.egresos,
             efectivoEnCajon: arqueo.efectivoEnCajon,
           },
           contadoEfectivo: datos.contadoEfectivo,

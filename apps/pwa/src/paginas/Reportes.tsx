@@ -19,7 +19,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Boxes, Download, Snail, TrendingDown } from "lucide-react";
+import { BarChart3, Boxes, Copy, Download, ShoppingBasket, Snail, TrendingDown } from "lucide-react";
 
 import { api } from "../lib/api";
 import {
@@ -97,6 +97,16 @@ interface Reporte extends TotalesDelPeriodo {
     diasSinVender: number | null;
     ultimaVenta: string | null;
     inmovilizado: number | null;
+  }[];
+  porHora: { hora: number; total: number; cantidad: number }[];
+  paraReponer: {
+    itemId: string;
+    nombre: string;
+    stock: number;
+    stockMinimo: number;
+    vendidasEnPeriodo: number;
+    costoDeReponer: number | null;
+    sugeridas: number;
   }[];
 }
 
@@ -238,6 +248,7 @@ export function Reportes() {
                   vacio="Todavía no se vendió ningún producto con marca en este período."
                 />
               </div>
+              <PorHora r={r} />
               <div className="grid gap-6 lg:grid-cols-2">
                 <Agrupado titulo="Lo que más se vende" filas={r.ranking.slice(0, 12)} />
                 <div className="space-y-6">
@@ -250,6 +261,7 @@ export function Reportes() {
           )}
 
           <Inventario r={r} />
+          {r.paraReponer.length > 0 ? <ParaReponer r={r} /> : null}
           {r.sinRotar.length > 0 ? <SinRotar r={r} /> : null}
         </div>
       )}
@@ -367,6 +379,136 @@ function VentasPorDia({ r }: { r: Reporte }) {
         <span>{dias.length} días</span>
         <span>{fecha(r.hasta + "T00:00:00")}</span>
       </div>
+    </Seccion>
+  );
+}
+
+/**
+ * Ventas por hora del día, sumando todos los días del período.
+ *
+ * Responde la pregunta de gestión más barata que hay en una barbería: a qué
+ * hora conviene tener dos barberos y a qué hora uno. El dato estaba en el log
+ * desde el primer día —cada evento lleva su hora— y no se mostraba en ningún
+ * lado.
+ *
+ * Se dibujan las 24 horas aunque la barbería abra ocho: los huecos de los
+ * extremos son lo que dice si vale la pena abrir antes o cerrar después.
+ */
+function PorHora({ r }: { r: Reporte }) {
+  const maximo = Math.max(1, ...r.porHora.map((h) => h.total));
+  const conVentas = r.porHora.filter((h) => h.cantidad > 0);
+  const mejor = conVentas.length ? conVentas.reduce((a, b) => (b.total > a.total ? b : a)) : null;
+
+  return (
+    <Seccion
+      titulo="A qué hora se vende"
+      descripcion={
+        mejor
+          ? `La hora más fuerte del período es entre las ${mejor.hora}:00 y las ${mejor.hora + 1}:00, con ${aTextoConSimbolo(mejor.total)}.`
+          : "Pasa el cursor por una barra para ver el detalle."
+      }
+    >
+      <div className="flex h-44 items-end gap-[3px]">
+        {r.porHora.map((h) => (
+          <div
+            key={h.hora}
+            className="group flex h-full flex-1 items-end"
+            title={`${String(h.hora).padStart(2, "0")}:00 — ${aTextoConSimbolo(h.total)} · ${h.cantidad} venta${h.cantidad === 1 ? "" : "s"}`}
+          >
+            <div
+              className={`w-full rounded-t-md transition-colors ${
+                h.total > 0 ? "bg-laton/60 group-hover:bg-laton-oscuro" : "bg-hueso-hondo"
+              }`}
+              style={{ height: `${h.total > 0 ? Math.max(3, (h.total / maximo) * 100) : 1.5}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="ayuda mt-2 flex justify-between">
+        {[0, 6, 12, 18, 23].map((h) => (
+          <span key={h}>{String(h).padStart(2, "0")}:00</span>
+        ))}
+      </div>
+    </Seccion>
+  );
+}
+
+/**
+ * Qué hay que comprar.
+ *
+ * No es la misma lista que "productos agotados": esa es un número y no sirve
+ * para ir al proveedor. Esta dice cuántas quedan, cuántas se vendieron —que es
+ * lo que decide si vale la pena reponer— y cuánto costaría. Se puede copiar de
+ * un botón para mandarla por WhatsApp, que es como se pide de verdad.
+ */
+function ParaReponer({ r }: { r: Reporte }) {
+  const [copiado, setCopiado] = useState(false);
+  const total = r.paraReponer.reduce((a, x) => a + (x.costoDeReponer ?? 0), 0);
+  const sinCosto = r.paraReponer.filter((x) => x.costoDeReponer === null).length;
+
+  const comoTexto = () =>
+    [
+      `Reposición — ${fecha(r.hasta + "T00:00:00")}`,
+      ...r.paraReponer.map((x) => `${x.sugeridas} × ${x.nombre}` + (x.stock > 0 ? ` (quedan ${x.stock})` : " (agotado)")),
+    ].join("\n");
+
+  return (
+    <Seccion
+      titulo={
+        <span className="flex items-center gap-2">
+          <ShoppingBasket className="h-5 w-5" />
+          Qué hay que comprar
+        </span>
+      }
+      descripcion={`${r.paraReponer.length} productos, empezando por los que más se venden.${total > 0 ? ` Reponerlos costaría ${aTextoConSimbolo(total)}.` : ""}${sinCosto > 0 ? ` ${sinCosto} sin precio de compra cargado quedan fuera de esa cuenta.` : ""}`}
+      acciones={
+        <button
+          className="boton-suave"
+          onClick={() => {
+            void navigator.clipboard.writeText(comoTexto());
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 2000);
+          }}
+        >
+          <Copy className="h-5 w-5" />
+          {copiado ? "Copiado" : "Copiar lista"}
+        </button>
+      }
+      sinRelleno
+    >
+      <div className="scroll-fino overflow-x-auto">
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th className="text-right">Quedan</th>
+              <th className="text-right">Mínimo</th>
+              <th className="text-right">Se vendieron</th>
+              <th className="text-right">Comprar</th>
+              <th className="text-right">Costaría</th>
+            </tr>
+          </thead>
+          <tbody>
+            {r.paraReponer.slice(0, 40).map((x) => (
+              <tr key={x.itemId}>
+                <td className="font-medium">{x.nombre}</td>
+                <td className={`cifra text-right ${x.stock <= 0 ? "font-semibold text-mal" : ""}`}>
+                  {x.stock <= 0 ? "agotado" : cantidad(x.stock)}
+                </td>
+                <td className="cifra text-right text-tinta/45">{x.stockMinimo || "—"}</td>
+                <td className="cifra text-right text-tinta/65">{cantidad(x.vendidasEnPeriodo)}</td>
+                <td className="cifra text-right font-semibold">{cantidad(x.sugeridas)}</td>
+                <td className="cifra text-right text-tinta/65">
+                  {x.costoDeReponer === null ? "—" : aTextoConSimbolo(x.costoDeReponer)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {r.paraReponer.length > 40 ? (
+        <p className="ayuda px-6 py-4">Se muestran 40 de {r.paraReponer.length}. El Excel los trae todos.</p>
+      ) : null}
     </Seccion>
   );
 }
@@ -744,6 +886,28 @@ function descargarCsv(r: Reporte) {
         s(b.precioUnitario),
         s(b.costoUnitario),
         s(b.perdida),
+      ]),
+    );
+  }
+
+  filas.push(
+    [],
+    ["Hora", "Ventas", "Total"],
+    ...r.porHora.map((h) => [`${String(h.hora).padStart(2, "0")}:00`, String(h.cantidad), s(h.total)]),
+  );
+
+  if (r.paraReponer.length > 0) {
+    filas.push(
+      [],
+      ["Qué hay que comprar"],
+      ["Producto", "Quedan", "Mínimo", "Se vendieron", "Comprar", "Costaría"],
+      ...r.paraReponer.map((x) => [
+        x.nombre,
+        String(x.stock),
+        String(x.stockMinimo),
+        String(x.vendidasEnPeriodo),
+        String(x.sugeridas),
+        sOpcional(x.costoDeReponer),
       ]),
     );
   }

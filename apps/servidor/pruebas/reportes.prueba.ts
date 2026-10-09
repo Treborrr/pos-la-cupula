@@ -343,6 +343,88 @@ describe("inventario y rotación", () => {
   });
 });
 
+describe("ventas por hora", () => {
+  it("devuelve las 24 horas, incluidas las que no vendieron nada", async () => {
+    // Un hueco en el gráfico tiene que verse como "a esa hora no se vendió",
+    // que es justamente el dato que sirve para decidir horarios y turnos.
+    const { pos, ids } = await posConCatalogo();
+    await cobrar(pos, [{ itemId: ids["CORTE"], cantidad: 1, precioUnitario: 2000 }]);
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+
+    expect(r.porHora).toHaveLength(24);
+    expect(r.porHora.map((h) => h.hora)).toEqual([...Array(24).keys()]);
+    // La venta cayó en alguna hora, y solo en una.
+    expect(r.porHora.filter((h) => h.cantidad > 0)).toHaveLength(1);
+    expect(r.porHora.reduce((a, h) => a + h.total, 0)).toBe(2000);
+    await pos.cerrar();
+  });
+});
+
+describe("lista de reposición", () => {
+  it("ordena por lo que más se vende, no por lo que menos queda", async () => {
+    // Reponer primero lo que rota es lo que evita perder ventas. Un producto
+    // con una unidad que nadie compra puede esperar.
+    const { pos, ids } = await posConCatalogo();
+    // La cera tiene 10 y mínimo 0; le pongo mínimo para que entre a la lista.
+    await pos.escribir(() => [
+      { tipo: "item.actualizado", datos: { itemId: ids["CERA"], stockMinimo: 20 } },
+      { tipo: "item.actualizado", datos: { itemId: ids["DORMIDO"], stockMinimo: 10 } },
+    ]);
+    // La cera se vende, la laca no.
+    await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 3, precioUnitario: 4500 }]);
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    const nombres = r.paraReponer.map((x) => x.nombre);
+
+    expect(nombres[0]).toBe("NIVEL TRES PASTA MATE FIRME"); // la que se vendió, primero
+    expect(nombres).toContain("FORAJIDO FIJADOR DORADO");
+    await pos.cerrar();
+  });
+
+  it("dice cuántas comprar y cuánto costaría", async () => {
+    const { pos, ids } = await posConCatalogo();
+    await pos.escribir(() => [{ tipo: "item.actualizado", datos: { itemId: ids["DORMIDO"], stockMinimo: 10 } }]);
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    const laca = r.paraReponer.find((x) => x.nombre === "FORAJIDO FIJADOR DORADO")!;
+
+    expect(laca.stock).toBe(4);
+    expect(laca.sugeridas).toBe(6); // de 4 a su mínimo de 10
+    expect(laca.costoDeReponer).toBe(9000); // 6 × 15.00
+    await pos.cerrar();
+  });
+
+  it("un agotado que nadie compró NO entra: eso es rotación, no reposición", async () => {
+    // Comprar más de algo que no se vende es justamente lo que el reporte de
+    // rotación viene a evitar. Mezclarlo acá haría la lista inútil.
+    const { pos, ids } = await posConCatalogo();
+    await pos.escribir(() => [
+      { tipo: "stock.ajustado", datos: { itemId: ids["DORMIDO"], cantidadContada: 0, cantidadSistema: 4, motivo: "Conteo" } },
+    ]);
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    expect(r.paraReponer.map((x) => x.nombre)).not.toContain("FORAJIDO FIJADOR DORADO");
+    await pos.cerrar();
+  });
+
+  it("un agotado que SÍ se vendió entra aunque no tenga mínimo fijado", async () => {
+    const { pos, ids } = await posConCatalogo();
+    // Se vende todo el stock del vape (10 unidades).
+    await cobrar(pos, [{ itemId: ids["VAPE"], cantidad: 10, precioUnitario: 2500 }]);
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    const vape = r.paraReponer.find((x) => x.nombre.includes("CARTUCHO"))!;
+
+    expect(vape.stock).toBe(0);
+    expect(vape.vendidasEnPeriodo).toBe(10);
+    // Sin costo cargado no se puede decir cuánto cuesta reponerlo, y no se
+    // inventa: el producto igual aparece en la lista.
+    expect(vape.costoDeReponer).toBeNull();
+    await pos.cerrar();
+  });
+});
+
 describe("comparación con el período anterior", () => {
   it("el período anterior es del mismo largo e inmediatamente antes", async () => {
     const { pos } = await posConCatalogo();

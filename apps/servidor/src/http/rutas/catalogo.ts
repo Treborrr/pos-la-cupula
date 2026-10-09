@@ -119,23 +119,38 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
       marcas: pos.p.marcas(),
       /** Cuántos ítems activos no tienen precio, para el aviso de la pantalla. */
       sinPrecio: pos.p.sinPrecio().length,
+      /** Cuántos productos no tienen costo: sin ellos, el margen queda en blanco. */
+      sinCosto: pos.p.sinCosto().length,
     };
   });
 
   /**
-   * Pone precio a varios ítems de una sola vez.
+   * Pone precio de venta y/o de compra a varios ítems de una sola vez.
    *
-   * Existe por los 119 productos que el cliente cargó sin precio: hacerlo de a
-   * uno son 119 idas y vueltas al servidor, y si la número 80 falla el usuario
+   * Existe por los 169 productos que el cliente cargó sin precio: hacerlo de a
+   * uno son 169 idas y vueltas al servidor, y si la número 80 falla el usuario
    * no sabe cuáles quedaron hechas. Acá entran todos juntos en una sola tanda —
    * o entran todos o no entra ninguno— y cada uno deja su propio evento de
-   * cambio de precio, así que la historia queda igual de auditable.
+   * cambio, así que la historia queda igual de auditable.
+   *
+   * Los dos valores viajan juntos porque se cargan juntos: quien tiene el
+   * producto en la mano sabe a cuánto lo compró y a cuánto lo vende. Separarlos
+   * en dos pantallas obligaba a recorrer el catálogo dos veces, y por eso el
+   * precio de compra quedaba sin cargar y todo el reporte de margen en blanco.
+   *
+   * Un campo AUSENTE no se toca; `null` lo deja sin valor.
    */
   app.post("/catalogo/precios", async (peticion) => {
     const { precios, motivo } = z
       .object({
         precios: z
-          .array(z.object({ itemId: z.string().min(1), precio: z.number().int().min(0).nullable() }))
+          .array(
+            z.object({
+              itemId: z.string().min(1),
+              precio: z.number().int().min(0).nullable().optional(),
+              costo: z.number().int().min(0).nullable().optional(),
+            }),
+          )
           .min(1)
           .max(500),
         motivo: z.string().trim().max(200).optional(),
@@ -150,13 +165,21 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
       }
     }
 
+    const porQue = motivo ?? "Carga de precios pendientes";
     await pos.escribir(() =>
-      precios.flatMap(({ itemId, precio }) =>
-        actualizarItem(pos.p, itemId, { precio, motivoPrecio: motivo ?? "Carga de precios pendientes" }),
+      precios.flatMap(({ itemId, precio, costo }) =>
+        actualizarItem(pos.p, itemId, {
+          ...(precio !== undefined ? { precio, motivoPrecio: porQue } : {}),
+          ...(costo !== undefined ? { costo, motivoCosto: porQue } : {}),
+        }),
       ),
     );
 
-    return { actualizados: precios.length, sinPrecio: pos.p.sinPrecio().length };
+    return {
+      actualizados: precios.length,
+      sinPrecio: pos.p.sinPrecio().length,
+      sinCosto: pos.p.sinCosto().length,
+    };
   });
 
   /**

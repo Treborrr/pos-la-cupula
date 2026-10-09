@@ -174,6 +174,16 @@ export interface Turno {
   notas?: string;
 }
 
+/** Una salida de efectivo del cajón que no es una venta. */
+export interface Egreso {
+  id: string;
+  ts: string;
+  turnoId: string | null;
+  monto: number;
+  motivo: string;
+  comprobante?: string;
+}
+
 export interface Arqueo {
   turnoId: string;
   abiertoEn: string;
@@ -181,11 +191,17 @@ export interface Arqueo {
   medios: { EFECTIVO: number; YAPE: number; TARJETA: number };
   totalVendido: number;
   cantidadVentas: number;
+  /** Lo que salió del cajón en este turno. */
+  egresos: number;
+  cantidadEgresos: number;
+  /** inicial + efectivo cobrado − egresos. */
   efectivoEnCajon: number;
   ventasAnuladas: number;
   ventasFueraDeTurno: number;
   totalFueraDeTurno?: number;
   efectivoFueraDeTurno?: number;
+  /** Salidas registradas con la caja cerrada: no se descuentan de este turno. */
+  egresosFueraDeTurno: number;
 }
 
 export interface EstadoGeneral {

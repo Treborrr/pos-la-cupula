@@ -13,7 +13,7 @@ import { ServicioPos } from "../src/servicios/Pos";
 import { actualizarItem, crearItem, desactivarItem } from "../src/dominio/catalogo/catalogo";
 import { crearBarbero, desactivarBarbero, reactivarBarbero } from "../src/dominio/barberos/barberos";
 import { registrarEntrada } from "../src/dominio/inventario/inventario";
-import { abrirTurno, arquear, cerrarTurno } from "../src/dominio/caja/caja";
+import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
 import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
 
 const aBorrar: string[] = [];
@@ -508,6 +508,84 @@ describe("caja", () => {
     expect(cierre.diferencia).toBe(-50);
     expect(pos.p.turnoAbierto).toBeNull();
     await pos.cerrar();
+  });
+
+  it("el efectivo esperado DESCUENTA lo que salió del cajón", async () => {
+    // Era el defecto más grande del sistema: el arqueo calculaba
+    // "inicial + cobrado" e ignoraba las salidas, así que decía que había más
+    // plata de la que había y el cierre daba un faltante que no era un
+    // faltante. Una caja que nunca cuadra es una caja que nadie mira.
+    const { pos, ids } = await posDePrueba();
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 10000 }).eventos);
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    // Salen 3000 para comprar insumos.
+    await pos.escribir(() => registrarEgreso(pos.p, { monto: 3000, motivo: "Compra de ceras" }).eventos);
+
+    const arqueo = arquear(pos.p);
+    expect(arqueo.egresos).toBe(3000);
+    expect(arqueo.cantidadEgresos).toBe(1);
+    // 100 inicial + 20 cobrado − 30 que salieron = 90.
+    expect(arqueo.efectivoEnCajon).toBe(9000);
+
+    // Y si se cuentan 90, la caja CUADRA. Antes daba −30 sin explicación.
+    const cierre = await pos.transaccion(() => {
+      const r = cerrarTurno(pos.p, { contadoEfectivo: 9000 });
+      return { eventos: r.eventos, resultado: r };
+    });
+    expect(cierre.diferencia).toBe(0);
+    await pos.cerrar();
+  });
+
+  it("un egreso sin motivo se rechaza", async () => {
+    // Un egreso sin motivo es indistinguible de plata que falta, que es
+    // exactamente el problema que los egresos vienen a resolver.
+    const { pos } = await posDePrueba();
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
+
+    expect(() => registrarEgreso(pos.p, { monto: 1000, motivo: "   " })).toThrow(/para qué salió/);
+    expect(() => registrarEgreso(pos.p, { monto: 0, motivo: "Taxi" })).toThrow(/mayor a cero/);
+    await pos.cerrar();
+  });
+
+  it("se puede registrar un egreso con la caja cerrada, y se reporta aparte", async () => {
+    // Negarse a registrar un gasto porque nadie abrió la caja haría que el
+    // gasto no quede en ningún lado — que es justo lo que rompía el arqueo.
+    const { pos } = await posDePrueba();
+    await pos.escribir(() => registrarEgreso(pos.p, { monto: 1500, motivo: "Taxi al proveedor" }).eventos);
+
+    const egreso = [...pos.p.egresos.values()][0];
+    expect(egreso.turnoId).toBeNull();
+    expect(egreso.monto).toBe(1500);
+
+    // Al abrir la caja, el arqueo lo muestra aparte: salió del cajón, pero no
+    // lo descuenta de este turno porque fue antes de abrirlo.
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 10000 }).eventos);
+    const arqueo = arquear(pos.p);
+    expect(arqueo.egresos).toBe(0);
+    expect(arqueo.egresosFueraDeTurno).toBe(1500);
+    expect(arqueo.efectivoEnCajon).toBe(10000);
+    await pos.cerrar();
+  });
+
+  it("los egresos sobreviven a reconstruir la proyección", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+    {
+      const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+      await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
+      await pos.escribir(() => registrarEgreso(pos.p, { monto: 800, motivo: "Insumos", comprobante: "B001-123" }).eventos);
+      await pos.cerrar();
+    }
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    const egreso = [...revivido.p.egresos.values()][0];
+    expect(egreso).toMatchObject({ monto: 800, motivo: "Insumos", comprobante: "B001-123" });
+    expect(arquear(revivido.p).efectivoEnCajon).toBe(4200);
+    await revivido.cerrar();
   });
 
   it("deja cobrar con la caja cerrada y lo reporta aparte", async () => {

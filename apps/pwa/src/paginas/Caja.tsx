@@ -1,30 +1,31 @@
 /**
- * Caja: apertura de turno, arqueo en vivo y cierre.
+ * Caja: apertura de turno, egresos, arqueo en vivo y cierre.
  *
- * La advertencia sobre los egresos va A LA VISTA, junto al número: el efectivo
- * esperado no descuenta las salidas de dinero del cajón porque esta versión no
- * registra egresos, y quien cuadra tiene que saberlo cuando lee la diferencia.
+ * EL EFECTIVO ESPERADO SE MUESTRA DESGLOSADO —apertura + cobrado − lo que
+ * salió— y no como un número solo. Quien cuenta el cajón tiene que poder
+ * seguir de dónde sale la cifra contra la que lo están comparando; si no, un
+ * faltante es una acusación sin cuentas a la vista.
  */
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, History, Lock, LockOpen, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowDownCircle, CheckCircle2, History, Lock, LockOpen, Plus, ShieldCheck, XCircle } from "lucide-react";
 
-import { api, type Arqueo, type Turno } from "../lib/api";
+import { api, FalloDeApi, type Arqueo, type Egreso, type Turno } from "../lib/api";
 import { aCentimos, aTextoConSimbolo, fechaYHora, hora } from "../lib/formato";
-import { Aviso, Vacio } from "../componentes/Modal";
-import { EncabezadoPagina, Pagina, Recuadro } from "../componentes/Piezas";
+import { Aviso, Modal, Vacio } from "../componentes/Modal";
+import { Campo, EncabezadoPagina, Pagina, Recuadro } from "../componentes/Piezas";
 
 export function Caja() {
   const qc = useQueryClient();
-  const [cierre, setCierre] = useState<{ diferencia: number; integro: boolean; advertencia: string } | null>(null);
+  const [cierre, setCierre] = useState<{ diferencia: number; integro: boolean } | null>(null);
 
   const caja = useQuery({
     queryKey: ["caja"],
     queryFn: () =>
-      api.get<{ abierto: false; ultimoTurno: Turno | null } | { abierto: true; arqueo: Arqueo; advertencia: string }>(
-        "/caja",
-      ),
+      api.get<
+        { abierto: false; ultimoTurno: Turno | null } | { abierto: true; arqueo: Arqueo; egresos: Egreso[] }
+      >("/caja"),
     refetchInterval: 10_000,
   });
 
@@ -55,7 +56,8 @@ export function Caja() {
           ) : caja.data?.abierto ? (
             <TurnoAbierto
               arqueo={caja.data.arqueo}
-              advertencia={caja.data.advertencia}
+              egresos={caja.data.egresos}
+              alRegistrarEgreso={refrescar}
               alCerrar={(r) => {
                 setCierre(r);
                 refrescar();
@@ -173,14 +175,182 @@ function AbrirCaja({ ultimo, alAbrir }: { ultimo: Turno | null; alAbrir: () => v
   );
 }
 
+/**
+ * Las salidas de efectivo del turno, con el botón para registrar una.
+ *
+ * Vive junto al arqueo y no en una pantalla aparte a propósito: el momento en
+ * que alguien saca plata del cajón es el mismo en que está mirando la caja, y
+ * un egreso que hay que ir a registrar a otro lado es un egreso que no se
+ * registra. Que no se registre es exactamente lo que hacía que el arqueo no
+ * cuadrara nunca.
+ */
+function Egresos({
+  arqueo,
+  egresos,
+  alRegistrar,
+}: {
+  arqueo: Arqueo;
+  egresos: Egreso[];
+  alRegistrar: () => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+
+  return (
+    <>
+      <div className="tarjeta overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-linea px-6 py-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-semibold">
+              <ArrowDownCircle className="h-5 w-5 text-tinta/45" />
+              Salidas de efectivo
+            </h3>
+            <p className="ayuda">
+              {arqueo.cantidadEgresos === 0
+                ? "Compras, adelantos, el taxi. Todo lo que sale del cajón y no es una venta."
+                : `${arqueo.cantidadEgresos} en este turno · ${aTextoConSimbolo(arqueo.egresos)}`}
+            </p>
+          </div>
+          <button className="boton-suave" onClick={() => setAbierto(true)}>
+            <Plus className="h-5 w-5" />
+            Registrar salida
+          </button>
+        </div>
+
+        {egresos.length > 0 ? (
+          <ul className="divide-y divide-linea">
+            {egresos.map((e) => (
+              <li key={e.id} className="flex items-baseline justify-between gap-4 px-6 py-3">
+                <span className="min-w-0">
+                  <span className="block font-medium">{e.motivo}</span>
+                  <span className="ayuda cifra">
+                    {hora(e.ts)}
+                    {e.comprobante ? ` · ${e.comprobante}` : ""}
+                  </span>
+                </span>
+                <span className="cifra shrink-0 font-semibold text-mal">−{aTextoConSimbolo(e.monto)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {arqueo.egresosFueraDeTurno > 0 ? (
+        <Aviso tono="aviso" titulo="Hubo salidas con la caja cerrada">
+          Se registraron {aTextoConSimbolo(arqueo.egresosFueraDeTurno)} en salidas antes de abrir este turno. Están
+          registradas, pero no se descuentan de este arqueo: si esa plata salió de este cajón, tenlo en cuenta al
+          contar.
+        </Aviso>
+      ) : null}
+
+      {abierto ? <RegistrarEgreso alCerrar={() => setAbierto(false)} alHecho={alRegistrar} /> : null}
+    </>
+  );
+}
+
+function RegistrarEgreso({ alCerrar, alHecho }: { alCerrar: () => void; alHecho: () => void }) {
+  const [monto, setMonto] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [comprobante, setComprobante] = useState("");
+
+  const centimos = aCentimos(monto);
+  const valido = monto.trim() !== "" && centimos !== null && centimos > 0 && motivo.trim().length > 0;
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.post("/caja/egreso", {
+        monto: centimos,
+        motivo: motivo.trim(),
+        comprobante: comprobante.trim() || undefined,
+      }),
+    onSuccess: () => {
+      alHecho();
+      alCerrar();
+    },
+  });
+  const fallo = guardar.error as FalloDeApi | undefined;
+
+  return (
+    <Modal
+      titulo="Registrar una salida de efectivo"
+      subtitulo="Lo que sale del cajón y no es una venta"
+      alCerrar={alCerrar}
+      pie={
+        <div className="flex gap-3">
+          <button className="boton-suave ml-auto" onClick={alCerrar}>
+            Cancelar
+          </button>
+          <button className="boton-primario" disabled={!valido || guardar.isPending} onClick={() => guardar.mutate()}>
+            <CheckCircle2 className="h-5 w-5" />
+            {guardar.isPending ? "Guardando…" : "Registrar"}
+          </button>
+        </div>
+      }
+    >
+      <form
+        className="space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valido) guardar.mutate();
+        }}
+      >
+        {fallo ? (
+          <Aviso tono="mal" titulo={fallo.message}>
+            {fallo.sugerencia}
+          </Aviso>
+        ) : null}
+
+        <Campo etiqueta="¿Cuánto salió?">
+          <div className="relative">
+            <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-xl text-tinta/40">
+              S/
+            </span>
+            <input
+              className="campo cifra h-16 pl-12 text-right text-2xl"
+              autoFocus
+              inputMode="decimal"
+              placeholder="0.00"
+              value={monto}
+              onChange={(e) => setMonto(e.target.value)}
+            />
+          </div>
+        </Campo>
+
+        <Campo etiqueta="¿Para qué?" ayuda="Obligatorio. Sin motivo, al cerrar la caja no se distingue de un faltante.">
+          <input
+            className="campo"
+            placeholder="Por ejemplo: compra de ceras, adelanto a Sergio, taxi"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+          />
+        </Campo>
+
+        <Campo etiqueta="Comprobante" ayuda="Opcional. El número de la boleta o factura, si la hay.">
+          <input
+            className="campo cifra"
+            placeholder="B001-456"
+            value={comprobante}
+            onChange={(e) => setComprobante(e.target.value)}
+          />
+        </Campo>
+
+        <p className="ayuda">
+          Se descuenta del efectivo que el sistema espera en el cajón, así que al cerrar la caja va a cuadrar.
+        </p>
+      </form>
+    </Modal>
+  );
+}
+
 function TurnoAbierto({
   arqueo,
-  advertencia,
+  egresos,
+  alRegistrarEgreso,
   alCerrar,
 }: {
   arqueo: Arqueo;
-  advertencia: string;
-  alCerrar: (r: { diferencia: number; integro: boolean; advertencia: string }) => void;
+  egresos: Egreso[];
+  alRegistrarEgreso: () => void;
+  alCerrar: (r: { diferencia: number; integro: boolean }) => void;
 }) {
   const [cerrando, setCerrando] = useState(false);
   const [contado, setContado] = useState("");
@@ -192,7 +362,7 @@ function TurnoAbierto({
         contadoEfectivo: aCentimos(contado || "0") ?? 0,
         notas: notas || undefined,
       }),
-    onSuccess: (r) => alCerrar({ diferencia: r.diferencia, integro: r.integridad.ok, advertencia }),
+    onSuccess: (r) => alCerrar({ diferencia: r.diferencia, integro: r.integridad.ok }),
   });
 
   const contadoCentimos = contado.trim() === "" ? null : aCentimos(contado);
@@ -227,13 +397,18 @@ function TurnoAbierto({
         <div className="flex items-baseline justify-between px-6 py-5">
           <span>
             <span className="text-lg font-medium">Efectivo que debería haber en el cajón</span>
+            {/* La cuenta completa a la vista: quien cuenta el cajón tiene que
+                poder seguir de dónde sale la cifra contra la que lo comparan. */}
             <span className="ayuda block">
               {aTextoConSimbolo(arqueo.montoInicial)} de apertura + {aTextoConSimbolo(arqueo.medios.EFECTIVO)} cobrados
+              {arqueo.egresos > 0 ? ` − ${aTextoConSimbolo(arqueo.egresos)} que salieron` : ""}
             </span>
           </span>
           <span className="cifra text-3xl font-semibold tracking-tight">{aTextoConSimbolo(arqueo.efectivoEnCajon)}</span>
         </div>
       </div>
+
+      <Egresos arqueo={arqueo} egresos={egresos} alRegistrar={alRegistrarEgreso} />
 
       {arqueo.ventasFueraDeTurno > 0 ? (
         <Aviso tono="aviso" titulo={`${arqueo.ventasFueraDeTurno} venta(s) cobradas con la caja cerrada`}>
@@ -293,10 +468,6 @@ function TurnoAbierto({
             </div>
           </div>
 
-          <Aviso tono="aviso" titulo="Antes de cuadrar">
-            {advertencia}
-          </Aviso>
-
           <label className="block">
             <span className="etiqueta mb-2 block">
               Notas del cierre <span className="font-normal text-tinta/40">· opcional</span>
@@ -339,7 +510,7 @@ function ResultadoDelCierre({
   resultado,
   alTerminar,
 }: {
-  resultado: { diferencia: number; integro: boolean; advertencia: string };
+  resultado: { diferencia: number; integro: boolean };
   alTerminar: () => void;
 }) {
     const cuadro = resultado.diferencia === 0;
@@ -369,7 +540,12 @@ function ResultadoDelCierre({
               ? "Los datos del día están íntegros: la secuencia de ventas y la cadena de verificación validan."
               : "La verificación de los datos encontró problemas. Revisa Ajustes → Diagnóstico."}
           </Aviso>
-          {!cuadro ? <Aviso tono="info">{resultado.advertencia}</Aviso> : null}
+          {!cuadro ? (
+            <Aviso tono="info">
+              Si la diferencia no se explica, revisa que todas las salidas de efectivo del turno se hayan registrado
+              como egreso. Lo que sale del cajón sin registrar aparece como faltante.
+            </Aviso>
+          ) : null}
         </div>
 
         <button

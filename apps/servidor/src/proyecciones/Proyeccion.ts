@@ -19,6 +19,7 @@ import {
   mediosEnCero,
   type Barbero,
   type Cliente,
+  type Egreso,
   type Item,
   type Turno,
   type TotalesPorMedio,
@@ -34,7 +35,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 2;
+export const FORMATO_PROYECCION = 3;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -65,6 +66,15 @@ export class Proyeccion {
 
   readonly turnos = new Map<string, Turno>();
   turnoAbierto: Turno | null = null;
+
+  /**
+   * Las salidas de efectivo del cajón, por id.
+   *
+   * Van en su propio mapa y no colgando del turno porque un egreso puede
+   * registrarse con la caja cerrada —y entonces no tiene turno al que
+   * colgarse—, igual que una venta.
+   */
+  readonly egresos = new Map<string, Egreso>();
 
   readonly clientes = new Map<string, Cliente>();
   /** nombre normalizado → clienteIds. Es una LISTA: los homónimos existen. */
@@ -253,6 +263,19 @@ export class Proyeccion {
         };
         this.turnos.set(turno.id, turno);
         this.turnoAbierto = turno;
+        break;
+      }
+
+      case "caja.egreso_registrado": {
+        const d = e.datos;
+        this.egresos.set(d.egresoId, {
+          id: d.egresoId,
+          ts: e.ts,
+          turnoId: d.turnoId,
+          monto: d.monto,
+          motivo: d.motivo,
+          comprobante: d.comprobante,
+        });
         break;
       }
 
@@ -512,6 +535,20 @@ export class Proyeccion {
     };
   }
 
+  /**
+   * PRODUCTOS activos sin precio de compra cargado.
+   *
+   * Solo productos: un servicio no tiene costo de mercadería, así que incluirlo
+   * haría que el contador nunca llegue a cero y el aviso dejara de significar
+   * algo. Sin estos costos, todo el reporte de utilidad y margen queda en
+   * blanco.
+   */
+  sinCosto(): Item[] {
+    return [...this.items.values()]
+      .filter((i) => i.activo && i.tipo === "PRODUCTO" && i.costo === null)
+      .sort((a, b) => this.nombreCompleto(a).localeCompare(this.nombreCompleto(b), "es"));
+  }
+
   /** Ítems activos que todavía no tienen precio: no se pueden vender de la grilla. */
   sinPrecio(): Item[] {
     return [...this.items.values()]
@@ -555,6 +592,7 @@ export class Proyeccion {
       ultimoCorrelativo: this.ultimoCorrelativo,
       turnos: [...this.turnos.values()],
       turnoAbiertoId: this.turnoAbierto?.id ?? null,
+      egresos: [...this.egresos.values()],
       clientes: [...this.clientes.values()],
       barberos: [...this.barberos.values()],
       config: [...this.config.entries()],
@@ -589,6 +627,7 @@ export class Proyeccion {
     }
     for (const [k, v] of d.idempotencia ?? []) p.porIdempotencia.set(k, v);
     for (const turno of d.turnos ?? []) p.turnos.set(turno.id, turno);
+    for (const egreso of d.egresos ?? []) p.egresos.set(egreso.id, egreso);
     p.turnoAbierto = d.turnoAbiertoId ? (p.turnos.get(d.turnoAbiertoId) ?? null) : null;
     for (const cliente of d.clientes ?? []) {
       p.clientes.set(cliente.id, cliente);

@@ -365,7 +365,7 @@ describe("inventario y caja por HTTP", () => {
     expect(movimientos[1].origen).toBe("entrada");
   });
 
-  it("abre, arquea y cierra el turno mostrando la advertencia de egresos", async () => {
+  it("abre, arquea y cierra el turno", async () => {
     const { app } = await apiDePrueba();
     const itemId = await crearServicio(app, "COR", "CORTE", 2000);
 
@@ -382,7 +382,6 @@ describe("inventario y caja por HTTP", () => {
 
     const caja = await app.inject({ method: "GET", url: "/api/caja" });
     expect(caja.json().arqueo.efectivoEnCajon).toBe(7000);
-    expect(caja.json().advertencia).toMatch(/no descuenta las salidas/);
 
     const cierre = await app.inject({
       method: "POST",
@@ -391,6 +390,54 @@ describe("inventario y caja por HTTP", () => {
     });
     expect(cierre.json().diferencia).toBe(-50);
     expect(cierre.json().integridad.ok).toBe(true);
+  });
+
+  it("un egreso baja el efectivo esperado y vuelve con el detalle", async () => {
+    // Quien cuadra el cajón necesita ver EN QUÉ se fue la plata en el mismo
+    // lugar donde lee cuánto falta. Un total sin el detalle obliga a confiar.
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE", 2000);
+
+    await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 10000 } });
+    await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId, cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      },
+    });
+
+    const egreso = await app.inject({
+      method: "POST",
+      url: "/api/caja/egreso",
+      payload: { monto: 3000, motivo: "Compra de insumos", comprobante: "B001-456" },
+    });
+    expect(egreso.statusCode).toBe(201);
+    // 100 inicial + 20 cobrado − 30 que salieron = 90.
+    expect(egreso.json().arqueo.efectivoEnCajon).toBe(9000);
+
+    const caja = await app.inject({ method: "GET", url: "/api/caja" });
+    expect(caja.json().arqueo.egresos).toBe(3000);
+    expect(caja.json().egresos).toHaveLength(1);
+    expect(caja.json().egresos[0]).toMatchObject({ motivo: "Compra de insumos", comprobante: "B001-456" });
+
+    // Y con 90 contados, la caja cuadra.
+    const cierre = await app.inject({
+      method: "POST",
+      url: "/api/caja/cerrar",
+      payload: { contadoEfectivo: 9000 },
+    });
+    expect(cierre.json().diferencia).toBe(0);
+  });
+
+  it("rechaza un egreso sin motivo", async () => {
+    const { app } = await apiDePrueba();
+    await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 5000 } });
+
+    const r = await app.inject({ method: "POST", url: "/api/caja/egreso", payload: { monto: 1000, motivo: "" } });
+    expect(r.statusCode).toBe(400);
   });
 });
 

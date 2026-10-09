@@ -70,6 +70,17 @@ export interface Turno {
   notas?: string;
 }
 
+/** Una salida de efectivo del cajón que no es una venta. */
+export interface Egreso {
+  id: string;
+  ts: string;
+  /** Null si se registró con la caja cerrada. */
+  turnoId: string | null;
+  monto: Centimos;
+  motivo: string;
+  comprobante?: string;
+}
+
 export interface Cliente {
   id: string;
   nombre: string;

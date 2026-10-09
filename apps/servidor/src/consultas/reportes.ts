@@ -98,6 +98,28 @@ export interface Inventario {
   sinPrecio: number;
 }
 
+/** Cuánto se vendió en cada hora del día, sumando todos los días del período. */
+export interface VentasPorHora {
+  /** 0 a 23. */
+  hora: number;
+  total: Centimos;
+  cantidad: number;
+}
+
+/** Un producto que hay que reponer, con lo que haga falta para decidir cuánto. */
+export interface ParaReponer {
+  itemId: string;
+  nombre: string;
+  stock: number;
+  stockMinimo: number;
+  /** Unidades vendidas en el período: con qué velocidad se va. */
+  vendidasEnPeriodo: number;
+  /** Lo que costaría reponer hasta el mínimo. `null` si no se sabe el costo. */
+  costoDeReponer: Centimos | null;
+  /** Cuántas faltan para llegar al mínimo (o al menos una, si está agotado). */
+  sugeridas: number;
+}
+
 export interface Reporte extends TotalesDelPeriodo {
   /** El mismo período inmediatamente anterior, para comparar. */
   anterior: TotalesDelPeriodo;
@@ -109,6 +131,8 @@ export interface Reporte extends TotalesDelPeriodo {
   bajoCosto: VentaBajoCosto[];
   inventario: Inventario;
   sinRotar: ProductoSinRotar[];
+  porHora: VentasPorHora[];
+  paraReponer: ParaReponer[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,6 +390,58 @@ function ventasBajoCosto(ventas: Venta[]): VentaBajoCosto[] {
 }
 
 /**
+ * Qué productos hay que reponer, y cuánto costaría.
+ *
+ * No es la misma pregunta que "cuáles están bajo mínimo": esa se responde con
+ * un número y no sirve para ir al proveedor. Acá va el nombre, cuántas quedan,
+ * cuántas se vendieron en el período —que es lo que dice si vale la pena
+ * reponerlo— y cuánto costaría. Un producto agotado que no se vendió nunca no
+ * hay que comprarlo, y uno que se vende todas las semanas hay que comprarlo
+ * aunque todavía queden dos.
+ *
+ * Se ordena por lo que MÁS SE VENDE, no por lo que menos queda: reponer
+ * primero lo que rota es lo que evita perder ventas.
+ */
+function productosParaReponer(p: Proyeccion, ventas: Venta[]): ParaReponer[] {
+  const vendidas = new Map<string, number>();
+  for (const venta of ventas) {
+    for (const l of venta.lineas) {
+      if (l.tipo === "PRODUCTO") vendidas.set(l.itemId, (vendidas.get(l.itemId) ?? 0) + l.cantidad);
+    }
+  }
+
+  const salida: ParaReponer[] = [];
+  for (const item of p.items.values()) {
+    if (item.tipo !== "PRODUCTO" || !item.activo) continue;
+
+    const stock = p.stockDe(item.id);
+    const seVendio = vendidas.get(item.id) ?? 0;
+    const bajo = estaBajoMinimo(stock, item.stockMinimo);
+
+    // Entra si está bajo mínimo, o si se quedó sin stock HABIÉNDOSE VENDIDO.
+    // Un agotado que nadie compró no es algo para reponer: es algo para dejar
+    // de tener, y de eso ya habla el bloque de rotación.
+    if (!bajo && !(stock <= 0 && seVendio > 0)) continue;
+
+    // Hasta el mínimo, y si no hay mínimo fijado al menos una: el objetivo es
+    // no quedarse en cero, no adivinar cuánto compra el dueño.
+    const sugeridas = Math.max(1, Math.ceil((item.stockMinimo || 1) - stock));
+
+    salida.push({
+      itemId: item.id,
+      nombre: p.nombreCompleto(item),
+      stock,
+      stockMinimo: item.stockMinimo,
+      vendidasEnPeriodo: seVendio,
+      costoDeReponer: item.costo === null ? null : Math.round(sugeridas * item.costo),
+      sugeridas,
+    });
+  }
+
+  return salida.sort((a, b) => b.vendidasEnPeriodo - a.vendidasEnPeriodo || a.stock - b.stock);
+}
+
+/**
  * El reporte completo de un período.
  *
  * `desde` y `hasta` son fechas locales inclusive ("2026-09-01" a "2026-09-30").
@@ -382,9 +458,18 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
 
   const porDia = new Map<string, { total: number; cantidad: number; acum: AcumUtilidad }>();
   const porBarbero = new Map<string, { cantidad: number; total: number }>();
+  // Las 24 horas siempre presentes: un hueco en el gráfico tiene que verse
+  // como "a esa hora no se vendió nada", que es justamente el dato útil.
+  const porHora: VentasPorHora[] = Array.from({ length: 24 }, (_, hora) => ({ hora, total: 0, cantidad: 0 }));
 
   for (const venta of ventas) {
     const dia = venta.ts.slice(0, 10);
+    // La hora sale del timestamp del evento, que ya viene en hora de Lima.
+    const hora = Number(venta.ts.slice(11, 13));
+    if (hora >= 0 && hora < 24) {
+      porHora[hora].total += venta.total;
+      porHora[hora].cantidad += 1;
+    }
     const d = porDia.get(dia) ?? { total: 0, cantidad: 0, acum: acumVacio() };
     d.total += venta.total;
     d.cantidad += 1;
@@ -446,6 +531,8 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
     bajoCosto: ventasBajoCosto(ventas),
     inventario: valorizarInventario(p),
     sinRotar: productosSinRotar(p, hasta, ventas),
+    porHora,
+    paraReponer: productosParaReponer(p, ventas),
   };
 }
 
