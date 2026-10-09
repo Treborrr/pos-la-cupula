@@ -18,7 +18,7 @@ import type { DatosDelNegocio, OpcionesDeImpresion } from "../../puertos/Impreso
 import { qrDeVenta } from "../../puertos/Impresora";
 import { anchoImpreso } from "./cp850";
 import type { PerfilImpresora } from "./perfil";
-import { PLANTILLA_POR_DEFECTO, reemplazar, type BloqueTicket } from "./plantilla";
+import { PLANTILLA_POR_DEFECTO, reemplazar, soloEtiquetaSinDato, type BloqueTicket } from "./plantilla";
 import { SalidaEscPos, SalidaTexto, type SalidaDeTicket } from "./salida";
 
 export interface OpcionesRender {
@@ -105,6 +105,11 @@ async function pintar(
           const contenido = reemplazar(bloque.contenido, valores).trim();
           // Un marcador que quedó vacío no deja una línea en blanco de adorno.
           if (contenido === "") break;
+          // Y una etiqueta que se quedó sin su dato tampoco: con el RUC sin
+          // cargar, "RUC {negocio.ruc}" imprimía un "RUC" suelto en el
+          // encabezado, que parece un error del sistema más que un dato que
+          // falta.
+          if (soloEtiquetaSinDato(bloque.contenido, valores)) break;
 
           salida.alinear(bloque.alinear ?? "izq");
           if (bloque.negrita) salida.negrita(true);

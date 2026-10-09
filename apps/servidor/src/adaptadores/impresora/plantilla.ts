@@ -110,3 +110,21 @@ export const PLANTILLA_POR_DEFECTO: BloqueTicket[] = [
 export function reemplazar(texto: string, valores: Record<string, string>): string {
   return texto.replace(/\{([a-zA-Z0-9_.]+)\}/g, (completo, clave) => valores[clave] ?? completo);
 }
+
+/**
+ * ¿Esta línea quedó siendo una etiqueta sin dato?
+ *
+ * `"RUC {negocio.ruc}"` con el RUC sin cargar imprime `"RUC"` a secas: una
+ * palabra suelta en el encabezado del ticket que no dice nada y que parece un
+ * error del sistema. Lo mismo con cualquier línea que sea una etiqueta más un
+ * marcador.
+ *
+ * La regla: si la línea TIENE marcadores y TODOS quedaron vacíos, no se
+ * imprime. Una línea sin marcadores —el saludo del pie, un separador— se
+ * imprime siempre, porque ahí el texto literal ES el contenido.
+ */
+export function soloEtiquetaSinDato(texto: string, valores: Record<string, string>): boolean {
+  const marcadores = [...texto.matchAll(/\{([a-zA-Z0-9_.]+)\}/g)];
+  if (marcadores.length === 0) return false;
+  return marcadores.every((m) => (valores[m[1]] ?? "").trim() === "");
+}

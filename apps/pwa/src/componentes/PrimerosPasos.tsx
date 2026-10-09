@@ -43,6 +43,22 @@ export function usarPrimerosPasos() {
 
   const pasos: Paso[] = [
     {
+      /**
+       * PRIMERO los datos del negocio, antes que el catálogo.
+       *
+       * Arrancan vacíos —la configuración de un negocio es un dato de la
+       * instalación, no del programa— y sin este paso el asistente podía llegar
+       * a "5 de 5 listos" con el encabezado del ticket en blanco. El ticket es
+       * lo único del sistema que el cliente final se lleva en la mano.
+       */
+      id: "negocio",
+      titulo: "Poner los datos del negocio",
+      detalle: "Nombre, dirección y RUC: es el encabezado de cada ticket que se imprime.",
+      hecho: Boolean(String(config.data?.["negocio.nombre"] ?? "").trim()),
+      ir: "/ajustes#negocio",
+      textoIr: "Ir a Ajustes",
+    },
+    {
       id: "catalogo",
       titulo: "Cargar servicios y productos",
       detalle: "Lo que se vende, con su precio. Los productos llevan stock.",

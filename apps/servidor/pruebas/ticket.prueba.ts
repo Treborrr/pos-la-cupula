@@ -17,7 +17,7 @@ import {
   renderTicketTexto,
 } from "../src/adaptadores/impresora/renderTicket";
 import { qrComoBitmap, centrar } from "../src/adaptadores/impresora/qrBitmap";
-import { PLANTILLA_POR_DEFECTO, reemplazar } from "../src/adaptadores/impresora/plantilla";
+import { PLANTILLA_POR_DEFECTO, reemplazar, soloEtiquetaSinDato } from "../src/adaptadores/impresora/plantilla";
 import type { Venta } from "../src/proyecciones/tipos";
 import type { DatosDelNegocio } from "../src/puertos/Impresora";
 
@@ -332,6 +332,30 @@ describe("ticket completo", () => {
       expect(texto).toContain(palabra);
     }
     expect(texto).not.toContain("SAND\n");
+  });
+
+  it("no imprime una etiqueta que se quedó sin su dato", async () => {
+    // Los datos del negocio arrancan vacíos y se cargan al instalar. Si alguien
+    // cobra antes de cargarlos, el encabezado imprimía un "RUC" suelto: una
+    // palabra sola que parece un error del sistema, no un dato que falta.
+    const sinDatos = { nombre: "", direccion: "", ciudad: "", ruc: "", pie: "¡GRACIAS!" };
+    const texto = textoDe(await renderTicketEscPos(ventaDePrueba(), sinDatos, { perfil: PERFIL_GENERICO_80 }));
+
+    expect(texto).not.toMatch(/^\s*RUC\s*$/m);
+    // Y el ticket sigue siendo un ticket: el resto se imprime igual.
+    expect(texto).toContain("NV000030");
+    expect(texto).toContain("TOTAL");
+    expect(texto).toContain("¡GRACIAS!");
+  });
+
+  it("una línea sin marcadores se imprime aunque no haya datos del negocio", async () => {
+    // La regla mira los MARCADORES: un texto literal es contenido de por sí.
+    expect(soloEtiquetaSinDato("RUC {negocio.ruc}", { "negocio.ruc": "" })).toBe(true);
+    expect(soloEtiquetaSinDato("RUC {negocio.ruc}", { "negocio.ruc": "20100000001" })).toBe(false);
+    expect(soloEtiquetaSinDato("¡GRACIAS POR TU VISITA!", {})).toBe(false);
+    // Con varios marcadores, basta que uno traiga dato para imprimir la línea.
+    expect(soloEtiquetaSinDato("{a} {b}", { a: "", b: "hay" })).toBe(false);
+    expect(soloEtiquetaSinDato("{a} {b}", { a: "", b: "  " })).toBe(true);
   });
 
   it("termina en un comando de corte", async () => {
