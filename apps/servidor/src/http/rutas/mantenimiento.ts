@@ -3,6 +3,9 @@
  * hasta que algo falla.
  */
 
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -10,6 +13,8 @@ import { PERFILES, perfilPorNombre } from "../../adaptadores/impresora/perfil";
 import { ventaDePrueba } from "../../adaptadores/impresora/ImpresoraConfigurable";
 import { PLANTILLA_POR_DEFECTO } from "../../adaptadores/impresora/plantilla";
 import { listarImpresorasWindows } from "../../adaptadores/impresora/windows";
+import { listarCarpetas } from "../../consultas/carpetas";
+import { ErrorDeNegocio } from "../../dominio/errores";
 import type { Dependencias } from "../app";
 
 export async function rutasMantenimiento(
@@ -116,5 +121,56 @@ export async function rutasMantenimiento(
     const destino = pos.config<string>("respaldos.destinoExterno");
     respaldos.configurarDestino(destino ?? null);
     return respaldos.verificarDestino();
+  });
+
+  /**
+   * Las carpetas de la máquina, para elegir el destino sin tipear la ruta.
+   *
+   * No se puede usar el explorador de Windows ni el selector del navegador;
+   * el porqué de las dos cosas está en `consultas/carpetas.ts`.
+   */
+  app.get("/carpetas", async (peticion) => {
+    const { ruta } = z.object({ ruta: z.string().max(400).optional() }).parse(peticion.query);
+    return listarCarpetas(ruta);
+  });
+
+  /**
+   * Crea una subcarpeta en el destino que se está eligiendo.
+   *
+   * Hace falta de verdad: la carpeta de respaldos casi nunca existe todavía.
+   * Sin esto, elegir el destino obligaba a salir del POS, abrir el explorador,
+   * crear la carpeta a mano y volver — y cada paso fuera del sistema es un
+   * paso donde la configuración se abandona a medias.
+   */
+  app.post("/carpetas", async (peticion, respuesta) => {
+    const { dentroDe, nombre } = z
+      .object({
+        dentroDe: z.string().min(1).max(400),
+        // Sin separadores ni `..`: acá se crea UNA carpeta dentro de la que se
+        // está mirando, no una ruta arbitraria en cualquier parte del disco.
+        nombre: z
+          .string()
+          .trim()
+          .min(1)
+          .max(60)
+          .regex(/^[^\\/:*?"<>|]+$/, "El nombre no puede llevar \\ / : * ? \" < > |")
+          .refine((n) => n !== "." && n !== "..", "Ese nombre no es válido."),
+      })
+      .parse(peticion.body);
+
+    const ruta = join(dentroDe, nombre);
+    try {
+      await mkdir(ruta, { recursive: true });
+    } catch (e) {
+      const codigo = (e as NodeJS.ErrnoException).code;
+      throw new ErrorDeNegocio(
+        "DATO_INVALIDO",
+        codigo === "EACCES" || codigo === "EPERM"
+          ? "El sistema no tiene permiso para crear una carpeta ahí."
+          : "No se pudo crear la carpeta ahí.",
+        "Prueba en otra ubicación, por ejemplo dentro de tu carpeta de OneDrive.",
+      );
+    }
+    return respuesta.status(201).send({ ruta });
   });
 }

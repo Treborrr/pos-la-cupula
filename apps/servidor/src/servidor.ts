@@ -20,7 +20,21 @@ import { construirApp } from "./http/app";
 import { construirAuditoria, formatearAuditoria } from "./consultas/auditoria";
 import { generarPlantilla } from "./adaptadores/planilla/plantillaCatalogo";
 
-export const VERSION = "0.3.0";
+/**
+ * La versión sale del `package.json`, no escrita a mano acá.
+ *
+ * Estaba duplicada y se quedó en 0.3.0 mientras el proyecto iba por la 0.6.0:
+ * la pantalla de Diagnóstico —la que se le pide a alguien cuando algo falla—
+ * informaba una versión que no era la que estaba corriendo. Es exactamente el
+ * dato que no puede estar mal, porque es el que decide si el problema ya está
+ * arreglado en una versión más nueva.
+ *
+ * Se importa en vez de leerse en tiempo de ejecución: esbuild lo incrusta en
+ * el bundle, así que el .exe no necesita tener el archivo al lado.
+ */
+import paquete from "../package.json" with { type: "json" };
+
+export const VERSION: string = paquete.version;
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 
