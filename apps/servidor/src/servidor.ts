@@ -42,10 +42,31 @@ const aqui = path.dirname(fileURLToPath(import.meta.url));
  * En Windows los datos van a `C:\POSCupula\datos`, fuera de la carpeta del
  * programa: actualizar el POS es reemplazar `app\` y `datos\` no se toca jamás.
  * En desarrollo, una carpeta local que no se versiona.
+ *
+ * En Railway (o cualquier nube) el disco del contenedor es EFÍMERO: cada
+ * despliegue —cada `git push`, con despliegue continuo— arranca uno nuevo y
+ * el anterior desaparece con todo lo que tenía adentro. Si el POS escribiera
+ * ahí sin que nadie se diera cuenta, el día del primer despliegue se pierden
+ * todas las ventas, y recién se nota semanas después cuando hace falta un
+ * reporte viejo. Por eso, bajo Railway, `POS_DATOS` es OBLIGATORIO: tiene que
+ * apuntar a un Volumen montado (persiste entre despliegues), y si no está se
+ * para antes de arrancar en vez de arrancar mal.
+ *
+ * `RAILWAY_ENVIRONMENT` lo pone Railway solo, en todo despliegue, sin que
+ * nadie lo configure — es la forma confiable de saber "estoy en Railway" sin
+ * tocar el arranque local en Mac/Linux.
  */
 function carpetaDeDatos(): string {
   if (process.env.POS_DATOS) return path.resolve(process.env.POS_DATOS);
   if (process.platform === "win32") return "C:\\POSCupula\\datos";
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    throw new Error(
+      "Falta la variable de entorno POS_DATOS. En Railway hay que crear un Volumen, " +
+        "montarlo (por ejemplo en /data) y poner POS_DATOS=/data en Settings → Variables. " +
+        "Sin esto el POS escribiría en el disco efímero del contenedor y cada despliegue " +
+        "borraría las ventas sin avisar.",
+    );
+  }
   return path.resolve(aqui, "../../../datos-dev");
 }
 
@@ -176,10 +197,16 @@ async function principal() {
     version: VERSION,
   });
 
-  const puerto = Number(process.env.PUERTO ?? 7070);
+  // PORT es de Railway (y de casi toda plataforma en la nube): lo asigna ella
+  // y hay que escuchar exactamente en ese número, no en uno fijo. PUERTO es
+  // el nombre que ya usaba la instalación local; 7070 es el default de toda
+  // la vida. En ese orden, ninguna instalación existente cambia de puerto.
+  const puerto = Number(process.env.PORT ?? process.env.PUERTO ?? 7070);
   // 0.0.0.0 y no 127.0.0.1: así se puede entrar desde un celular en el mismo
-  // WiFi sin cambiar nada. En una red de local eso es una comodidad, no un
-  // riesgo — pero conviene saberlo antes de llevarlo a una red abierta.
+  // WiFi sin cambiar nada, y es también lo que pide un contenedor en la nube
+  // (el proxy de Railway no llega a 127.0.0.1). En una LAN eso es una
+  // comodidad; expuesto a internet sin más es la razón por la que existe el
+  // candado de CLAVE_DE_ACCESO (ver http/candadoDeAcceso.ts).
   await app.listen({ port: puerto, host: "0.0.0.0" });
 
   app.log.info(

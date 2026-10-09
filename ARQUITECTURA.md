@@ -862,6 +862,16 @@ CREATE TABLE eventos (
 Los eventos se insertan sin transformación. Las proyecciones se vuelven tablas
 materializadas. Nada del histórico se pierde ni se reinterpreta.
 
+**v0.7.0 adelantó una versión intermedia, sin esperar el adaptador de
+Postgres:** el mismo `ArchivoJsonl` de siempre, pero corriendo en Railway con
+los datos en un Volumen persistente en vez del disco de la PC. Sirve para
+tener el API + la PWA alcanzables desde internet (catálogo, reportes, caja,
+clientes) sin el trabajo de escribir el adaptador nuevo. **Lo que NO
+resuelve** es la impresión: un contenedor en la nube no tiene cómo hablarle a
+la ticketera física del local, así que el camino de **Impresión → Agente
+local liviano** de la tabla de arriba sigue pendiente igual que antes. Ver
+`README.md` → *Desplegar en Railway*.
+
 ---
 
 ## 14. Plan de entrega
@@ -892,8 +902,9 @@ nota hasta el día que pasa.
 | Se pierde el disco de la PC | **Crítico** | Respaldo automático a carpeta externa. **Hay que verificar que el destino exista de verdad**, no confiar en que se configuró |
 | La pistola manda mal los acentos | Medio | Cotejo normalizado sin diacríticos (§7). Probar en sitio |
 | Homónimos en el QR de fidelidad | Medio | Selector en pantalla; recomendación de pasar a `qrContent: "serial"` (§8) |
-| El arqueo no cuadra por egresos no registrados | Medio | Documentado en §1. Los eventos están reservados y se encienden en una tarde |
+| El arqueo no cuadra por egresos no registrados | ~~Medio~~ Resuelto en v0.6.0 | `caja.egreso_registrado` descuenta del efectivo esperado. Ver §1 |
 | Cambio de alcance a mitad de obra | Alto | Este documento. Lo que no está en §2 no está en la v1 |
+| **D3 (sin login) publicado en internet** | **Crítico si pasa** | D3 asume que solo llega al puerto quien está en la LAN del local o entró por Tailscale. Una URL pública de Railway no tiene ese filtro: cualquiera que la encuentre cobra, anula o lee clientes. `CLAVE_DE_ACCESO` (v0.7.0) es el candado mínimo — un secreto compartido, no un login con roles, para no ensanchar D3. Se activa a mano por variable de entorno; **queda en cero por defecto**, así que hay que acordarse de ponerlo antes de generar el dominio público |
 
 ---
 

@@ -31,10 +31,12 @@ nada.
 | H10 | Rediseño de la interfaz, primeros pasos guiados, lector de tickets | ✅ |
 | H11 | Auditoría exportable y acceso remoto por Tailscale | ✅ |
 | H12 | Egresos de caja, margen real, reposición y ventas por hora | ✅ |
+| H13 | Listo para Railway: `PORT`, datos en Volumen persistente, candado de acceso opcional | ✅ |
 
-**205 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**211 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
-importación de catálogo, reportes de margen, respaldos y auditoría.
+importación de catálogo, reportes de margen, respaldos, auditoría y el candado
+de acceso.
 
 ### Lo que queda pendiente
 
@@ -48,6 +50,28 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.7.0** — listo para publicarse en Railway, sin tocar la instalación local.
+
+- **`PORT` de Railway.** El servidor escuchaba solo `PUERTO`/7070; en la nube,
+  la plataforma asigna el puerto y hay que escucharlo a ciegas. Ahora prueba
+  `PORT`, después `PUERTO`, después 7070 — ninguna instalación existente
+  cambia.
+- **Falla fuerte si falta `POS_DATOS` en Railway.** El disco de un contenedor
+  es efímero: sin esto, el primer despliegue arranca igual y escribe sobre un
+  disco que desaparece con el contenedor. Se detecta el entorno (`RAILWAY_ENVIRONMENT`,
+  que Railway pone solo) y si no hay `POS_DATOS` configurado, no arranca — con
+  el mensaje exacto de qué falta, no un error genérico.
+- **Candado de acceso opcional.** El sistema no tiene login por diseño (es
+  parte de la arquitectura, pensado para una sola PC en la LAN del local, con
+  Tailscale para el acceso remoto). Publicado en una URL de internet esa
+  premisa no aplica: cualquiera que la encuentre podría cobrar, anular o leer
+  clientes. `CLAVE_DE_ACCESO` activa un candado único (HTTP Basic, una sola
+  clave compartida) **solo si se configura explícitamente** — la instalación
+  de la barbería, que no define esa variable, sigue exactamente igual.
+- **`railway.json`** con el build, el comando de arranque y el healthcheck
+  (`/api/salud`, exceptuado del candado porque Railway no manda credenciales
+  al revisarlo).
 
 **v0.6.0** — que la caja cuadre, y que los reportes respondan qué comprar y a
 qué hora.
@@ -289,10 +313,50 @@ un LEEME corto de instalación en vez del de 180 líneas.
 > que avisarle antes (la pantalla de "Windows protegió tu PC", y que hay que
 > descomprimir antes de instalar).
 
+## Desplegar en Railway
+
+Esto es **adicional** a la instalación en la PC de la barbería, no un
+reemplazo: la impresora ESC/POS y el lector de tickets son hardware local, y
+un contenedor en la nube no les llega. Lo que sí sirve corriendo en Railway es
+el mismo API + PWA para catálogo, reportes, caja, clientes — todo salvo
+imprimir desde un cajón físico.
+
+**Antes de generar una URL pública, decidir sobre `CLAVE_DE_ACCESO` (ver
+abajo).** Sin ella, cualquiera que encuentre la URL puede cobrar, anular,
+cambiar precios o leer la ficha de un cliente: hoy esa protección la da la LAN
+del local y Tailscale, y ninguna de las dos existe en una URL de internet.
+
+1. **railway.app → New Project → Deploy from GitHub repo**, elegir
+   `pos-la-cupula`. Railway lee `railway.json` del repo: ya sabe compilar
+   (`npm run build`), arrancar (`npm start`) y a qué ruta pegarle para el
+   healthcheck (`/api/salud`).
+2. **Antes de que termine el primer despliegue, crear el Volumen:**
+   el servicio → pestaña **Volumes** → *New Volume* → punto de montaje
+   `/data`. Sin esto el POS no arranca a propósito (ver v0.7.0 más abajo) —
+   es preferible que falle claro a que pierda datos en el primer `git push`.
+3. **Settings → Variables**, agregar:
+   - `POS_DATOS` = `/data` (la ruta del Volumen del paso 2)
+   - `CLAVE_DE_ACCESO` = una clave larga, random, que no se use en ningún otro
+     lado — **recomendado antes de exponerlo a internet**. Sin esta variable
+     el POS queda abierto, igual que en la LAN.
+   - `PORT` no se toca: Railway la pone sola y el servidor ya la respeta.
+4. **Settings → Networking → Generate Domain** cuando se quiera la URL
+   pública. Railway por sí solo (sin este paso) no es alcanzable desde
+   internet — así que hasta este punto se puede probar todo sin riesgo.
+5. Cada `git push` a `main` dispara un build y despliegue nuevos solo —
+   es el despliegue continuo pedido. El Volumen (los datos) sobrevive a cada
+   uno; el resto del contenedor se reconstruye desde cero.
+
+Si entra `CLAVE_DE_ACCESO`, el navegador pide usuario `cupula` y la clave la
+primera vez y la recuerda. Es un candado único para todo el local —no hay
+usuarios ni roles— a propósito: así se mantiene la decisión de "sin login"
+que tiene el sistema para la PC de la barbería (§1, decisión D3 de
+`ARQUITECTURA.md`), sin reescribirla para la nube.
+
 ## Verificar
 
 ```bash
-npm test                                            # las 94 pruebas
+npm test                                            # las 211 pruebas
 npm run verificar-capas                             # que el dominio no toque archivos, red ni reloj
 node apps/servidor/dist/pos-cupula.mjs verificar    # integridad del log en disco
 ```

@@ -17,6 +17,7 @@ import type { ServicioPos } from "../servicios/Pos";
 import type { Impresora } from "../puertos/Impresora";
 import type { ServicioDeRespaldos } from "../servicios/Respaldos";
 
+import { candadoDeAcceso } from "./candadoDeAcceso";
 import { rutasSistema } from "./rutas/sistema";
 import { rutasCatalogo } from "./rutas/catalogo";
 import { rutasVentas } from "./rutas/ventas";
@@ -42,6 +43,10 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     // El cuerpo más grande que puede llegar es un ticket con muchas líneas.
     bodyLimit: 1_000_000,
   });
+
+  // Antes que cualquier otra cosa: si hay CLAVE_DE_ACCESO configurada, nada
+  // de lo que sigue —API ni PWA— se sirve sin ella primero.
+  await candadoDeAcceso(app);
 
   /**
    * Un solo lugar traduce excepciones a respuestas.
