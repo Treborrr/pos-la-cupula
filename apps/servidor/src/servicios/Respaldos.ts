@@ -50,6 +50,17 @@ export interface EstadoDeRespaldos {
 export class ServicioDeRespaldos {
   private readonly carpetaRespaldos: string;
 
+  /**
+   * Último resultado REAL de `verificarDestino()`, para que la alerta
+   * persistente (que se consulta cada pocos segundos desde cualquier
+   * pantalla) lo pueda leer gratis. La verificación de verdad escribe, lee y
+   * borra un archivo en el destino externo — repetir eso en cada poll
+   * golpearía una carpeta de red o de nube todo el tiempo para nada; alcanza
+   * con lo que ya se supo la última vez que de verdad se comprobó (al
+   * arrancar, en el respaldo horario, o cuando alguien entra a Ajustes).
+   */
+  private ultimoEstadoConocido: { ok: boolean; detalle: string } | null = null;
+
   constructor(
     private readonly carpetaDatos: string,
     private readonly reloj: Reloj,
@@ -70,6 +81,21 @@ export class ServicioDeRespaldos {
    * pausado.
    */
   async verificarDestino(): Promise<{ ok: boolean; detalle: string }> {
+    const resultado = await this.verificarDestinoDeVerdad();
+    this.ultimoEstadoConocido = resultado;
+    return resultado;
+  }
+
+  /**
+   * El último resultado real, sin volver a tocar el disco. `null` = todavía
+   * no se hizo ninguna verificación en esta corrida del servidor (el chequeo
+   * de arranque es asíncrono y puede no haber terminado todavía).
+   */
+  estadoCacheado(): { ok: boolean; detalle: string } | null {
+    return this.ultimoEstadoConocido;
+  }
+
+  private async verificarDestinoDeVerdad(): Promise<{ ok: boolean; detalle: string }> {
     if (!this.destinoExterno) {
       return {
         ok: false,

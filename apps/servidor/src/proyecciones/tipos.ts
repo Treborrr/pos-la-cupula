@@ -81,6 +81,21 @@ export interface Egreso {
   comprobante?: string;
 }
 
+/**
+ * Propina de un cliente a un barbero por una línea de una venta. No afecta el
+ * total de la venta ni el arqueo: es puro registro, para reportar — nunca
+ * para liquidar (D6: sueldo fijo, sin comisiones).
+ */
+export interface Propina {
+  id: string;
+  ts: string;
+  ventaId: string;
+  lineaIndex: number;
+  barberoId: string;
+  monto: Centimos;
+  turnoId: string | null;
+}
+
 export interface Cliente {
   id: string;
   nombre: string;

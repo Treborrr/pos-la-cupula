@@ -128,6 +128,14 @@ export interface Reporte extends TotalesDelPeriodo {
   porCategoria: FilaAgrupada[];
   porMarca: FilaAgrupada[];
   porBarbero: { barberoId: string; nombre: string; cantidad: number; total: Centimos }[];
+  /**
+   * Propinas registradas en el período, por barbero. Por cuándo se ANOTÓ la
+   * propina, no por la fecha de la venta que la originó: una propina agregada
+   * días después (un cliente que volvió, una que se había olvidado) es un
+   * hecho de HOY, y contarla en el período de la venta vieja escondería que
+   * pasó algo esta semana.
+   */
+  propinas: { barberoId: string; nombre: string; cantidad: number; total: Centimos }[];
   bajoCosto: VentaBajoCosto[];
   inventario: Inventario;
   sinRotar: ProductoSinRotar[];
@@ -189,6 +197,33 @@ function ventasEntre(p: Proyeccion, desde: string, hasta: string): Venta[] {
     const f = v.ts.slice(0, 10);
     return f >= desde && f <= hasta;
   });
+}
+
+/**
+ * Propinas por barbero en el período, agrupadas por CUÁNDO SE ANOTARON
+ * —ver el comentario de `Reporte.propinas`—, no por la venta a la que
+ * pertenecen. No descarta las de una venta anulada: la propina es plata que
+ * de verdad cambió de manos, pase lo que pase después con el cobro.
+ */
+function propinasPorBarberoEntre(
+  p: Proyeccion,
+  desde: string,
+  hasta: string,
+): { barberoId: string; nombre: string; cantidad: number; total: Centimos }[] {
+  const porBarbero = new Map<string, { cantidad: number; total: Centimos }>();
+
+  for (const propina of p.propinas.values()) {
+    const f = propina.ts.slice(0, 10);
+    if (f < desde || f > hasta) continue;
+    const b = porBarbero.get(propina.barberoId) ?? { cantidad: 0, total: 0 };
+    b.cantidad += 1;
+    b.total += propina.monto;
+    porBarbero.set(propina.barberoId, b);
+  }
+
+  return [...porBarbero.entries()]
+    .map(([barberoId, d]) => ({ barberoId, nombre: p.barberos.get(barberoId)?.nombre ?? "(eliminado)", ...d }))
+    .sort((a, b) => b.total - a.total);
 }
 
 function diasEntre(desde: string, hasta: string): number {
@@ -527,6 +562,8 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
         ...d,
       }))
       .sort((a, b) => b.total - a.total),
+
+    propinas: propinasPorBarberoEntre(p, desde, hasta),
 
     bajoCosto: ventasBajoCosto(ventas),
     inventario: valorizarInventario(p),

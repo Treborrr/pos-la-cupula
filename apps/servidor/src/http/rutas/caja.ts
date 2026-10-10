@@ -6,6 +6,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../../dominio/caja/caja";
+import { ErrorDeNegocio } from "../../dominio/errores";
+import type { DatosDelCierre } from "../../puertos/Impresora";
 import type { Dependencias } from "../app";
 
 /**
@@ -21,7 +23,7 @@ function egresosDelTurno(pos: Dependencias["pos"], turnoId: string) {
     .sort((a, b) => b.ts.localeCompare(a.ts));
 }
 
-export async function rutasCaja(app: FastifyInstance, { pos, respaldos }: Dependencias) {
+export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresora }: Dependencias) {
   app.get("/caja", async () => {
     if (!pos.p.turnoAbierto) {
       const ultimo = [...pos.p.turnos.values()].sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
@@ -125,5 +127,50 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos }: Depend
       .sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))
       .slice(0, limite);
     return { turnos };
+  });
+
+  /**
+   * Imprime el papel del cierre de un turno YA cerrado. No vuelve a escribir
+   * nada —no es un evento, es releer lo que ya quedó en el log— así que se
+   * puede reimprimir el cierre de hoy o el de la semana pasada por igual.
+   */
+  app.post("/caja/turnos/:turnoId/imprimir", async (peticion) => {
+    const { turnoId } = z.object({ turnoId: z.string().min(1) }).parse(peticion.params);
+    const turno = pos.p.turnos.get(turnoId);
+    if (!turno || !turno.cerradoEn) {
+      throw new ErrorDeNegocio(
+        "TURNO_NO_ABIERTO",
+        "Ese turno no está cerrado todavía.",
+        "Solo se puede imprimir el cierre de un turno ya cerrado.",
+      );
+    }
+
+    const arqueo = arquear(pos.p, turnoId);
+    const datos: DatosDelCierre = {
+      turnoId: turno.id,
+      abiertoEn: turno.abiertoEn,
+      cerradoEn: turno.cerradoEn,
+      montoInicial: arqueo.montoInicial,
+      medios: arqueo.medios,
+      totalVendido: arqueo.totalVendido,
+      cantidadVentas: arqueo.cantidadVentas,
+      egresos: egresosDelTurno(pos, turnoId)
+        .slice()
+        .reverse()
+        .map((e) => ({ monto: e.monto, motivo: e.motivo })),
+      totalEgresos: arqueo.egresos,
+      efectivoEnCajon: arqueo.efectivoEnCajon,
+      contadoEfectivo: turno.contadoEfectivo ?? 0,
+      diferencia: turno.diferencia ?? 0,
+      porBarbero: arqueo.porBarbero,
+    };
+
+    return impresora.imprimirCierre(datos, {
+      nombre: pos.config<string>("negocio.nombre"),
+      direccion: pos.config<string>("negocio.direccion"),
+      ciudad: pos.config<string>("negocio.ciudad"),
+      ruc: pos.config<string>("negocio.ruc"),
+      pie: pos.config<string>("negocio.pie"),
+    });
   });
 }

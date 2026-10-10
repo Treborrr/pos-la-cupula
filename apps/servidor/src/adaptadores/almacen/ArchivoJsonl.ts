@@ -67,6 +67,16 @@ export interface ResultadoApertura {
   ultimaSeq: number;
   lineasEnCuarentena: number;
   archivosReparados: string[];
+  /**
+   * `null` = el reloj de la PC parece razonable. Si no, el momento del último
+   * evento escrito y la hora a la que arrancó esta vez — ARQUITECTURA.md §15
+   * prometía este aviso desde el día 1 y nunca se construyó: solo se detectaba
+   * en retrospectiva, leyendo la auditoría después de que el daño ya estaba
+   * hecho. Comparar contra el ÚLTIMO EVENTO y no contra "ahora menos un rato"
+   * es lo que hace que esto sobreviva un apagón de varios días sin disparar
+   * una falsa alarma.
+   */
+  relojAtrasado: { ultimoEvento: string; alAbrir: string } | null;
 }
 
 export class AlmacenArchivoJsonl implements AlmacenDeEventos {
@@ -80,6 +90,7 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
 
   private _ultimaSeq = 0;
   private _ultimoHash = HASH_GENESIS;
+  private _ultimoTs: string | null = null;
   /** Nombre del mes en curso, "2026-09". */
   private _mesActual: string | null = null;
   private _fd: fs.FileHandle | null = null;
@@ -99,6 +110,7 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
     ultimaSeq: 0,
     lineasEnCuarentena: 0,
     archivosReparados: [],
+    relojAtrasado: null,
   };
 
   private constructor(private readonly opciones: OpcionesAlmacen) {
@@ -267,7 +279,7 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
     for (const nombre of await this.archivosDeEventos()) {
       const ruta = path.join(this.dirEventos, nombre);
       for await (const linea of this.lineasDe(ruta)) {
-        const o = JSON.parse(linea) as { seq: number; h: string };
+        const o = JSON.parse(linea) as { seq: number; h: string; ts: string };
         if (o.seq <= this._ultimaSeq) {
           throw new Error(
             `El log está desordenado: apareció seq ${o.seq} después de ${this._ultimaSeq} en ${nombre}. ` +
@@ -276,6 +288,7 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
         }
         this._ultimaSeq = o.seq;
         this._ultimoHash = o.h;
+        this._ultimoTs = o.ts;
         cuenta++;
       }
       this._mesActual = nombre.replace(".jsonl", "");
@@ -283,6 +296,18 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
 
     this.apertura.eventos = cuenta;
     this.apertura.ultimaSeq = this._ultimaSeq;
+
+    /**
+     * El reloj "al abrir" se toma DESPUÉS de leer el log entero y no antes,
+     * para que el tiempo que tardó el escaneo (irrelevante, pero en un log
+     * grande no es instantáneo) no cuente como el momento de arranque.
+     *
+     * Las dos marcas son ISO 8601 con el mismo offset fijo de Lima, así que
+     * compararlas como texto ya compara como fecha — no hace falta parsear.
+     */
+    if (this._ultimoTs && this.reloj.ahora() < this._ultimoTs) {
+      this.apertura.relojAtrasado = { ultimoEvento: this._ultimoTs, alAbrir: this.reloj.ahora() };
+    }
   }
 
   private async *lineasDe(ruta: string): AsyncGenerator<string> {
@@ -441,6 +466,16 @@ export class AlmacenArchivoJsonl implements AlmacenDeEventos {
    * verificara sobre lo actualizado, cualquier upcaster nuevo rompería la
    * verificación de todo el histórico.
    */
+  diagnosticoDeArranque(): {
+    lineasEnCuarentena: number;
+    relojAtrasado: { ultimoEvento: string; alAbrir: string } | null;
+  } {
+    return {
+      lineasEnCuarentena: this.apertura.lineasEnCuarentena,
+      relojAtrasado: this.apertura.relojAtrasado,
+    };
+  }
+
   async verificar(): Promise<Integridad> {
     const resultado: Integridad = {
       ok: true,

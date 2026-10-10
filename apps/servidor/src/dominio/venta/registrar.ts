@@ -24,6 +24,12 @@ export interface LineaPedida {
    */
   precioUnitario?: Centimos;
   barberoId?: string | null;
+  /**
+   * Propina que el cliente dejó para el barbero de ESTA línea, anotada en el
+   * mismo momento de cobrar. No es parte del cobro: no suma al total, no pasa
+   * por los pagos, no la espera el arqueo. Solo para que quede registrada.
+   */
+  propina?: Centimos;
 }
 
 export interface PedidoDeVenta {
@@ -68,6 +74,7 @@ export function registrarVenta(
 
   const advertencias: string[] = [];
   const lineas: LineaVenta[] = [];
+  const propinasPedidas: { lineaIndex: number; barberoId: string; monto: Centimos }[] = [];
 
   // Cuánto se lleva de cada producto EN ESTE ticket. Hace falta acumularlo
   // porque el mismo producto puede venir en dos líneas, y el aviso de stock
@@ -145,6 +152,19 @@ export function registrarVenta(
       total: multiplicar(precioUnitario, pedida.cantidad),
     });
 
+    if (pedida.propina !== undefined) {
+      if (!(pedida.propina > 0)) {
+        throw new ErrorDeNegocio("DATO_INVALIDO", "La propina tiene que ser mayor a cero.");
+      }
+      if (!pedida.barberoId) {
+        throw new ErrorDeNegocio(
+          "DATO_INVALIDO",
+          `No se puede anotar propina en "${item.nombre}" sin elegir a quién atendió.`,
+        );
+      }
+      propinasPedidas.push({ lineaIndex: lineas.length - 1, barberoId: pedida.barberoId, monto: pedida.propina });
+    }
+
     if (item.tipo === "PRODUCTO") {
       salidaPorProducto.set(item.id, (salidaPorProducto.get(item.id) ?? 0) + pedida.cantidad);
     }
@@ -181,6 +201,23 @@ export function registrarVenta(
 
   const ventaId = ulid();
   const correlativo = siguienteCorrelativo(p, opciones.correlativoInicial);
+  const turnoId = p.turnoAbierto?.id ?? null;
+
+  // Las propinas viajan en el MISMO lote que la venta: o se registran las
+  // dos cosas, o ninguna. Entrarlas por separado dejaría, ante un corte de
+  // luz entre medio, una venta cobrada sin la propina que el cajero ya vio
+  // en pantalla.
+  const eventosPropina: EventoNuevo[] = propinasPedidas.map((pp) => ({
+    tipo: "venta.propina_registrada",
+    datos: {
+      propinaId: ulid(),
+      ventaId,
+      lineaIndex: pp.lineaIndex,
+      barberoId: pp.barberoId,
+      monto: pp.monto,
+      turnoId,
+    },
+  }));
 
   return {
     ventaId,
@@ -202,11 +239,12 @@ export function registrarVenta(
           // Si la caja está cerrada la venta se registra igual, con turno null.
           // Perder una venta por no haber abierto caja es inaceptable; el
           // arqueo lo reporta aparte.
-          turnoId: p.turnoAbierto?.id ?? null,
+          turnoId,
           claveIdempotencia: pedido.claveIdempotencia,
           notas: pedido.notas,
         },
       },
+      ...eventosPropina,
     ],
   };
 }

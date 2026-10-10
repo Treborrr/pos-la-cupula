@@ -72,6 +72,8 @@ interface Reporte extends TotalesDelPeriodo {
   porCategoria: FilaAgrupada[];
   porMarca: FilaAgrupada[];
   porBarbero: { barberoId: string; nombre: string; cantidad: number; total: number }[];
+  /** Por cuándo se ANOTÓ la propina, no por la fecha de la venta que la originó. */
+  propinas: { barberoId: string; nombre: string; cantidad: number; total: number }[];
   bajoCosto: {
     correlativo: string;
     fecha: string;
@@ -254,6 +256,7 @@ export function Reportes() {
                 <div className="space-y-6">
                   <FormasDePago r={r} />
                   <PorBarbero r={r} />
+                  {r.propinas.length > 0 ? <Propinas r={r} /> : null}
                 </div>
               </div>
               {r.bajoCosto.length > 0 ? <BajoCosto r={r} /> : null}
@@ -637,6 +640,40 @@ function PorBarbero({ r }: { r: Reporte }) {
   );
 }
 
+/**
+ * Por cuándo se ANOTÓ la propina, no por la fecha de la venta: una que se
+ * agrega días después aparece en el período en que se agregó.
+ */
+function Propinas({ r }: { r: Reporte }) {
+  const maximo = Math.max(1, ...r.propinas.map((b) => b.total));
+  const total = r.propinas.reduce((a, b) => a + b.total, 0);
+
+  return (
+    <Seccion titulo="Propinas" descripcion="Para que el dueño sepa cuánto recibe cada uno — nada más.">
+      <div className="space-y-4">
+        {r.propinas.map((b) => (
+          <div key={b.barberoId}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate font-medium">{b.nombre}</span>
+              <span className="flex shrink-0 items-baseline gap-3">
+                <span className="ayuda">{cantidad(b.cantidad)}</span>
+                <span className="cifra w-24 text-right font-semibold">{aTextoConSimbolo(b.total)}</span>
+              </span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-hueso-hondo">
+              <div className="h-full rounded-full bg-laton" style={{ width: `${(b.total / maximo) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between border-t border-linea pt-3">
+          <span className="ayuda">Total</span>
+          <span className="cifra font-semibold">{aTextoConSimbolo(total)}</span>
+        </div>
+      </div>
+    </Seccion>
+  );
+}
+
 function BajoCosto({ r }: { r: Reporte }) {
   const total = r.bajoCosto.reduce((a, b) => a + b.perdida, 0);
 
@@ -863,6 +900,10 @@ function descargarCsv(r: Reporte) {
     [],
     ["Barbero", "Servicios", "Total"],
     ...r.porBarbero.map((b) => [b.nombre, String(b.cantidad), s(b.total)]),
+    [],
+    ["Propinas (por cuándo se anotaron, no por la fecha de la venta)"],
+    ["Barbero", "Cantidad", "Total"],
+    ...r.propinas.map((b) => [b.nombre, String(b.cantidad), s(b.total)]),
     [],
     ["Inventario a hoy"],
     ["Productos activos", String(r.inventario.productos)],

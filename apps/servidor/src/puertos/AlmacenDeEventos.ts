@@ -54,6 +54,18 @@ export interface AlmacenDeEventos {
   /** Recorre el log completo revisando secuencia y cadena de hash. */
   verificar(): Promise<Integridad>;
 
+  /**
+   * Lo que ya se supo al escanear el log una vez, al arrancar. Nunca vuelve a
+   * tocar el disco — a diferencia de `verificar()`, que relee todo el log
+   * cada vez que se llama. Existe para las alertas que se consultan todo el
+   * rato desde cualquier pantalla, donde pagar el costo de `verificar()` en
+   * cada poll sería desproporcionado frente a una falla que casi nunca ocurre.
+   */
+  diagnosticoDeArranque(): {
+    lineasEnCuarentena: number;
+    relojAtrasado: { ultimoEvento: string; alAbrir: string } | null;
+  };
+
   /** Guarda el estado reconstruido para que el arranque no crezca sin techo. */
   guardarInstantanea(seq: number, estado: unknown): Promise<void>;
 

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { pareceSerialDeTarjetaCloud, identificarPorEscaneo } from "../../dominio/clientes/clientes";
 import { stockBajo } from "../../dominio/inventario/inventario";
 import { siguienteCorrelativo } from "../../dominio/venta/registrar";
+import { calcularAlertas } from "../../consultas/alertas";
 import type { Dependencias } from "../app";
 
 export async function rutasSistema(
@@ -33,6 +34,7 @@ export async function rutasSistema(
         huecos: integridad.huecos.slice(0, 20),
         hashRotos: integridad.hashRotos.slice(0, 20),
         enCuarentena: integridad.enCuarentena,
+        relojAtrasado: pos.almacen.diagnosticoDeArranque().relojAtrasado,
       },
       impresora: await impresora.estado(),
       memoria: {
@@ -51,23 +53,36 @@ export async function rutasSistema(
   });
 
   /** Lo que la PWA necesita al arrancar, en una sola llamada. */
-  app.get("/estado", async () => ({
-    negocio: {
-      nombre: pos.config<string>("negocio.nombre"),
-      direccion: pos.config<string>("negocio.direccion"),
-      ciudad: pos.config<string>("negocio.ciudad"),
-      ruc: pos.config<string>("negocio.ruc"),
-      pie: pos.config<string>("negocio.pie"),
-    },
-    siguienteCorrelativo: siguienteCorrelativo(
-      pos.p,
-      pos.config<number>("ventas.correlativoInicial") ?? 1,
-    ),
-    turnoAbierto: pos.p.turnoAbierto,
-    exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
-    alertasDeStock: stockBajo(pos.p).length,
-    impresora: await impresora.estado(),
-  }));
+  app.get("/estado", async () => {
+    const estadoImpresora = await impresora.estado();
+    const modoImpresora = pos.config<string>("impresora.modo");
+
+    return {
+      negocio: {
+        nombre: pos.config<string>("negocio.nombre"),
+        direccion: pos.config<string>("negocio.direccion"),
+        ciudad: pos.config<string>("negocio.ciudad"),
+        ruc: pos.config<string>("negocio.ruc"),
+        pie: pos.config<string>("negocio.pie"),
+      },
+      siguienteCorrelativo: siguienteCorrelativo(
+        pos.p,
+        pos.config<number>("ventas.correlativoInicial") ?? 1,
+      ),
+      turnoAbierto: pos.p.turnoAbierto,
+      exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
+      alertasDeStock: stockBajo(pos.p).length,
+      impresora: estadoImpresora,
+      // Barato a propósito: nada de lo que entra acá vuelve a tocar el disco
+      // ni la red. Ver `consultas/alertas.ts`.
+      alertas: calcularAlertas({
+        ...pos.almacen.diagnosticoDeArranque(),
+        respaldos: respaldos.estadoCacheado(),
+        impresoraConfigurada: Boolean(modoImpresora && modoImpresora !== "vistaPrevia"),
+        impresora: estadoImpresora,
+      }),
+    };
+  });
 
   app.get("/config", async () => pos.configCompleta());
 

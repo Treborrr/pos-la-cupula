@@ -164,6 +164,16 @@ export interface Barbero {
   activo: boolean;
 }
 
+export interface Propina {
+  id: string;
+  ts: string;
+  ventaId: string;
+  lineaIndex: number;
+  barberoId: string;
+  monto: number;
+  turnoId: string | null;
+}
+
 export interface Turno {
   id: string;
   abiertoEn: string;
@@ -202,6 +212,12 @@ export interface Arqueo {
   efectivoFueraDeTurno?: number;
   /** Salidas registradas con la caja cerrada: no se descuentan de este turno. */
   egresosFueraDeTurno: number;
+  porBarbero: { barberoId: string; nombre: string; cantidad: number; total: number }[];
+}
+
+export interface Alerta {
+  codigo: string;
+  mensaje: string;
 }
 
 export interface EstadoGeneral {
@@ -211,6 +227,7 @@ export interface EstadoGeneral {
   exigirTurnoAbierto: boolean;
   alertasDeStock: number;
   impresora: { disponible: boolean; descripcion: string; detalle?: string };
+  alertas: Alerta[];
 }
 
 export type RespuestaEscaneo =

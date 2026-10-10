@@ -107,6 +107,14 @@ export interface ArqueoDelTurno {
   efectivoFueraDeTurno: Centimos;
   /** Egresos registrados con la caja cerrada: también salieron del cajón. */
   egresosFueraDeTurno: Centimos;
+  /**
+   * Producción por barbero EN ESTE TURNO. Mismo criterio que el reporte de
+   * período (por línea, no por venta: una venta puede tener servicios de más
+   * de un barbero) para que el papel del cierre y la pantalla de Reportes
+   * nunca cuenten distinto lo mismo. Dato de gestión, NO una liquidación
+   * (D6: sueldo fijo, sin comisiones).
+   */
+  porBarbero: { barberoId: string; nombre: string; cantidad: number; total: Centimos }[];
 }
 
 /**
@@ -133,6 +141,7 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
   let egresos = 0;
   let cantidadEgresos = 0;
   let egresosFueraDeTurno = 0;
+  const porBarbero = new Map<string, { cantidad: number; total: Centimos }>();
 
   /**
    * Las ventas cobradas con la caja cerrada se reportan en el turno SIGUIENTE:
@@ -172,6 +181,13 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
     cantidadVentas++;
     totalVendido += venta.total;
     for (const pago of venta.pagos) medios[pago.medio] += pago.monto;
+    for (const linea of venta.lineas) {
+      if (!linea.barberoId) continue;
+      const b = porBarbero.get(linea.barberoId) ?? { cantidad: 0, total: 0 };
+      b.cantidad += linea.cantidad;
+      b.total += linea.total;
+      porBarbero.set(linea.barberoId, b);
+    }
   }
 
   // Los egresos siguen exactamente las mismas reglas que las ventas: los del
@@ -207,6 +223,9 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
     totalFueraDeTurno,
     efectivoFueraDeTurno,
     egresosFueraDeTurno,
+    porBarbero: [...porBarbero.entries()]
+      .map(([barberoId, d]) => ({ barberoId, nombre: p.barberos.get(barberoId)?.nombre ?? "(eliminado)", ...d }))
+      .sort((a, b) => b.total - a.total),
   };
 }
 

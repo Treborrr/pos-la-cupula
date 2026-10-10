@@ -9,10 +9,10 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Printer, Receipt, ScanLine, Search, X } from "lucide-react";
+import { Ban, HandCoins, Printer, Receipt, ScanLine, Search, X } from "lucide-react";
 
-import { api, type ResultadoImpresion, type Venta } from "../lib/api";
-import { aTextoConSimbolo, diasAtras, fecha, fechaYHora, hora, hoy, nombreConMarca } from "../lib/formato";
+import { api, type Barbero, type Propina, type ResultadoImpresion, type Venta } from "../lib/api";
+import { aCentimos, aTextoConSimbolo, diasAtras, fecha, fechaYHora, hora, hoy, nombreConMarca } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { useEscaner } from "../lib/escaneo";
 import { EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
@@ -194,10 +194,28 @@ function DetalleDeVenta({
   const qc = useQueryClient();
   const [anulando, setAnulando] = useState(false);
   const [motivo, setMotivo] = useState("");
+  const [agregandoPropinaEn, setAgregandoPropinaEn] = useState<number | null>(null);
+  const [textoPropina, setTextoPropina] = useState("");
 
   const detalle = useQuery({
     queryKey: ["venta", venta.id],
-    queryFn: () => api.get<{ venta: Venta; vistaPreviaTicket: string }>(`/ventas/${venta.id}`),
+    queryFn: () => api.get<{ venta: Venta; vistaPreviaTicket: string; propinas: Propina[] }>(`/ventas/${venta.id}`),
+  });
+  const barberos = useQuery({
+    queryKey: ["barberos"],
+    queryFn: () => api.get<{ barberos: Barbero[] }>("/barberos"),
+  });
+  const nombreDe = (barberoId: string) => barberos.data?.barberos.find((b) => b.id === barberoId)?.nombre ?? "";
+
+  const agregarPropina = useMutation({
+    mutationFn: (datos: { lineaIndex: number; barberoId: string; monto: number }) =>
+      api.post(`/ventas/${venta.id}/propina`, datos),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["venta", venta.id] });
+      qc.invalidateQueries({ queryKey: ["reportes"] });
+      setAgregandoPropinaEn(null);
+      setTextoPropina("");
+    },
   });
 
   const anular = useMutation({
@@ -298,25 +316,92 @@ function DetalleDeVenta({
         ) : null}
 
         <div className="divide-y divide-linea rounded-xl border border-linea">
-          {venta.lineas.map((l, i) => (
-            <div key={i} className="flex items-start justify-between gap-4 px-4 py-3">
-              <div className="min-w-0">
-                <div className="font-semibold">{nombreConMarca(l)}</div>
-                <div className="ayuda">
-                  {l.cantidad} × {aTextoConSimbolo(l.precioUnitario)}
-                  {/* Sin precio de lista no hubo ajuste: el precio se escribió
-                      al cobrar porque el ítem no tenía ninguno. Decir "precio
-                      de lista S/ 0.00" haría parecer que se regaló algo. */}
-                  {l.precioLista === null
-                    ? " · precio escrito al cobrar"
-                    : l.precioUnitario !== l.precioLista
-                      ? ` · precio de lista ${aTextoConSimbolo(l.precioLista)}`
-                      : ""}
+          {venta.lineas.map((l, i) => {
+            const propina = detalle.data?.propinas.find((p) => p.lineaIndex === i);
+            return (
+              <div key={i} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{nombreConMarca(l)}</div>
+                    <div className="ayuda">
+                      {l.cantidad} × {aTextoConSimbolo(l.precioUnitario)}
+                      {/* Sin precio de lista no hubo ajuste: el precio se escribió
+                          al cobrar porque el ítem no tenía ninguno. Decir "precio
+                          de lista S/ 0.00" haría parecer que se regaló algo. */}
+                      {l.precioLista === null
+                        ? " · precio escrito al cobrar"
+                        : l.precioUnitario !== l.precioLista
+                          ? ` · precio de lista ${aTextoConSimbolo(l.precioLista)}`
+                          : ""}
+                    </div>
+                  </div>
+                  <span className="cifra shrink-0 font-semibold">{aTextoConSimbolo(l.total)}</span>
                 </div>
+
+                {/* La propina es aparte del cobro: no se suma al total de la
+                    venta, solo se anota para que el dueño sepa cuánto recibe
+                    cada barbero (D6: sueldo fijo, sin comisiones). */}
+                {l.barberoId ? (
+                  propina ? (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-bien">
+                      <HandCoins className="h-4 w-4" />
+                      Propina para {nombreDe(l.barberoId)}: {aTextoConSimbolo(propina.monto)}
+                    </p>
+                  ) : agregandoPropinaEn === i ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="ayuda">Propina para {nombreDe(l.barberoId)}</span>
+                      <div className="relative w-32">
+                        <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta/40">
+                          S/
+                        </span>
+                        <input
+                          className="campo cifra h-9 pl-9 text-right"
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          autoFocus
+                          value={textoPropina}
+                          onChange={(e) => setTextoPropina(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        className="boton-icono h-9 w-9"
+                        aria-label="Guardar propina"
+                        disabled={agregarPropina.isPending || !aCentimos(textoPropina)}
+                        onClick={() => {
+                          const monto = aCentimos(textoPropina);
+                          if (!monto || !l.barberoId) return;
+                          agregarPropina.mutate({ lineaIndex: i, barberoId: l.barberoId, monto });
+                        }}
+                      >
+                        <HandCoins className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="boton-icono h-9 w-9"
+                        aria-label="Cancelar"
+                        onClick={() => {
+                          setAgregandoPropinaEn(null);
+                          setTextoPropina("");
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-tinta/55 hover:text-tinta"
+                      onClick={() => {
+                        setAgregandoPropinaEn(i);
+                        setTextoPropina("");
+                      }}
+                    >
+                      <HandCoins className="h-4 w-4" />
+                      Agregar propina olvidada
+                    </button>
+                  )
+                ) : null}
               </div>
-              <span className="cifra shrink-0 font-semibold">{aTextoConSimbolo(l.total)}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="space-y-1.5 px-1">

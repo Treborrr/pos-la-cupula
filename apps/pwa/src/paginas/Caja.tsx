@@ -9,16 +9,26 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownCircle, CheckCircle2, History, Lock, LockOpen, Plus, ShieldCheck, XCircle } from "lucide-react";
+import {
+  ArrowDownCircle,
+  CheckCircle2,
+  History,
+  Lock,
+  LockOpen,
+  Plus,
+  Printer,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 
-import { api, FalloDeApi, type Arqueo, type Egreso, type Turno } from "../lib/api";
+import { api, FalloDeApi, type Arqueo, type Egreso, type ResultadoImpresion, type Turno } from "../lib/api";
 import { aCentimos, aTextoConSimbolo, fechaYHora, hora } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { Campo, EncabezadoPagina, Pagina, Recuadro } from "../componentes/Piezas";
 
 export function Caja() {
   const qc = useQueryClient();
-  const [cierre, setCierre] = useState<{ diferencia: number; integro: boolean } | null>(null);
+  const [cierre, setCierre] = useState<{ turnoId: string; diferencia: number; integro: boolean } | null>(null);
 
   const caja = useQuery({
     queryKey: ["caja"],
@@ -78,35 +88,63 @@ export function Caja() {
           ) : (
             <ul className="scroll-fino max-h-[32rem] divide-y divide-linea overflow-y-auto">
               {turnos.data!.turnos.map((t) => (
-                <li key={t.id} className="px-5 py-3">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="font-medium">{fechaYHora(t.abiertoEn)}</span>
-                    {t.cerradoEn ? (
-                      <span className="ayuda">cerró {hora(t.cerradoEn)}</span>
-                    ) : (
-                      <span className="text-sm font-semibold text-bien">abierto</span>
-                    )}
-                  </div>
-                  {t.diferencia !== undefined ? (
-                    <div
-                      className={`cifra text-sm ${
-                        t.diferencia === 0 ? "text-bien" : t.diferencia < 0 ? "text-mal" : "text-aviso"
-                      }`}
-                    >
-                      {t.diferencia === 0
-                        ? "Cuadró exacto"
-                        : t.diferencia < 0
-                          ? `Faltaron ${aTextoConSimbolo(-t.diferencia)}`
-                          : `Sobraron ${aTextoConSimbolo(t.diferencia)}`}
-                    </div>
-                  ) : null}
-                </li>
+                <TurnoAnterior key={t.id} turno={t} />
               ))}
             </ul>
           )}
         </aside>
       </div>
     </Pagina>
+  );
+}
+
+/** Una fila de "Turnos anteriores", con su propio botón para (re)imprimir el cierre. */
+function TurnoAnterior({ turno: t }: { turno: Turno }) {
+  const imprimir = useMutation({
+    mutationFn: () => api.post<ResultadoImpresion>(`/caja/turnos/${t.id}/imprimir`),
+  });
+
+  return (
+    <li className="px-5 py-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-medium">{fechaYHora(t.abiertoEn)}</span>
+        {t.cerradoEn ? (
+          <span className="ayuda">cerró {hora(t.cerradoEn)}</span>
+        ) : (
+          <span className="text-sm font-semibold text-bien">abierto</span>
+        )}
+      </div>
+      {t.diferencia !== undefined ? (
+        <div className="flex items-baseline justify-between gap-2">
+          <span
+            className={`cifra text-sm ${
+              t.diferencia === 0 ? "text-bien" : t.diferencia < 0 ? "text-mal" : "text-aviso"
+            }`}
+          >
+            {t.diferencia === 0
+              ? "Cuadró exacto"
+              : t.diferencia < 0
+                ? `Faltaron ${aTextoConSimbolo(-t.diferencia)}`
+                : `Sobraron ${aTextoConSimbolo(t.diferencia)}`}
+          </span>
+          <button
+            className="boton-icono h-7 w-7 shrink-0"
+            title="Imprimir el cierre de este turno"
+            onClick={() => imprimir.mutate()}
+            disabled={imprimir.isPending}
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+      {imprimir.data && !imprimir.data.impreso && !imprimir.data.sinImpresora ? (
+        <p className="mt-1 text-sm text-mal">No salió en papel: {imprimir.data.motivo}</p>
+      ) : imprimir.data ? (
+        <p className="mt-1 text-sm text-bien">
+          {imprimir.data.impreso ? "Cierre impreso." : "Sin ticketera: quedó en la vista previa."}
+        </p>
+      ) : null}
+    </li>
   );
 }
 
@@ -350,7 +388,7 @@ function TurnoAbierto({
   arqueo: Arqueo;
   egresos: Egreso[];
   alRegistrarEgreso: () => void;
-  alCerrar: (r: { diferencia: number; integro: boolean }) => void;
+  alCerrar: (r: { turnoId: string; diferencia: number; integro: boolean }) => void;
 }) {
   const [cerrando, setCerrando] = useState(false);
   const [contado, setContado] = useState("");
@@ -358,11 +396,11 @@ function TurnoAbierto({
 
   const cerrar = useMutation({
     mutationFn: () =>
-      api.post<{ diferencia: number; integridad: { ok: boolean } }>("/caja/cerrar", {
+      api.post<{ turno: { id: string }; diferencia: number; integridad: { ok: boolean } }>("/caja/cerrar", {
         contadoEfectivo: aCentimos(contado || "0") ?? 0,
         notas: notas || undefined,
       }),
-    onSuccess: (r) => alCerrar({ diferencia: r.diferencia, integro: r.integridad.ok }),
+    onSuccess: (r) => alCerrar({ turnoId: r.turno.id, diferencia: r.diferencia, integro: r.integridad.ok }),
   });
 
   const contadoCentimos = contado.trim() === "" ? null : aCentimos(contado);
@@ -510,10 +548,14 @@ function ResultadoDelCierre({
   resultado,
   alTerminar,
 }: {
-  resultado: { diferencia: number; integro: boolean };
+  resultado: { turnoId: string; diferencia: number; integro: boolean };
   alTerminar: () => void;
 }) {
     const cuadro = resultado.diferencia === 0;
+    const imprimir = useMutation({
+      mutationFn: () => api.post<ResultadoImpresion>(`/caja/turnos/${resultado.turnoId}/imprimir`),
+    });
+    const impresion = imprimir.data;
     return (
       <div className="tarjeta p-8 text-center">
         {cuadro ? (
@@ -546,14 +588,37 @@ function ResultadoDelCierre({
               como egreso. Lo que sale del cajón sin registrar aparece como faltante.
             </Aviso>
           ) : null}
+          {impresion && !impresion.impreso && !impresion.sinImpresora ? (
+            <Aviso tono="mal" titulo="No salió en papel">
+              {impresion.motivo}
+            </Aviso>
+          ) : null}
         </div>
 
-        <button
-          className="boton-primario boton-grande mt-6 w-full max-w-lg"
-          onClick={alTerminar}
-        >
-          Listo
-        </button>
+        <div className="mx-auto mt-6 flex max-w-lg gap-3">
+          <button className="boton-suave flex-1" onClick={() => imprimir.mutate()} disabled={imprimir.isPending}>
+            <Printer className="h-5 w-5" />
+            {imprimir.isPending
+              ? "Imprimiendo…"
+              : impresion?.impreso
+                ? "Cierre impreso"
+                : impresion?.sinImpresora
+                  ? "Sin ticketera: ver vista previa"
+                  : "Imprimir cierre"}
+          </button>
+          <button className="boton-primario flex-1" onClick={alTerminar}>
+            Listo
+          </button>
+        </div>
+
+        {impresion?.vistaPrevia ? (
+          <details className="mx-auto mt-4 max-w-lg text-left">
+            <summary className="cursor-pointer font-medium text-tinta/60">Ver el cierre como sale impreso</summary>
+            <pre className="mt-3 overflow-x-auto rounded-xl bg-tinta p-4 font-mono text-xs leading-snug text-hueso">
+              {impresion.vistaPrevia}
+            </pre>
+          </details>
+        ) : null}
       </div>
     );
   }

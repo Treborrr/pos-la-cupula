@@ -395,6 +395,31 @@ export const ventaReimpresa = definir(
   z.object({ ventaId: esquemaUlid, correlativo: z.string().regex(/^NV\d{6}$/) }),
 );
 
+/**
+ * Propina que el cliente le dio a un barbero por un servicio puntual.
+ *
+ * NO es parte del cobro: el dinero no pasa por el cajón, no cuenta para el
+ * arqueo y no cambia el total de la venta (D6: sueldo fijo, sin comisiones).
+ * Es un registro aparte para que el dueño sepa cuánto recibe cada barbero y
+ * pueda conversarlo con ellos — nunca para calcular ni liquidar nada.
+ *
+ * Se referencia por POSICIÓN de línea (`lineaIndex`) y no por un id propio: una
+ * línea de venta no tiene uno, y el arreglo de líneas de una venta ya
+ * registrada no cambia.
+ */
+export const ventaPropinaRegistrada = definir(
+  "venta.propina_registrada",
+  z.object({
+    propinaId: esquemaUlid,
+    ventaId: esquemaUlid,
+    lineaIndex: z.number().int().min(0),
+    barberoId: esquemaUlid,
+    monto: esquemaCentimosPositivo.min(1),
+    /** Null si se cobró, o se corrigió después, con la caja cerrada. */
+    turnoId: esquemaUlid.nullable(),
+  }),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Caja
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,6 +574,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   ventaRegistrada,
   ventaAnulada,
   ventaReimpresa,
+  ventaPropinaRegistrada,
   cajaTurnoAbierto,
   cajaEgresoRegistrado,
   cajaTurnoCerrado,
@@ -607,6 +633,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "venta.registrada": 1,
   "venta.anulada": 1,
   "venta.reimpresa": 1,
+  "venta.propina_registrada": 1,
   "caja.turno_abierto": 1,
   "caja.egreso_registrado": 1,
   "caja.turno_cerrado": 1,
@@ -624,8 +651,11 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
  * queda apartado para que encenderlos mañana no obligue a cambiar el formato
  * del log.
  *
- * `caja.egreso_registrado` salió de esta lista en la v0.6.0: era el que más
- * falta hacía y ya está implementado. Reservarlo desde el día 1 fue lo que
- * permitió encenderlo sin tocar nada de lo ya escrito en disco.
+ * `caja.egreso_registrado` salió de esta lista en la v0.6.0, y
+ * `venta.propina_registrada` en la v0.7.0: los dos eran los que más falta
+ * hacían y ya están implementados. Reservarlos desde el día 1 fue lo que
+ * permitió encenderlos sin tocar nada de lo ya escrito en disco.
+ *
+ * Nada reservado por ahora.
  */
-export const EVENTOS_RESERVADOS = ["venta.propina_registrada"] as const;
+export const EVENTOS_RESERVADOS = [] as const;

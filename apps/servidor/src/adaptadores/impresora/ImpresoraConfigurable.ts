@@ -14,6 +14,7 @@
  */
 
 import type {
+  DatosDelCierre,
   DatosDelNegocio,
   EstadoImpresora,
   Impresora,
@@ -96,6 +97,10 @@ export class ImpresoraConfigurable implements Impresora {
     opciones?: OpcionesDeImpresion,
   ): Promise<ResultadoImpresion> {
     return this.resolver().imprimirVenta(venta, negocio, opciones);
+  }
+
+  imprimirCierre(cierre: DatosDelCierre, negocio: DatosDelNegocio): Promise<ResultadoImpresion> {
+    return this.resolver().imprimirCierre(cierre, negocio);
   }
 }
 

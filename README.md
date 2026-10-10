@@ -32,11 +32,12 @@ nada.
 | H11 | Auditoría exportable y acceso remoto por Tailscale | ✅ |
 | H12 | Egresos de caja, margen real, reposición y ventas por hora | ✅ |
 | H13 | Listo para Railway: `PORT`, datos en Volumen persistente, candado de acceso opcional | ✅ |
+| H14 | Aviso de reloj atrasado, alertas persistentes, propinas, cierre de turno impreso | ✅ |
 
-**211 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**245 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
-importación de catálogo, reportes de margen, respaldos, auditoría y el candado
-de acceso.
+importación de catálogo, reportes de margen, respaldos, auditoría, el candado
+de acceso y las propinas.
 
 ### Lo que queda pendiente
 
@@ -50,6 +51,31 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.8.0** — reloj atrasado, alertas que se ven solas, propinas y el cierre de turno en papel.
+
+- **Aviso de reloj atrasado.** Prometido desde el día 1 en ARQUITECTURA.md §15
+  y nunca construido: solo se detectaba en retrospectiva, leyendo la auditoría
+  después del daño. Ahora, al arrancar, se compara la hora de la PC contra el
+  último evento del log; si quedó atrás, se avisa antes de que todo lo nuevo
+  quede mal fechado.
+- **Alertas persistentes.** El reloj atrasado, el respaldo externo que dejó de
+  poder escribir, la ticketera configurada que no responde y las líneas
+  apartadas por un corte de luz ahora se ven en una franja roja arriba de
+  **cualquier pantalla**, no solo en Ajustes → Diagnóstico. Si no hay nada que
+  avisar, no aparece nada — no es un cartel que haya que acostumbrarse a
+  ignorar.
+- **Propinas.** `venta.propina_registrada` estaba reservado desde el día 1 y se
+  enciende ahora: un campo opcional al cobrar, para el barbero de la venta, que
+  se puede agregar o corregir después desde el detalle de la venta en
+  Historial. No es parte del cobro —no se suma al total, no pasa por los
+  pagos, no la espera el arqueo— y no es una liquidación (D6 sigue intacta:
+  sueldo fijo, sin comisiones). Reportes suma las propinas por barbero, por
+  cuándo se anotaron.
+- **Cierre de turno impreso.** El arqueo ya no vive solo en la pantalla: un
+  botón imprime un papel con ventas, medios de pago, egresos con su motivo,
+  diferencia de caja y producción por barbero — compacto, pensado para que lo
+  lea el dueño aunque lo imprima quien está en el mostrador.
 
 **v0.7.0** — listo para publicarse en Railway, sin tocar la instalación local.
 
@@ -356,7 +382,7 @@ que tiene el sistema para la PC de la barbería (§1, decisión D3 de
 ## Verificar
 
 ```bash
-npm test                                            # las 211 pruebas
+npm test                                            # las 245 pruebas
 npm run verificar-capas                             # que el dominio no toque archivos, red ni reloj
 node apps/servidor/dist/pos-cupula.mjs verificar    # integridad del log en disco
 ```

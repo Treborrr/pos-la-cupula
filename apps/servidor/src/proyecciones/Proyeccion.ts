@@ -21,6 +21,7 @@ import {
   type Cliente,
   type Egreso,
   type Item,
+  type Propina,
   type Turno,
   type TotalesPorMedio,
   type Venta,
@@ -35,7 +36,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 3;
+export const FORMATO_PROYECCION = 4;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -75,6 +76,15 @@ export class Proyeccion {
    * colgarse—, igual que una venta.
    */
   readonly egresos = new Map<string, Egreso>();
+
+  /**
+   * Propinas, por id. Igual que los egresos, van en su propio mapa y no
+   * colgando de la venta: la venta ya está sellada cuando se registra una
+   * propina atrasada, y es más simple agregar sin tener que mutarla.
+   */
+  readonly propinas = new Map<string, Propina>();
+  /** ventaId → propinas de esa venta, para "esta línea ya tiene propina". */
+  readonly propinasPorVenta = new Map<string, Propina[]>();
 
   readonly clientes = new Map<string, Cliente>();
   /** nombre normalizado → clienteIds. Es una LISTA: los homónimos existen. */
@@ -251,6 +261,24 @@ export class Proyeccion {
       case "venta.reimpresa": {
         const venta = this.ventas.get(e.datos.ventaId);
         if (venta) venta.reimpresiones += 1;
+        break;
+      }
+
+      case "venta.propina_registrada": {
+        const d = e.datos;
+        const propina: Propina = {
+          id: d.propinaId,
+          ts: e.ts,
+          ventaId: d.ventaId,
+          lineaIndex: d.lineaIndex,
+          barberoId: d.barberoId,
+          monto: d.monto,
+          turnoId: d.turnoId,
+        };
+        this.propinas.set(propina.id, propina);
+        const deLaVenta = this.propinasPorVenta.get(propina.ventaId);
+        if (deLaVenta) deLaVenta.push(propina);
+        else this.propinasPorVenta.set(propina.ventaId, [propina]);
         break;
       }
 
@@ -593,6 +621,7 @@ export class Proyeccion {
       turnos: [...this.turnos.values()],
       turnoAbiertoId: this.turnoAbierto?.id ?? null,
       egresos: [...this.egresos.values()],
+      propinas: [...this.propinas.values()],
       clientes: [...this.clientes.values()],
       barberos: [...this.barberos.values()],
       config: [...this.config.entries()],
@@ -628,6 +657,12 @@ export class Proyeccion {
     for (const [k, v] of d.idempotencia ?? []) p.porIdempotencia.set(k, v);
     for (const turno of d.turnos ?? []) p.turnos.set(turno.id, turno);
     for (const egreso of d.egresos ?? []) p.egresos.set(egreso.id, egreso);
+    for (const propina of d.propinas ?? []) {
+      p.propinas.set(propina.id, propina);
+      const deLaVenta = p.propinasPorVenta.get(propina.ventaId);
+      if (deLaVenta) deLaVenta.push(propina);
+      else p.propinasPorVenta.set(propina.ventaId, [propina]);
+    }
     p.turnoAbierto = d.turnoAbiertoId ? (p.turnos.get(d.turnoAbiertoId) ?? null) : null;
     for (const cliente of d.clientes ?? []) {
       p.clientes.set(cliente.id, cliente);

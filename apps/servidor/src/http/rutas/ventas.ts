@@ -9,6 +9,7 @@ import { z } from "zod";
 import { coincide } from "@cupula/contratos";
 import type { Venta } from "../../proyecciones/tipos";
 import { construirReporte } from "../../consultas/reportes";
+import { registrarPropina } from "../../dominio/venta/propina";
 import type { Dependencias } from "../app";
 import { booleanoDeQuery } from "./catalogo";
 
@@ -27,6 +28,8 @@ const esquemaCobro = z.object({
         cantidad: z.number().positive(),
         precioUnitario: z.number().int().min(0).optional(),
         barberoId: z.string().nullable().optional(),
+        /** Propina para el barbero de esta línea. No es parte del cobro. */
+        propina: z.number().int().min(1).optional(),
       }),
     )
     .min(1),
@@ -116,7 +119,11 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Depe
         error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
       });
     }
-    return { venta, vistaPreviaTicket: (await imprimir(venta, true)).vistaPrevia };
+    return {
+      venta,
+      vistaPreviaTicket: (await imprimir(venta, true)).vistaPrevia,
+      propinas: pos.p.propinasPorVenta.get(venta.id) ?? [],
+    };
   });
 
   app.post("/ventas/:id/anular", async (peticion) => {
@@ -136,6 +143,37 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Depe
     }
     await pos.registrarReimpresion(venta.id);
     return { venta: pos.p.ventas.get(venta.id), impresion: await imprimir(venta, true) };
+  });
+
+  /**
+   * Agrega una propina DESPUÉS de cobrar: el cliente volvió, o se olvidó
+   * anotarla al momento. La que se anota junto con el carrito va por
+   * `POST /ventas` (campo `propina` de cada línea); esta es la vía para
+   * corregirla más tarde, referenciando una venta que ya existe.
+   */
+  app.post("/ventas/:id/propina", async (peticion, respuesta) => {
+    const { id } = z.object({ id: z.string() }).parse(peticion.params);
+    const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
+    if (!venta) {
+      return respuesta.status(404).send({
+        error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
+      });
+    }
+
+    const { lineaIndex, barberoId, monto } = z
+      .object({
+        lineaIndex: z.number().int().min(0),
+        barberoId: z.string().min(1),
+        monto: z.number().int().min(1),
+      })
+      .parse(peticion.body);
+
+    await pos.transaccion(() => {
+      const r = registrarPropina(pos.p, { ventaId: venta.id, lineaIndex, barberoId, monto });
+      return { eventos: r.eventos, resultado: r.propinaId };
+    });
+
+    return respuesta.status(201).send({ propinas: pos.p.propinasPorVenta.get(venta.id) ?? [] });
   });
 
   // ── Reportes ──────────────────────────────────────────────────────────────

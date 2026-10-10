@@ -20,6 +20,7 @@ import * as path from "node:path";
 import { once } from "node:events";
 
 import type {
+  DatosDelCierre,
   DatosDelNegocio,
   EstadoImpresora,
   Impresora,
@@ -29,6 +30,7 @@ import type {
 import type { Venta } from "../../proyecciones/tipos";
 import type { PerfilImpresora } from "./perfil";
 import type { BloqueTicket } from "./plantilla";
+import { renderCierreEscPos, renderCierreTexto } from "./renderCierre";
 import { renderTicketEscPos, renderTicketTexto } from "./renderTicket";
 import { buscarImpresoraWindows, imprimirRawEnWindows, impresorasWindowsCacheadas } from "./windows";
 
@@ -161,6 +163,28 @@ export class ImpresoraEscPos implements Impresora {
 
     try {
       await this.enviar(bytes, venta.correlativo);
+      return { impreso: true, vistaPrevia };
+    } catch (e) {
+      return { impreso: false, vistaPrevia, motivo: mensaje(e) };
+    }
+  }
+
+  /**
+   * El cierre de turno NUNCA abre el cajón: no es una venta, es un papel para
+   * que lo lea el dueño.
+   */
+  async imprimirCierre(cierre: DatosDelCierre, negocio: DatosDelNegocio): Promise<ResultadoImpresion> {
+    const vistaPrevia = renderCierreTexto(cierre, negocio, this.opciones.perfil);
+
+    let bytes: Buffer;
+    try {
+      bytes = renderCierreEscPos(cierre, negocio, this.opciones.perfil);
+    } catch (e) {
+      return { impreso: false, vistaPrevia, motivo: `No se pudo armar el cierre: ${mensaje(e)}` };
+    }
+
+    try {
+      await this.enviar(bytes, `cierre-${cierre.turnoId}`);
       return { impreso: true, vistaPrevia };
     } catch (e) {
       return { impreso: false, vistaPrevia, motivo: mensaje(e) };

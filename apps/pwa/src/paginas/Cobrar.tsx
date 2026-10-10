@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  HandCoins,
   LayoutGrid,
   Lock,
   Minus,
@@ -127,8 +128,13 @@ export function Cobrar() {
     mutationFn: async () => {
       const clienteId = carrito.clienteId ?? (await registrarCliente(carrito.nombreCliente ?? ""));
       carrito.ponerCliente(clienteId, carrito.nombreCliente);
+      // La propina es una por venta en esta pantalla —igual que el barbero—,
+      // pero el evento la referencia por LÍNEA: se cuelga de la primera de
+      // servicio, que es la que ya lleva el barbero asignado.
+      const primeraDeServicio = carrito.lineas.findIndex((l) => l.tipo === "SERVICIO");
+
       return api.post<VentaRecienCobrada>("/ventas", {
-        lineas: carrito.lineas.map((l) => ({
+        lineas: carrito.lineas.map((l, i) => ({
           itemId: l.itemId,
           cantidad: l.cantidad,
           precioUnitario: l.precioUnitario,
@@ -136,6 +142,7 @@ export function Cobrar() {
           // línea: se copia a los servicios. Los productos no los "atiende"
           // nadie, así que van en null como siempre.
           barberoId: l.tipo === "SERVICIO" ? carrito.barberoId : null,
+          propina: i === primeraDeServicio && carrito.propina > 0 ? carrito.propina : undefined,
         })),
         pagos,
         descuento: carrito.descuento,
@@ -423,6 +430,13 @@ export function Cobrar() {
                 barberoId={carrito.barberoId}
                 alCambiar={carrito.ponerBarbero}
               />
+              {carrito.barberoId ? (
+                <Propina
+                  nombreBarbero={barberosActivos.find((b) => b.id === carrito.barberoId)?.nombre ?? ""}
+                  propina={carrito.propina}
+                  alCambiar={carrito.ponerPropina}
+                />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -798,6 +812,70 @@ function Descuento({
           <X className="h-5 w-5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Propina para el barbero de la venta. No se suma al total ni pasa por los
+ * pagos —solo para contabilizar, D6: sueldo fijo, sin comisiones— así que
+ * vive aparte del carrito y no del `Descuento`, aunque el control se vea
+ * parecido.
+ */
+function Propina({
+  nombreBarbero,
+  propina,
+  alCambiar,
+}: {
+  nombreBarbero: string;
+  propina: number;
+  alCambiar: (centimos: number) => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+
+  if (!abierto && propina === 0) {
+    return (
+      <button
+        className="mt-2 inline-flex items-center gap-1.5 text-[0.95rem] font-medium text-tinta/60 hover:text-tinta"
+        onClick={() => setAbierto(true)}
+      >
+        <HandCoins className="h-4 w-4" />
+        Agregar propina para {nombreBarbero}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-3">
+      <span className="flex-1 text-tinta/60">Propina para {nombreBarbero}</span>
+      <div className="relative w-36">
+        <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-tinta/40">S/</span>
+        <input
+          className="campo cifra h-11 pl-9 text-right"
+          placeholder="0.00"
+          inputMode="decimal"
+          value={texto}
+          autoFocus
+          aria-label={`Propina para ${nombreBarbero}`}
+          onChange={(e) => {
+            setTexto(e.target.value);
+            const c = aCentimos(e.target.value);
+            alCambiar(c === null ? 0 : c);
+          }}
+        />
+      </div>
+      <button
+        className="boton-icono h-11 w-11"
+        aria-label="Quitar propina"
+        onClick={() => {
+          setTexto("");
+          alCambiar(0);
+          setAbierto(false);
+        }}
+      >
+        <X className="h-5 w-5" />
+      </button>
     </div>
   );
 }

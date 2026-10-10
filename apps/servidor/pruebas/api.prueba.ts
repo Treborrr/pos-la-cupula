@@ -181,6 +181,75 @@ describe("cobrar por HTTP", () => {
   });
 });
 
+describe("propinas por HTTP", () => {
+  async function crearBarbero(app: FastifyInstance, nombre: string): Promise<string> {
+    const r = await app.inject({ method: "POST", url: "/api/barberos", payload: { nombre } });
+    expect(r.statusCode).toBe(201);
+    return r.json().barbero.id as string;
+  }
+
+  it("se cobra junto con la propina y no se suma al total", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE", 2000);
+    const barberoId = await crearBarbero(app, "Juan");
+
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId, cantidad: 1, barberoId, propina: 500 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      },
+    });
+
+    expect(r.statusCode).toBe(201);
+    expect(r.json().venta.total).toBe(2000);
+
+    const detalle = await app.inject({ method: "GET", url: `/api/ventas/${r.json().venta.id}` });
+    expect(detalle.json().propinas).toEqual([
+      expect.objectContaining({ barberoId, monto: 500, lineaIndex: 0 }),
+    ]);
+  });
+
+  it("se puede agregar después, referenciando la venta ya cobrada", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE", 2000);
+    const barberoId = await crearBarbero(app, "Luis");
+
+    const venta = (
+      await app.inject({
+        method: "POST",
+        url: "/api/ventas",
+        payload: {
+          lineas: [{ itemId, cantidad: 1, barberoId }],
+          pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+          claveIdempotencia: ulid(),
+        },
+      })
+    ).json().venta;
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/ventas/${venta.id}/propina`,
+      payload: { lineaIndex: 0, barberoId, monto: 300 },
+    });
+
+    expect(r.statusCode).toBe(201);
+    expect(r.json().propinas).toEqual([expect.objectContaining({ barberoId, monto: 300 })]);
+  });
+
+  it("devuelve 404 si la venta no existe", async () => {
+    const { app } = await apiDePrueba();
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/ventas/no-existe/propina",
+      payload: { lineaIndex: 0, barberoId: "x", monto: 300 },
+    });
+    expect(r.statusCode).toBe(404);
+  });
+});
+
 describe("enrutador de escaneos", () => {
   it("reconoce el QR de un ticket y devuelve la venta", async () => {
     const { app } = await apiDePrueba();
@@ -437,6 +506,47 @@ describe("inventario y caja por HTTP", () => {
     await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 5000 } });
 
     const r = await app.inject({ method: "POST", url: "/api/caja/egreso", payload: { monto: 1000, motivo: "" } });
+    expect(r.statusCode).toBe(400);
+  });
+
+  it("imprime el cierre de un turno ya cerrado, con el egreso y la diferencia", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE", 2000);
+
+    const turno = (
+      await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 10000 } })
+    ).json().turno;
+    await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId, cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/caja/egreso",
+      payload: { monto: 500, motivo: "Taxi" },
+    });
+    await app.inject({ method: "POST", url: "/api/caja/cerrar", payload: { contadoEfectivo: 11400 } });
+
+    const r = await app.inject({ method: "POST", url: `/api/caja/turnos/${turno.id}/imprimir` });
+    expect(r.statusCode).toBe(200);
+    // Sin ticketera configurada en las pruebas: se genera la vista previa igual.
+    expect(r.json().vistaPrevia).toContain("CIERRE DE TURNO");
+    expect(r.json().vistaPrevia).toContain("Taxi");
+    expect(r.json().vistaPrevia).toContain("-1.00"); // faltó S/ 1
+  });
+
+  it("no deja imprimir el cierre de un turno que sigue abierto", async () => {
+    const { app } = await apiDePrueba();
+    const turno = (
+      await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 5000 } })
+    ).json().turno;
+
+    const r = await app.inject({ method: "POST", url: `/api/caja/turnos/${turno.id}/imprimir` });
     expect(r.statusCode).toBe(400);
   });
 });

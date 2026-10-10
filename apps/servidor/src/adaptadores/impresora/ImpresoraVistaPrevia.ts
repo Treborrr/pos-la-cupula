@@ -9,6 +9,7 @@
  */
 
 import type {
+  DatosDelCierre,
   DatosDelNegocio,
   EstadoImpresora,
   Impresora,
@@ -17,6 +18,7 @@ import type {
 } from "../../puertos/Impresora";
 import type { Venta } from "../../proyecciones/tipos";
 import { PERFIL_GENERICO_80, type PerfilImpresora } from "./perfil";
+import { renderCierreTexto } from "./renderCierre";
 import { renderTicketTexto } from "./renderTicket";
 import type { BloqueTicket } from "./plantilla";
 
@@ -51,6 +53,15 @@ export class ImpresoraVistaPrevia implements Impresora {
         { perfil: this.perfil, plantilla: this.plantilla },
         extra,
       ),
+    };
+  }
+
+  async imprimirCierre(cierre: DatosDelCierre, negocio: DatosDelNegocio): Promise<ResultadoImpresion> {
+    return {
+      impreso: false,
+      sinImpresora: true,
+      motivo: "No hay ticketera configurada todavía.",
+      vistaPrevia: renderCierreTexto(cierre, negocio, this.perfil),
     };
   }
 }

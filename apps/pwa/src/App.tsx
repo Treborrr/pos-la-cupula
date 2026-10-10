@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   BarChart3,
   Boxes,
   ChevronRight,
@@ -68,29 +69,57 @@ export function App() {
   if (estado.error instanceof ServidorCaido) return <ServidorApagado />;
 
   return (
-    <div className="flex h-full flex-col bg-hueso md:flex-row">
-      <MenuLateral estado={estado.data} />
+    <div className="flex h-full flex-col bg-hueso">
+      <BarraDeAlertas alertas={estado.data?.alertas} />
 
-      <MenuMovil />
+      <div className="flex min-h-0 flex-1 md:flex-row">
+        <MenuLateral estado={estado.data} />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <BarraSuperior estado={estado.data} />
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <Routes>
-            <Route path="/" element={<Cobrar />} />
-            <Route path="/historial" element={<Historial />} />
-            <Route path="/historial/:id" element={<Historial />} />
-            <Route path="/caja" element={<Caja />} />
-            <Route path="/inventario" element={<Inventario />} />
-            <Route path="/catalogo" element={<Catalogo />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/clientes/:id" element={<Clientes />} />
-            <Route path="/reportes" element={<Reportes />} />
-            <Route path="/ajustes" element={<Ajustes />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+        <MenuMovil />
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <BarraSuperior estado={estado.data} />
+          <main className="min-h-0 flex-1 overflow-hidden">
+            <Routes>
+              <Route path="/" element={<Cobrar />} />
+              <Route path="/historial" element={<Historial />} />
+              <Route path="/historial/:id" element={<Historial />} />
+              <Route path="/caja" element={<Caja />} />
+              <Route path="/inventario" element={<Inventario />} />
+              <Route path="/catalogo" element={<Catalogo />} />
+              <Route path="/clientes" element={<Clientes />} />
+              <Route path="/clientes/:id" element={<Clientes />} />
+              <Route path="/reportes" element={<Reportes />} />
+              <Route path="/ajustes" element={<Ajustes />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Lo que tiene que verse SIN que nadie vaya a buscarlo: el reloj atrasado, el
+ * respaldo que dejó de poder escribir, la impresora que se desconectó. Antes
+ * esto vivía en un log que nadie lee y en Ajustes → Diagnóstico, una pantalla
+ * que hay que acordarse de abrir.
+ *
+ * No se puede cerrar: "persistente" es el punto. Desaparece sola cuando el
+ * problema de verdad se resuelve, no cuando alguien la tapa.
+ */
+function BarraDeAlertas({ alertas }: { alertas?: { codigo: string; mensaje: string }[] }) {
+  if (!alertas || alertas.length === 0) return null;
+
+  return (
+    <div className="shrink-0 divide-y divide-white/15 bg-mal text-white">
+      {alertas.map((a) => (
+        <div key={a.codigo} className="flex items-start gap-2 px-4 py-2 text-sm leading-snug sm:px-6">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="min-w-0">{a.mensaje}</span>
+        </div>
+      ))}
     </div>
   );
 }

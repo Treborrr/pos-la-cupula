@@ -354,3 +354,44 @@ describe("instantáneas", () => {
     await almacen.cerrar();
   });
 });
+
+describe("reloj atrasado al arrancar", () => {
+  it("no avisa nada en un log vacío", async () => {
+    const dir = await nuevaCarpeta();
+    const almacen = await abrirAlmacen(dir);
+    expect(almacen.diagnosticoDeArranque().relojAtrasado).toBeNull();
+    await almacen.cerrar();
+  });
+
+  it("no avisa nada si el reloj avanza normalmente entre arranques", async () => {
+    const dir = await nuevaCarpeta();
+    const reloj1 = relojFijo("2026-09-16T10:00:00.000-05:00");
+    const almacen1 = await abrirAlmacen(dir, { reloj: reloj1 });
+    await almacen1.agregar([itemNuevo()]);
+    await almacen1.cerrar();
+
+    const reloj2 = relojFijo("2026-09-16T10:05:00.000-05:00");
+    const almacen2 = await abrirAlmacen(dir, { reloj: reloj2 });
+    expect(almacen2.diagnosticoDeArranque().relojAtrasado).toBeNull();
+    await almacen2.cerrar();
+  });
+
+  it("avisa si al reabrir el reloj dice una hora anterior al último evento", async () => {
+    const dir = await nuevaCarpeta();
+    const reloj1 = relojFijo("2026-09-16T10:00:00.000-05:00");
+    const almacen1 = await abrirAlmacen(dir, { reloj: reloj1 });
+    await almacen1.agregar([itemNuevo()]);
+    await almacen1.cerrar();
+
+    // La PC se reinició con la pila del reloj muerta y volvió a una fecha
+    // de fábrica, bien ANTES del último evento que ya está en el log.
+    const reloj2 = relojFijo("2020-01-01T00:00:00.000-05:00");
+    const almacen2 = await abrirAlmacen(dir, { reloj: reloj2 });
+
+    const aviso = almacen2.diagnosticoDeArranque().relojAtrasado;
+    expect(aviso).not.toBeNull();
+    expect(aviso!.ultimoEvento).toBe("2026-09-16T10:00:00.000-05:00");
+    expect(aviso!.alAbrir).toBe("2020-01-01T00:00:00.000-05:00");
+    await almacen2.cerrar();
+  });
+});

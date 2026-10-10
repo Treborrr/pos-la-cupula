@@ -47,6 +47,12 @@ interface EstadoCarrito {
    * evento ya escrito en disco, que dejaría ilegibles las ventas anteriores.
    */
   barberoId: string | null;
+  /**
+   * Lo que el cliente dejó de propina para el barbero, si algo. No se suma al
+   * total ni pasa por los pagos — es puro registro, para que el dueño sepa
+   * cuánto recibe cada uno (D6: sueldo fijo, sin comisiones).
+   */
+  propina: number;
   notas: string;
   /**
    * Se genera al abrir la pantalla y se renueva DESPUÉS de cobrar. Es lo que
@@ -68,6 +74,7 @@ interface EstadoCarrito {
   ponerDescuento: (centimos: number) => void;
   ponerCliente: (id: string | null, nombre: string | null) => void;
   ponerBarbero: (barberoId: string | null) => void;
+  ponerPropina: (centimos: number) => void;
   ponerNotas: (notas: string) => void;
   vaciar: () => void;
   /** Tras un cobro exitoso: limpia y estrena clave de idempotencia. */
@@ -80,6 +87,7 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
   clienteId: null,
   nombreCliente: null,
   barberoId: null,
+  propina: 0,
   notas: "",
   claveIdempotencia: ulid(),
 
@@ -143,7 +151,11 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
 
   ponerCliente: (clienteId, nombreCliente) => set({ clienteId, nombreCliente }),
 
-  ponerBarbero: (barberoId) => set({ barberoId }),
+  // Sin barbero no hay a quién darle la propina: quitarlo borra también lo
+  // que se hubiera escrito, para no mandar una propina huérfana al cobrar.
+  ponerBarbero: (barberoId) => set((s) => ({ barberoId, propina: barberoId ? s.propina : 0 })),
+
+  ponerPropina: (centimos) => set({ propina: Math.max(0, Math.round(centimos)) }),
 
   ponerNotas: (notas) => set({ notas }),
 
@@ -154,6 +166,7 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
       clienteId: null,
       nombreCliente: null,
       barberoId: null,
+      propina: 0,
       notas: "",
       claveIdempotencia: ulid(),
     }),
@@ -165,6 +178,7 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
       clienteId: null,
       nombreCliente: null,
       barberoId: null,
+      propina: 0,
       notas: "",
       claveIdempotencia: ulid(),
     }),

@@ -15,8 +15,10 @@ import { ulid } from "ulid";
 
 import { ServicioPos } from "../src/servicios/Pos";
 import { crearItem } from "../src/dominio/catalogo/catalogo";
+import { crearBarbero } from "../src/dominio/barberos/barberos";
+import { registrarPropina } from "../src/dominio/venta/propina";
 import { construirReporte, variacion } from "../src/consultas/reportes";
-import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
+import { abrirAlmacen, borrar, carpetaTemporal, relojFijo } from "./ayuda";
 
 const aBorrar: string[] = [];
 afterEach(async () => {
@@ -441,5 +443,80 @@ describe("comparación con el período anterior", () => {
     expect(variacion(5000, 0)).toBeNull();
     expect(variacion(5000, 4000)).toBe(25);
     expect(variacion(3000, 4000)).toBe(-25);
+  });
+});
+
+describe("propinas en el reporte", () => {
+  it("suma por barbero las propinas anotadas en el período", async () => {
+    const { pos, ids } = await posConCatalogo();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Juan");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["CORTE"], cantidad: 1, barberoId, precioUnitario: 2000, propina: 500 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    expect(r.propinas).toEqual([{ barberoId, nombre: "Juan", cantidad: 1, total: 500 }]);
+    await pos.cerrar();
+  });
+
+  it("no afecta el total vendido del período: es un dato aparte", async () => {
+    const { pos, ids } = await posConCatalogo();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Juan");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["CORTE"], cantidad: 1, barberoId, precioUnitario: 2000, propina: 500 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    const r = construirReporte(pos.p, hoy(), hoy());
+    expect(r.total).toBe(2000);
+    await pos.cerrar();
+  });
+
+  it("cuenta una propina agregada después en el período en que se anotó, no en el de la venta", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+    const reloj = relojFijo("2026-09-15T10:00:00.000-05:00");
+    const pos = await ServicioPos.abrir(await abrirAlmacen(dir, { reloj }));
+    await pos.guardarConfig("ventas.exigirCliente", false);
+
+    const { itemId } = await pos.transaccion(() => {
+      const r = crearItem(pos.p, { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "B", precio: 2000 });
+      return { eventos: r.eventos, resultado: r };
+    });
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Luis");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    // La venta ocurre el 15.
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId, cantidad: 1, barberoId }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    // La propina se anota recién al día siguiente: el cliente volvió.
+    reloj.fijar("2026-09-16T10:00:00.000-05:00");
+    await pos.escribir(
+      () => registrarPropina(pos.p, { ventaId: venta.id, lineaIndex: 0, barberoId, monto: 700 }).eventos,
+    );
+
+    expect(construirReporte(pos.p, "2026-09-16", "2026-09-16").propinas).toEqual([
+      { barberoId, nombre: "Luis", cantidad: 1, total: 700 },
+    ]);
+    // El período de la venta (el 15) no la cuenta: la propina no pasó ese día.
+    expect(construirReporte(pos.p, "2026-09-15", "2026-09-15").propinas).toEqual([]);
+    await pos.cerrar();
   });
 });

@@ -14,6 +14,7 @@ import { actualizarItem, crearItem, desactivarItem } from "../src/dominio/catalo
 import { crearBarbero, desactivarBarbero, reactivarBarbero } from "../src/dominio/barberos/barberos";
 import { registrarEntrada } from "../src/dominio/inventario/inventario";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
+import { registrarPropina } from "../src/dominio/venta/propina";
 import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
 
 const aBorrar: string[] = [];
@@ -602,6 +603,163 @@ describe("caja", () => {
     await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 0 }).eventos);
     expect(arquear(pos.p).cantidadVentas).toBe(0);
     await pos.cerrar();
+  });
+});
+
+describe("propinas", () => {
+  async function conBarbero(pos: ServicioPos, nombre: string): Promise<string> {
+    return pos.transaccion(() => {
+      const r = crearBarbero(pos.p, nombre);
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+  }
+
+  it("se registra junto con la venta y no se suma al cobro", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarbero(pos, "Juan");
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId, propina: 500 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(venta.total).toBe(2000);
+    const propinas = pos.p.propinasPorVenta.get(venta.id) ?? [];
+    expect(propinas).toHaveLength(1);
+    expect(propinas[0]).toMatchObject({ barberoId, monto: 500, lineaIndex: 0, ventaId: venta.id });
+    await pos.cerrar();
+  });
+
+  it("rechaza una propina en una línea sin barbero asignado", async () => {
+    const { pos, ids } = await posDePrueba();
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1, propina: 500 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/sin elegir a quién atendió/);
+    await pos.cerrar();
+  });
+
+  it("rechaza una propina de cero", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarbero(pos, "Juan");
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId, propina: 0 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/mayor a cero/);
+    await pos.cerrar();
+  });
+
+  it("una venta con dos barberos puede llevar propina para cada uno por separado", async () => {
+    const { pos, ids } = await posDePrueba();
+    const juanId = await conBarbero(pos, "Juan");
+    const luisId = await conBarbero(pos, "Luis");
+
+    const { venta } = await pos.cobrar({
+      lineas: [
+        { itemId: ids["COR"], cantidad: 1, barberoId: juanId, propina: 500 },
+        { itemId: ids["BAR"], cantidad: 1, barberoId: luisId, propina: 300 },
+      ],
+      pagos: [{ medio: "EFECTIVO", monto: 3000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    const propinas = pos.p.propinasPorVenta.get(venta.id) ?? [];
+    expect(propinas).toHaveLength(2);
+    expect(propinas.find((pr) => pr.barberoId === juanId)).toMatchObject({ lineaIndex: 0, monto: 500 });
+    expect(propinas.find((pr) => pr.barberoId === luisId)).toMatchObject({ lineaIndex: 1, monto: 300 });
+    await pos.cerrar();
+  });
+
+  it("se puede agregar una propina después, referenciando la venta ya cobrada", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarbero(pos, "Luis");
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(pos.p.propinasPorVenta.get(venta.id)).toBeUndefined();
+
+    await pos.escribir(
+      () => registrarPropina(pos.p, { ventaId: venta.id, lineaIndex: 0, barberoId, monto: 300 }).eventos,
+    );
+
+    const propinas = pos.p.propinasPorVenta.get(venta.id) ?? [];
+    expect(propinas).toHaveLength(1);
+    expect(propinas[0].monto).toBe(300);
+    await pos.cerrar();
+  });
+
+  it("rechaza agregar después una propina a nombre de quien no atendió esa línea", async () => {
+    const { pos, ids } = await posDePrueba();
+    const juanId = await conBarbero(pos, "Juan");
+    const luisId = await conBarbero(pos, "Luis");
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId: juanId }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(() => registrarPropina(pos.p, { ventaId: venta.id, lineaIndex: 0, barberoId: luisId, monto: 300 })).toThrow(
+      /no la atendió ese barbero/,
+    );
+    await pos.cerrar();
+  });
+
+  it("rechaza agregar una propina a una venta o línea que no existen", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarbero(pos, "Juan");
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1, barberoId }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(() => registrarPropina(pos.p, { ventaId: "no-existe", lineaIndex: 0, barberoId, monto: 300 })).toThrow(
+      /ya no existe/,
+    );
+    expect(() => registrarPropina(pos.p, { ventaId: venta.id, lineaIndex: 5, barberoId, monto: 300 })).toThrow(
+      /línea .* no existe/,
+    );
+    await pos.cerrar();
+  });
+
+  it("sobrevive a reconstruir la proyección", async () => {
+    const dir = await carpetaTemporal();
+    aBorrar.push(dir);
+    let ventaId = "";
+    let barberoId = "";
+    {
+      const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+      await pos.guardarConfig("ventas.exigirCliente", false);
+      const { itemId } = await pos.transaccion(() => {
+        const r = crearItem(pos.p, { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "B", precio: 2000 });
+        return { eventos: r.eventos, resultado: r };
+      });
+      barberoId = await conBarbero(pos, "Juan");
+      const { venta } = await pos.cobrar({
+        lineas: [{ itemId, cantidad: 1, barberoId, propina: 500 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      });
+      ventaId = venta.id;
+      await pos.cerrar();
+    }
+
+    const revivido = await ServicioPos.abrir(await abrirAlmacen(dir));
+    const propinas = revivido.p.propinasPorVenta.get(ventaId) ?? [];
+    expect(propinas).toHaveLength(1);
+    expect(propinas[0]).toMatchObject({ barberoId, monto: 500 });
+    await revivido.cerrar();
   });
 });
 

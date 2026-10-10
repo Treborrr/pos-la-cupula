@@ -7,6 +7,7 @@
  * formato— sin tocar el dominio ni las rutas.
  */
 
+import type { Centimos } from "@cupula/contratos";
 import type { Venta } from "../proyecciones/tipos";
 
 export interface DatosDelNegocio {
@@ -50,12 +51,37 @@ export interface EstadoImpresora {
   detalle?: string;
 }
 
+/**
+ * Lo que hace falta para imprimir el papel del cierre de turno.
+ *
+ * A propósito tiene MENOS datos que los que el dueño puede ver en pantalla:
+ * qué entra acá es una decisión explícita (ver §2 de ARQUITECTURA.md sobre
+ * esta función), no "todo lo que haya". `egresos` ya viene resuelto a motivo
+ * en texto y no al objeto completo, para no arrastrar el comprobante ni el id.
+ */
+export interface DatosDelCierre {
+  turnoId: string;
+  abiertoEn: string;
+  cerradoEn: string;
+  montoInicial: Centimos;
+  medios: { EFECTIVO: Centimos; YAPE: Centimos; TARJETA: Centimos };
+  totalVendido: Centimos;
+  cantidadVentas: number;
+  egresos: { monto: Centimos; motivo: string }[];
+  totalEgresos: Centimos;
+  efectivoEnCajon: Centimos;
+  contadoEfectivo: Centimos;
+  diferencia: Centimos;
+  porBarbero: { nombre: string; cantidad: number; total: Centimos }[];
+}
+
 export interface Impresora {
   imprimirVenta(
     venta: Venta,
     negocio: DatosDelNegocio,
     opciones?: OpcionesDeImpresion,
   ): Promise<ResultadoImpresion>;
+  imprimirCierre(cierre: DatosDelCierre, negocio: DatosDelNegocio): Promise<ResultadoImpresion>;
   estado(): Promise<EstadoImpresora>;
 }
 

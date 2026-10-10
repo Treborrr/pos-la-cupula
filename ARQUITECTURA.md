@@ -30,7 +30,7 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 
 ### Fuera de alcance en v1 (decidido, no olvidado)
 
-Agenda de citas · promociones y paquetes · propinas · devoluciones
+Agenda de citas · promociones y paquetes · devoluciones
 parciales · comisiones · facturación electrónica · multiusuario y roles · multisucursal ·
 app nativa · sincronización en la nube.
 
@@ -41,6 +41,13 @@ app nativa · sincronización en la nube.
 > `inicial + cobrado − lo que salió`, y la pantalla muestra la cuenta
 > desglosada. Haber reservado el tipo de evento desde el día 1 es lo que
 > permitió encenderlo sin tocar nada de lo ya escrito en disco.
+
+> **Las propinas se encendieron en la v0.8.0.** Mismo mecanismo: el evento
+> `venta.propina_registrada` estaba reservado desde el día 1. No es parte del
+> cobro —no se suma al total, no pasa por los pagos, no la espera el
+> arqueo— y tampoco es una liquidación (D6 sigue intacta: sueldo fijo, sin
+> comisiones). Es puro registro para que el dueño sepa cuánto recibe cada
+> barbero.
 
 ---
 
