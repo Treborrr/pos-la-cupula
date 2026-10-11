@@ -3,12 +3,14 @@
 Sistema de punto de venta para **LA CÚPULA TATTOO BARBER SHOP**, una barbería
 de Lima. Reemplaza la planilla de Excel con macros que usaban para cobrar.
 
-**Estado:** los ocho hitos implementados y probados. Lo único pendiente es
-**confirmar el perfil de la ticketera con el modelo real** — la impresión está
-construida, probada y verificada byte a byte contra el perfil genérico ESC/POS
-de 80 mm; saber el modelo solo confirma o ajusta unos valores de configuración.
+**Estado:** todos los hitos de la v1 implementados y probados, más varias
+rondas de hitos posteriores (ver la tabla de hitos en `README.md`). Lo único
+pendiente de la v1 original es **confirmar el perfil de la ticketera con el
+modelo real** — la impresión está construida, probada y verificada byte a
+byte contra el perfil genérico ESC/POS de 80 mm; saber el modelo solo confirma
+o ajusta unos valores de configuración.
 Ver el estado detallado en [`README.md`](./README.md).
-**Fecha:** 16/09/2026.
+**Fecha:** 11/10/2026.
 
 ---
 
@@ -23,7 +25,7 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 | D3 | **Un solo usuario**, operando desde la PC del mostrador | Sin login, sin PIN, sin roles. El modelo de datos igual lleva `actor` para no rehacerlo después |
 | D4 | **Impresión ESC/POS cruda desde el servidor** | Ticket idéntico siempre, corte automático, QR nítido, sin diálogo de Windows. Perfil genérico 80 mm hasta conocer el modelo |
 | D5 | **Solo nota de venta interna.** Nada de SUNAT | Sin IGV desglosado, sin serie/tipo de comprobante, sin firma digital. Correlativo propio `NV######` |
-| D6 | **Sin comisiones.** Los barberos tienen sueldo fijo | Se registra *quién atendió* como dato para reportes, pero no se calcula ni se liquida nada |
+| D6 | **Sin comisiones.** Los barberos tienen sueldo fijo | Se registra *quién atendió* como dato para reportes, pero no se calcula ni se liquida sueldo. "Liquidar" (§2.8) salda adelantos en efectivo, no paga comisión |
 | D7 | **Pistola QR tipo keyboard-wedge** (escanea y "teclea" el contenido) | No hace falta driver ni SDK. Hace falta un enrutador de escaneos en el front, que es un problema real y está resuelto en §7 |
 | D8 | **Migramos solo el catálogo** del Excel, sin el histórico de ventas | Arranca limpio. Correlativo continúa en `NV000030` para no romper la numeración que el cliente ya vio |
 | D9 | Módulos v1: **ventas, catálogo, inventario, caja y clientes** | Los cinco. Ver §2 |
@@ -49,6 +51,29 @@ app nativa · sincronización en la nube.
 > comisiones). Es puro registro para que el dueño sepa cuánto recibe cada
 > barbero.
 
+> **La v0.9.0 encendió caja obligatoria, fotos, compras, egresos con categoría
+> y la sección Barberos.** Cinco piezas que ya tenían hueco reservado en el
+> modelo de datos:
+> - **Caja obligatoria por defecto.** `ventas.exigirTurnoAbierto` existía desde
+>   antes como ajuste; ahora empieza encendido. Sigue siendo apagable en
+>   Ajustes para quien prefiera la disciplina vieja.
+> - **Fotos de producto**, guardadas como archivo en disco (`datos/fotos/`,
+>   dentro del respaldo), nunca como base64 en el log — el log es para datos,
+>   no para binarios.
+> - **Compras multi-línea** que no inventan un evento nuevo: por línea es un
+>   `stock.entrada` de toda la vida (mismo promedio ponderado, §5.4) y, si
+>   salió plata del cajón, un `caja.egreso_registrado` más. "Compra" es solo
+>   cómo la pantalla junta varias líneas en una acción; el log no distingue una
+>   compra de cuatro entradas sueltas, salvo por compartir referencia.
+> - **Categoría en los egresos** (adelanto, compra, Yape, depósito, otro) y un
+>   cuarto medio de pago, **Adelanto a barbero**: una venta real —descuenta
+>   stock, aparece en Historial— que no cuenta como efectivo cobrado
+>   (`medios.ADELANTO` queda fuera de `efectivoEnCajon`), porque el barbero se
+>   llevó el producto a cuenta de su sueldo, no pagó.
+> - **Liquidar** (§2.8): un cursor por `ts` contra la última liquidación, no un
+>   saldo mutable — dos lecturas del mismo log nunca pueden desincronizarse. No
+>   toca D6: deja la cuenta en cero, no calcula ni paga sueldo.
+
 ---
 
 ## 2. Funcionalidades de la v1
@@ -69,8 +94,11 @@ app nativa · sincronización en la nube.
   venta se registra igual.
 - **Cliente opcional**: por escaneo de la tarjeta de fidelidad (§8), por
   búsqueda, o ninguno (venta al paso).
-- Medio de pago: **Efectivo · YAPE · Tarjeta**, en botones grandes. En efectivo,
-  campo "paga con" que calcula el vuelto.
+- Medio de pago: **Efectivo · YAPE · Tarjeta · Adelanto a barbero**, en botones
+  grandes. En efectivo, campo "paga con" que calcula el vuelto. Adelanto exige
+  elegir a qué barbero se le descuenta — es una venta real (descuenta stock,
+  aparece en Historial) que no suma a `efectivoEnCajon`: el barbero se llevó
+  el producto a cuenta de su sueldo, no pagó (§2.8).
 - **Pago mixto** (parte efectivo, parte YAPE): una venta acepta varios pagos que
   deben sumar el total. Pasa a diario en una barbería y el Excel no lo permitía.
 - Cobrar → asigna correlativo, escribe el evento en disco, imprime y limpia la
@@ -137,6 +165,9 @@ app nativa · sincronización en la nube.
   así que se puede responder "¿desde cuándo el corte cuesta 25?" y "¿por qué
   bajó el margen de las ceras en octubre?".
 - Carga masiva desde un Excel cuya forma la definió el cliente (§5.5).
+- **Foto por producto** (JPG, PNG o WEBP, hasta 3 MB), guardada como archivo
+  en `datos/fotos/` — nunca como base64 en el log de eventos, que es para
+  datos y no para binarios. Opcional: un ítem sin foto muestra un marcador.
 
 ### 2.4 Inventario
 
@@ -145,6 +176,12 @@ app nativa · sincronización en la nube.
 - **Entrada de mercadería** (compré 12 ceras), **ajuste** (conté y hay 10, no
   12) y **merma** (se rompió, se perdió), cada una con su motivo. La entrada
   puede declarar su costo, y eso recalcula el promedio ponderado (§5.4).
+- **Compras multi-línea**: varios productos de un proveedor en una sola
+  acción, con comprobante opcional. No es un evento nuevo — por línea es
+  exactamente una entrada de mercadería, y si salió plata del cajón se
+  registra un egreso categoría "Compra" por el total. Un interruptor decide si
+  salió de la caja o se pagó por otro lado (transferencia, crédito del
+  proveedor); si no salió de la caja, solo se actualiza inventario y costo.
 - **Valorizado a costo y a precio de venta**, por separado: a costo es cuánta
   plata está inmovilizada, a precio de venta es cuánto entraría si se vendiera
   todo. Cada total dice cuántos productos quedaron afuera por falta del dato, para
@@ -164,9 +201,14 @@ app nativa · sincronización en la nube.
 - **Cierre de turno**: el sistema muestra lo esperado, el operador cuenta y
   escribe lo real, y queda registrada la diferencia (con el aviso de §1 sobre
   los egresos).
-- Un turno abierto a la vez. No se puede cobrar con la caja cerrada — o sí, es
-  configurable, porque una barbería no siempre tiene la disciplina de abrir caja
-  y perder una venta por eso es inaceptable.
+- Un turno abierto a la vez. No se puede cobrar con la caja cerrada —por
+  defecto; es configurable en Ajustes, porque una barbería no siempre tiene la
+  disciplina de abrir caja y perder una venta por eso es inaceptable.
+- **Egresos con categoría**: adelanto a barbero, compra, Yape, depósito, otro.
+  Yape y depósito significan que el efectivo se convirtió desde el cajón hacia
+  la cuenta de la empresa — siguen restando de `efectivoEnCajon` igual que
+  cualquier otro egreso, no son un canal de pago aparte. Un egreso "adelanto"
+  exige barbero y alimenta su saldo pendiente (§2.8).
 
 ### 2.6 Clientes
 
@@ -198,6 +240,21 @@ inmovilizada; y aviso de **lo vendido por debajo del costo**.
 > de lo vendido se pudo calcular) y donde falta el dato hay una raya, no un cero.
 > Un reporte que rellena huecos con ceros es peor que no tener reporte: parece
 > confiable y no lo es.
+
+### 2.8 Barberos
+
+- Alta, renombrado y **desactivación** (nunca borrado, mismo motivo que
+  Catálogo: las ventas viejas siguen apuntando al barbero que las atendió).
+- **Producción por semana** (de lunes a domingo), con precio de cada línea —
+  incluye los cortes gratis del programa de fidelidad, marcados como tales, no
+  escondidos del reporte.
+- **Adelantos pendientes**: la suma de los adelantos en efectivo y los pagos
+  "Adelanto a barbero" (§2.1) desde la última liquidación. No es un saldo
+  guardado y mutable — es un filtro por `ts` sobre el log cada vez que se pide,
+  así que nunca puede desincronizarse de lo que el log realmente dice.
+- **Liquidar**: registra que esos adelantos se pagaron y mueve el cursor. No
+  calcula ni paga sueldo —D6 sigue intacta—, solo deja la cuenta en cero para
+  que la semana que entra empiece limpia.
 
 ---
 

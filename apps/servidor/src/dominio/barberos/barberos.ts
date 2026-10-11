@@ -11,7 +11,7 @@
  * cero.
  */
 
-import type { EventoNuevo } from "@cupula/contratos";
+import type { Centimos, EventoNuevo } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
@@ -55,4 +55,90 @@ export function desactivarBarbero(p: Proyeccion, barberoId: string): EventoNuevo
   // Desactivar y no borrar: las ventas viejas siguen apuntando a su id y
   // tienen que poder mostrar el nombre de quien atendió.
   return [{ tipo: "barbero.desactivado", datos: { barberoId } }];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adelantos y liquidación
+//
+// Dos orígenes alimentan la misma cuenta: un egreso de caja categoría
+// ADELANTO (plata entregada en mano) y una venta pagada con medio ADELANTO
+// (el barbero se lleva algo y se le descuenta). Las dos son "lo que se le
+// adelantó"; liquidar las salda juntas, sin distinguir de dónde vino cada una.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AdelantoDeBarbero {
+  id: string;
+  ts: string;
+  monto: Centimos;
+  origen: "EFECTIVO" | "VENTA";
+  detalle: string;
+}
+
+/**
+ * Los adelantos sin liquidar de un barbero, del más viejo al más nuevo.
+ *
+ * "Sin liquidar" es TODO lo que pasó después de la última liquidación —no
+ * hay saldo que arrastrar a mano: el cursor es la fecha, y listo.
+ */
+export function adelantosPendientesDeBarbero(p: Proyeccion, barberoId: string): AdelantoDeBarbero[] {
+  const desde = p.ultimaLiquidacionPorBarbero.get(barberoId)?.ts ?? "";
+  const salida: AdelantoDeBarbero[] = [];
+
+  for (const egreso of p.egresos.values()) {
+    if (egreso.categoria !== "ADELANTO" || egreso.barberoId !== barberoId) continue;
+    if (egreso.ts <= desde) continue;
+    salida.push({ id: egreso.id, ts: egreso.ts, monto: egreso.monto, origen: "EFECTIVO", detalle: egreso.motivo });
+  }
+
+  for (const venta of p.ventas.values()) {
+    if (venta.anulada || venta.ts <= desde) continue;
+    for (const pago of venta.pagos) {
+      if (pago.medio !== "ADELANTO" || pago.barberoId !== barberoId) continue;
+      salida.push({
+        id: `${venta.id}:adelanto`,
+        ts: venta.ts,
+        monto: pago.monto,
+        origen: "VENTA",
+        detalle: `${venta.correlativo} · ${venta.lineas.map((l) => l.nombre).join(", ")}`,
+      });
+    }
+  }
+
+  return salida.sort((a, b) => a.ts.localeCompare(b.ts));
+}
+
+export function saldoPendienteDeBarbero(p: Proyeccion, barberoId: string): Centimos {
+  return adelantosPendientesDeBarbero(p, barberoId).reduce((a, x) => a + x.monto, 0);
+}
+
+/**
+ * El dueño le pagó al barbero: los adelantos de hasta ahora quedan saldados.
+ *
+ * NO calcula sueldo ni comisión (D6 intacta) — solo limpia la cuenta de lo
+ * adelantado, para que la semana que entra arranque de cero.
+ */
+export function liquidarBarbero(
+  p: Proyeccion,
+  barberoId: string,
+  notas?: string,
+): { eventos: EventoNuevo[]; liquidacionId: string; monto: Centimos } {
+  const barbero = p.barberos.get(barberoId);
+  if (!barbero) throw new ErrorDeNegocio("BARBERO_NO_EXISTE", "Ese barbero no existe.");
+
+  const monto = saldoPendienteDeBarbero(p, barberoId);
+  if (monto <= 0) {
+    throw new ErrorDeNegocio("DATO_INVALIDO", "Este barbero no tiene ningún adelanto pendiente.");
+  }
+
+  const liquidacionId = ulid();
+  return {
+    liquidacionId,
+    monto,
+    eventos: [
+      {
+        tipo: "barbero.liquidado",
+        datos: { liquidacionId, barberoId, monto, notas: notas?.trim() || undefined },
+      },
+    ],
+  };
 }

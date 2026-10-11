@@ -27,6 +27,7 @@ async function appDePrueba(): Promise<FastifyInstance> {
     pos,
     impresora: new ImpresoraVistaPrevia(),
     respaldos: new ServicioDeRespaldos(dir, relojDelSistema, null),
+    carpetaDatos: dir,
     version: "pruebas",
   });
   aCerrar.push(async () => {

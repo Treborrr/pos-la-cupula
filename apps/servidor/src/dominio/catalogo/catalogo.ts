@@ -270,3 +270,15 @@ export function reactivarItem(p: Proyeccion, itemId: string): EventoNuevo[] {
 
   return [{ tipo: "item.reactivado", datos: { itemId } }];
 }
+
+/**
+ * Cambia qué archivo de foto tiene un ítem, o la quita (`archivo: null`).
+ *
+ * El archivo en sí —escribirlo a disco, borrar el viejo— es trabajo de la
+ * ruta HTTP, no del dominio: acá solo se decide y se deja constancia de cuál
+ * es el nombre vigente.
+ */
+export function actualizarFotoDeItem(p: Proyeccion, itemId: string, archivo: string | null): EventoNuevo[] {
+  if (!p.items.get(itemId)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
+  return [{ tipo: "item.foto_actualizada", datos: { itemId, archivo } }];
+}

@@ -24,7 +24,7 @@ const RANGOS = [
   { id: "todo", texto: "Todo" },
 ] as const;
 
-const NOMBRE_MEDIO: Record<string, string> = { EFECTIVO: "Efectivo", YAPE: "YAPE", TARJETA: "Tarjeta" };
+const NOMBRE_MEDIO: Record<string, string> = { EFECTIVO: "Efectivo", YAPE: "YAPE", TARJETA: "Tarjeta", ADELANTO: "Adelanto a barbero" };
 
 export function Historial() {
   const qc = useQueryClient();

@@ -194,6 +194,7 @@ async function principal() {
     impresora,
     respaldos,
     carpetaPwa: await carpetaDeLaPwa(),
+    carpetaDatos: directorio,
     version: VERSION,
   });
 

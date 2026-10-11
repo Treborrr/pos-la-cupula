@@ -30,6 +30,7 @@ import {
   Search,
   ShoppingCart,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 
@@ -94,9 +95,10 @@ export function Cobrar() {
   const cubierto = pagos.reduce((a, p) => a + p.monto, 0);
   const falta = total - cubierto;
   const efectivoCorto = pagos.find((p) => p.medio === "EFECTIVO" && p.recibido !== undefined && p.recibido < p.monto);
+  const adelantoSinBarbero = pagos.some((p) => p.medio === "ADELANTO" && !p.barberoId);
   const hayLineas = carrito.lineas.length > 0;
   const totalEnCero = hayLineas && total === 0;
-  const pagoListo = pagos.length > 0 && falta === 0 && !efectivoCorto;
+  const pagoListo = pagos.length > 0 && falta === 0 && !efectivoCorto && !adelantoSinBarbero;
   const clienteListo = Boolean(carrito.clienteId) || (carrito.nombreCliente ?? "").trim().length >= 2;
   const puedeCobrar = hayLineas && clienteListo && pagoListo && total > 0;
 
@@ -265,7 +267,9 @@ export function Cobrar() {
           ? `Los pagos suman ${aTextoConSimbolo(-falta)} de más.`
           : efectivoCorto
             ? "El efectivo que entrega no alcanza para el monto."
-            : "Todo listo. Cobra con el botón o con la tecla F4.";
+            : adelantoSinBarbero
+              ? "Falta elegir a qué barbero se le descuenta el adelanto."
+              : "Todo listo. Cobra con el botón o con la tecla F4.";
 
   const cajaCerrada = estado.data && !estado.data.turnoAbierto;
 
@@ -423,6 +427,19 @@ export function Cobrar() {
 
           {/* Solo si hay servicios en el ticket: a un producto suelto no lo
               atiende nadie, y preguntarlo sería ruido. */}
+          {hayServicios && barberosActivos.length === 0 ? (
+            // Sin ESTO, la pregunta "¿quién atendió?" desaparece sin dejar
+            // rastro: nadie adivina que hay que ir a Barberos a cargarlos
+            // primero. Pasó de verdad en una instalación nueva.
+            <Link
+              to="/barberos"
+              className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-linea px-4 py-3 text-sm text-tinta/60 hover:border-tinta/30 hover:text-tinta"
+            >
+              <UserRound className="h-4 w-4 shrink-0" />
+              Todavía no hay barberos cargados — agrégalos en Barberos para poder elegir quién atendió.
+            </Link>
+          ) : null}
+
           {barberosActivos.length > 0 && hayServicios ? (
             <div className="mt-3">
               <CampoBarbero
@@ -470,7 +487,7 @@ export function Cobrar() {
                   setPagos([]);
                 }}
               />
-              <DetalleDePagos total={total} pagos={pagos} alCambiar={setPagos} />
+              <DetalleDePagos total={total} pagos={pagos} alCambiar={setPagos} barberos={barberosActivos} />
             </div>
           ) : null}
         </div>
@@ -607,6 +624,13 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
         </span>
       ) : null}
       <span className={enTicket > 0 ? "pr-9" : ""}>
+        {item.foto ? (
+          <img
+            src={`/fotos/${item.foto}`}
+            alt=""
+            className="mb-2 h-12 w-12 rounded-lg border border-linea object-cover"
+          />
+        ) : null}
         {/* La marca va arriba y más chica: distingue el TALCO de una marca del de
             otra sin robarle espacio al nombre, que es lo que se busca con la
             vista. */}

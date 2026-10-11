@@ -128,8 +128,8 @@ export class ServicioDeRespaldos {
   }
 
   /**
-   * Arma el respaldo: los eventos del mes en curso, las instantáneas y la
-   * configuración, comprimidos.
+   * Arma el respaldo: los eventos del mes en curso, las instantáneas, las
+   * fotos de catálogo y la configuración, comprimidos.
    *
    * Se usa gzip sobre un tar hecho a mano en vez de una librería de ZIP para
    * no sumar una dependencia por algo que Node ya sabe hacer. El resultado lo
@@ -202,7 +202,7 @@ export class ServicioDeRespaldos {
   private async archivosARespaldar(): Promise<{ nombre: string; ruta: string }[]> {
     const salida: { nombre: string; ruta: string }[] = [];
 
-    for (const sub of ["eventos", "instantaneas"]) {
+    for (const sub of ["eventos", "instantaneas", "fotos"]) {
       const carpeta = path.join(this.carpetaDatos, sub);
       try {
         for (const archivo of await readdir(carpeta)) {

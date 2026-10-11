@@ -61,7 +61,7 @@ interface TotalesDelPeriodo {
   total: number;
   cantidadVentas: number;
   ticketPromedio: number;
-  medios: { EFECTIVO: number; YAPE: number; TARJETA: number };
+  medios: { EFECTIVO: number; YAPE: number; TARJETA: number; ADELANTO: number };
   utilidad: Utilidad;
 }
 
@@ -583,6 +583,9 @@ function FormasDePago({ r }: { r: Reporte }) {
             ["Efectivo", r.medios.EFECTIVO],
             ["YAPE", r.medios.YAPE],
             ["Tarjeta", r.medios.TARJETA],
+            // Solo si se usó: no todas las barberías dan productos o
+            // servicios a cuenta del sueldo de un barbero.
+            ...(r.medios.ADELANTO > 0 ? ([["Adelanto a barbero", r.medios.ADELANTO]] as const) : []),
           ] as const
         ).map(([nombre, monto]) => (
           <div key={nombre}>

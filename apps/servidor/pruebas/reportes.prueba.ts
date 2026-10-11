@@ -31,6 +31,7 @@ async function posConCatalogo() {
   aBorrar.push(dir);
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
   await pos.guardarConfig("ventas.exigirCliente", false);
+  await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
 
   const ids: Record<string, string> = {};
   const alta = async (clave: string, datos: Parameters<typeof crearItem>[1]) => {
@@ -489,6 +490,7 @@ describe("propinas en el reporte", () => {
     const reloj = relojFijo("2026-09-15T10:00:00.000-05:00");
     const pos = await ServicioPos.abrir(await abrirAlmacen(dir, { reloj }));
     await pos.guardarConfig("ventas.exigirCliente", false);
+  await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
 
     const { itemId } = await pos.transaccion(() => {
       const r = crearItem(pos.p, { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "B", precio: 2000 });

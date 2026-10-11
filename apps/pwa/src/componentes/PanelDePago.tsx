@@ -7,24 +7,30 @@
  */
 
 import { useState } from "react";
-import { Banknote, CreditCard, Smartphone, X, type LucideIcon } from "lucide-react";
+import { Banknote, CreditCard, HandCoins, Smartphone, X, type LucideIcon } from "lucide-react";
 
-import type { Pago } from "../lib/api";
+import type { Barbero, Pago } from "../lib/api";
 import { aCentimos, aTexto, aTextoConSimbolo } from "../lib/formato";
 
 export const MEDIOS: readonly { id: Pago["medio"]; texto: string; icono: LucideIcon }[] = [
   { id: "EFECTIVO", texto: "Efectivo", icono: Banknote },
   { id: "YAPE", texto: "YAPE", icono: Smartphone },
   { id: "TARJETA", texto: "Tarjeta", icono: CreditCard },
+  // No es efectivo cobrado: el barbero se lleva el producto o servicio y se
+  // le descuenta de su sueldo. Por eso siempre va al final, separado de los
+  // tres medios que sí entran al cajón.
+  { id: "ADELANTO", texto: "Adelanto", icono: HandCoins },
 ];
 
 interface PropsDePago {
   total: number;
   pagos: Pago[];
   alCambiar: (pagos: Pago[]) => void;
+  /** Para el selector de a quién, cuando se elige "Adelanto". */
+  barberos?: Barbero[];
 }
 
-/** Los tres medios, siempre a la vista: es el paso que la guía pide. */
+/** Los cuatro medios, siempre a la vista: es el paso que la guía pide. */
 export function BotonesDeMedio({ total, pagos, alCambiar }: PropsDePago) {
   const falta = total - pagos.reduce((a, p) => a + p.monto, 0);
 
@@ -35,7 +41,7 @@ export function BotonesDeMedio({ total, pagos, alCambiar }: PropsDePago) {
   }
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {MEDIOS.map((m) => {
           const yaEsta = pagos.some((p) => p.medio === m.id);
           const Icono = m.icono;
@@ -60,7 +66,7 @@ export function BotonesDeMedio({ total, pagos, alCambiar }: PropsDePago) {
 }
 
 /** Monto de cada medio, "paga con" y vuelto. Aparece al elegir un medio. */
-export function DetalleDePagos({ total, pagos, alCambiar }: PropsDePago) {
+export function DetalleDePagos({ total, pagos, alCambiar, barberos = [] }: PropsDePago) {
   const falta = total - pagos.reduce((a, p) => a + p.monto, 0);
   if (pagos.length === 0) return null;
 
@@ -77,6 +83,7 @@ export function DetalleDePagos({ total, pagos, alCambiar }: PropsDePago) {
           key={`${pago.medio}-${i}`}
           pago={pago}
           dividido={pagos.length > 1}
+          barberos={barberos}
           alCambiar={(c) => cambiar(i, c)}
           alQuitar={() => alCambiar(pagos.filter((_, j) => j !== i))}
         />
@@ -92,11 +99,13 @@ export function DetalleDePagos({ total, pagos, alCambiar }: PropsDePago) {
 function LineaDePago({
   pago,
   dividido,
+  barberos,
   alCambiar,
   alQuitar,
 }: {
   pago: Pago;
   dividido: boolean;
+  barberos: Barbero[];
   alCambiar: (cambios: Partial<Pago>) => void;
   alQuitar: () => void;
 }) {
@@ -187,6 +196,35 @@ function LineaDePago({
               <span className="cifra text-2xl">{aTextoConSimbolo(Math.abs(vuelto))}</span>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {pago.medio === "ADELANTO" ? (
+        <div className="mt-3">
+          <span className="mb-2 block text-sm text-tinta/60">¿A quién se le descuenta?</span>
+          {barberos.length === 0 ? (
+            <p className="ayuda">
+              Todavía no hay barberos cargados. Agrégalos en Barberos para poder elegir.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {barberos.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => alCambiar({ barberoId: b.id })}
+                  aria-pressed={pago.barberoId === b.id}
+                  className={`h-10 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+                    pago.barberoId === b.id
+                      ? "border-tinta bg-tinta text-white"
+                      : "border-linea bg-white text-tinta/70 hover:border-tinta/30 hover:text-tinta"
+                  }`}
+                >
+                  {b.nombre}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : null}
 

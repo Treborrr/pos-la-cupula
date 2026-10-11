@@ -71,7 +71,7 @@ export function usarPrimerosPasos() {
       titulo: "Registrar a los barberos",
       detalle: "Para saber quién atendió cada servicio.",
       hecho: (barberos.data?.barberos.length ?? 0) > 0,
-      ir: "/catalogo#barberos",
+      ir: "/barberos",
       textoIr: "Agregar barberos",
     },
     {

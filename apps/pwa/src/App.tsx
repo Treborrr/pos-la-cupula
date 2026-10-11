@@ -12,6 +12,7 @@ import {
   Power,
   Receipt,
   RefreshCw,
+  Scissors,
   Settings,
   ShoppingCart,
   Users,
@@ -30,6 +31,7 @@ import { Catalogo } from "./paginas/Catalogo";
 import { Inventario } from "./paginas/Inventario";
 import { Caja } from "./paginas/Caja";
 import { Clientes } from "./paginas/Clientes";
+import { Barberos } from "./paginas/Barberos";
 import { Reportes } from "./paginas/Reportes";
 import { Ajustes } from "./paginas/Ajustes";
 
@@ -48,6 +50,7 @@ const GRUPOS: { titulo: string; secciones: { ruta: string; texto: string; icono:
       { ruta: "/catalogo", texto: "Catálogo", icono: LayoutGrid },
       { ruta: "/inventario", texto: "Inventario", icono: Boxes },
       { ruta: "/clientes", texto: "Clientes", icono: Users },
+      { ruta: "/barberos", texto: "Barberos", icono: Scissors },
       { ruta: "/reportes", texto: "Reportes", icono: BarChart3 },
     ],
   },
@@ -89,6 +92,7 @@ export function App() {
               <Route path="/catalogo" element={<Catalogo />} />
               <Route path="/clientes" element={<Clientes />} />
               <Route path="/clientes/:id" element={<Clientes />} />
+              <Route path="/barberos" element={<Barberos />} />
               <Route path="/reportes" element={<Reportes />} />
               <Route path="/ajustes" element={<Ajustes />} />
               <Route path="*" element={<Navigate to="/" replace />} />

@@ -12,6 +12,7 @@ import {
   registrarMerma,
   stockBajo,
 } from "../../dominio/inventario/inventario";
+import { registrarCompra } from "../../dominio/compras/compras";
 import { kardexDe } from "../../consultas/kardex";
 import type { Dependencias } from "../app";
 
@@ -86,6 +87,41 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
 
     await pos.escribir(() => ajustarStock(pos.p, datos));
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
+  });
+
+  /**
+   * Varios productos en una sola compra: cada línea entra al inventario con
+   * su costo (actualiza el promedio ponderado) y, si de verdad salió plata
+   * del cajón, se registra el egreso solo — no hay que anotarlo dos veces.
+   */
+  app.post("/inventario/compra", async (peticion, respuesta) => {
+    const datos = z
+      .object({
+        lineas: z
+          .array(
+            z.object({
+              itemId: z.string().min(1),
+              cantidad: z.number().positive(),
+              costoUnitario: z.number().int().min(0),
+            }),
+          )
+          .min(1),
+        proveedor: z.string().trim().max(80).optional(),
+        comprobante: z.string().trim().max(80).optional(),
+        salioDeLaCaja: z.boolean().optional(),
+      })
+      .parse(peticion.body);
+
+    const resultado = await pos.transaccion(() => {
+      const r = registrarCompra(pos.p, datos);
+      return { eventos: r.eventos, resultado: r };
+    });
+
+    return respuesta.status(201).send({
+      compraId: resultado.compraId,
+      total: resultado.total,
+      productos: datos.lineas.map((l) => ({ itemId: l.itemId, stock: pos.p.stockDe(l.itemId) })),
+    });
   });
 
   app.post("/inventario/merma", async (peticion, respuesta) => {

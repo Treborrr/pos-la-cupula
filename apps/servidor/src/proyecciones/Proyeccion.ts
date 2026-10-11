@@ -21,6 +21,7 @@ import {
   type Cliente,
   type Egreso,
   type Item,
+  type Liquidacion,
   type Propina,
   type Turno,
   type TotalesPorMedio,
@@ -36,7 +37,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 4;
+export const FORMATO_PROYECCION = 5;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -93,6 +94,9 @@ export class Proyeccion {
   readonly clientesPorSerial = new Map<string, string>();
 
   readonly barberos = new Map<string, Barbero>();
+  readonly liquidaciones = new Map<string, Liquidacion>();
+  /** barberoId → su liquidación más reciente. Es el cursor del saldo pendiente. */
+  readonly ultimaLiquidacionPorBarbero = new Map<string, Liquidacion>();
 
   readonly config = new Map<string, unknown>();
 
@@ -118,6 +122,7 @@ export class Proyeccion {
           activo: true,
           creadoEn: e.ts,
           actualizadoEn: e.ts,
+          foto: null,
         };
         this.items.set(item.id, item);
         this.porCodigo.set(item.codigo, item.id);
@@ -185,6 +190,12 @@ export class Proyeccion {
           item.actualizadoEn = e.ts;
           this.porCodigo.set(item.codigo, item.id);
         }
+        break;
+      }
+
+      case "item.foto_actualizada": {
+        const item = this.items.get(e.datos.itemId);
+        if (item) item.foto = e.datos.archivo;
         break;
       }
 
@@ -303,6 +314,8 @@ export class Proyeccion {
           monto: d.monto,
           motivo: d.motivo,
           comprobante: d.comprobante,
+          categoria: d.categoria ?? "OTRO",
+          barberoId: d.barberoId,
         });
         break;
       }
@@ -372,6 +385,26 @@ export class Proyeccion {
       case "barbero.desactivado": {
         const b = this.barberos.get(e.datos.barberoId);
         if (b) b.activo = false;
+        break;
+      }
+
+      case "barbero.liquidado": {
+        const d = e.datos;
+        const liquidacion: Liquidacion = {
+          id: d.liquidacionId,
+          ts: e.ts,
+          barberoId: d.barberoId,
+          monto: d.monto,
+          notas: d.notas,
+        };
+        this.liquidaciones.set(liquidacion.id, liquidacion);
+        // Para el cálculo del saldo pendiente solo importa la MÁS RECIENTE
+        // por barbero: es el cursor "todo adelanto después de esta fecha
+        // sigue pendiente".
+        const actual = this.ultimaLiquidacionPorBarbero.get(d.barberoId);
+        if (!actual || liquidacion.ts > actual.ts) {
+          this.ultimaLiquidacionPorBarbero.set(d.barberoId, liquidacion);
+        }
         break;
       }
 
@@ -624,6 +657,7 @@ export class Proyeccion {
       propinas: [...this.propinas.values()],
       clientes: [...this.clientes.values()],
       barberos: [...this.barberos.values()],
+      liquidaciones: [...this.liquidaciones.values()],
       config: [...this.config.entries()],
     };
   }
@@ -670,6 +704,11 @@ export class Proyeccion {
       for (const serial of cliente.seriales ?? []) p.clientesPorSerial.set(serial, cliente.id);
     }
     for (const b of d.barberos ?? []) p.barberos.set(b.id, b);
+    for (const l of d.liquidaciones ?? []) {
+      p.liquidaciones.set(l.id, l);
+      const actual = p.ultimaLiquidacionPorBarbero.get(l.barberoId);
+      if (!actual || l.ts > actual.ts) p.ultimaLiquidacionPorBarbero.set(l.barberoId, l);
+    }
     for (const [k, v] of d.config ?? []) p.config.set(k, v);
 
     return p;

@@ -1,28 +1,36 @@
 /**
- * Catálogo de servicios y productos, y la lista de barberos.
+ * Catálogo de servicios y productos.
  */
+
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { coincide, normalizar } from "@cupula/contratos";
 import {
+  actualizarFotoDeItem,
   actualizarItem,
   crearItem,
   desactivarItem,
   reactivarItem,
   siguienteCodigo,
 } from "../../dominio/catalogo/catalogo";
-import {
-  actualizarBarbero,
-  crearBarbero,
-  desactivarBarbero,
-  reactivarBarbero,
-} from "../../dominio/barberos/barberos";
 import { ErrorDeNegocio } from "../../dominio/errores";
 import { importarCatalogo, planificarImportacion } from "../../dominio/catalogo/importar";
 import { generarPlantilla, leerPlantilla } from "../../adaptadores/planilla/plantillaCatalogo";
 import type { Dependencias } from "../app";
+
+/** JPG, PNG y WEBP: lo que cualquier celular o cámara produce sin convertir nada. */
+const EXTENSION_POR_TIPO: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+/** 3 MB alcanza de sobra para una foto de producto y no castiga el respaldo. */
+const MAX_BYTES_FOTO = 3 * 1024 * 1024;
 
 /**
  * Booleano de query string.
@@ -75,12 +83,27 @@ const esquemaCambios = z.object({
   motivoCosto: z.string().trim().max(200).optional(),
 });
 
-export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias) {
+export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }: Dependencias) {
   /** Un ítem por su id, con `nombreCompleto` y `stock` resueltos. */
   const paraPantalla = (id: string) => {
     const item = pos.p.items.get(id);
     return item ? pos.p.itemParaPantalla(item) : undefined;
   };
+
+  const carpetaFotos = join(carpetaDatos, "fotos");
+
+  /** Borra cualquier archivo `<id>.*` que haya, sin importar la extensión vieja. */
+  async function borrarFotoVieja(itemId: string): Promise<void> {
+    let archivos: string[] = [];
+    try {
+      archivos = await readdir(carpetaFotos);
+    } catch {
+      return; // la carpeta todavía no existe: nada que borrar
+    }
+    for (const archivo of archivos) {
+      if (archivo.startsWith(`${itemId}.`)) await rm(join(carpetaFotos, archivo), { force: true });
+    }
+  }
 
   app.get("/catalogo", async (peticion) => {
     const { q, incluirInactivos, tipo, marca, soloSinPrecio } = z
@@ -291,44 +314,41 @@ export async function rutasCatalogo(app: FastifyInstance, { pos }: Dependencias)
     return { item: paraPantalla(id) };
   });
 
-  // ── Barberos: solo atribución, sin comisiones (D6) ────────────────────────
+  /**
+   * Sube la foto de un ítem. El archivo va CRUDO en el cuerpo —no multipart,
+   * no JSON— con el `Content-Type` real de la imagen; `app.ts` registra el
+   * parser que lo deja pasar tal cual.
+   */
+  app.post(
+    "/catalogo/:id/foto",
+    { bodyLimit: MAX_BYTES_FOTO },
+    async (peticion, respuesta) => {
+      const { id } = z.object({ id: z.string() }).parse(peticion.params);
+      if (!pos.p.items.get(id)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
 
-  app.get("/barberos", async (peticion) => {
-    const { incluirInactivos } = z
-      .object({ incluirInactivos: booleanoDeQuery().optional() })
-      .parse(peticion.query);
+      const tipo = peticion.headers["content-type"] ?? "";
+      const extension = EXTENSION_POR_TIPO[tipo];
+      if (!extension) {
+        throw new ErrorDeNegocio("DATO_INVALIDO", "La foto tiene que ser JPG, PNG o WEBP.");
+      }
 
-    const barberos = [...pos.p.barberos.values()]
-      .filter((b) => incluirInactivos || b.activo)
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-    return { barberos };
-  });
+      const bytes = peticion.body as Buffer;
+      await mkdir(carpetaFotos, { recursive: true });
+      await borrarFotoVieja(id);
+      const archivo = `${id}.${extension}`;
+      await writeFile(join(carpetaFotos, archivo), bytes);
 
-  app.post("/barberos", async (peticion, respuesta) => {
-    const { nombre } = z.object({ nombre: z.string().trim().min(1).max(80) }).parse(peticion.body);
-    const barberoId = await pos.transaccion(() => {
-      const r = crearBarbero(pos.p, nombre);
-      return { eventos: r.eventos, resultado: r.barberoId };
-    });
-    return respuesta.status(201).send({ barbero: pos.p.barberos.get(barberoId) });
-  });
+      await pos.escribir(() => actualizarFotoDeItem(pos.p, id, archivo));
+      return respuesta.status(201).send({ item: paraPantalla(id) });
+    },
+  );
 
-  app.patch("/barberos/:id", async (peticion) => {
+  app.post("/catalogo/:id/foto/quitar", async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    const { nombre } = z.object({ nombre: z.string().trim().min(1).max(80) }).parse(peticion.body);
-    await pos.escribir(() => actualizarBarbero(pos.p, id, nombre));
-    return { barbero: pos.p.barberos.get(id) };
-  });
+    if (!pos.p.items.get(id)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
 
-  app.post("/barberos/:id/reactivar", async (peticion) => {
-    const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    await pos.escribir(() => reactivarBarbero(pos.p, id));
-    return { barbero: pos.p.barberos.get(id) };
-  });
-
-  app.post("/barberos/:id/desactivar", async (peticion) => {
-    const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    await pos.escribir(() => desactivarBarbero(pos.p, id));
-    return { barbero: pos.p.barberos.get(id) };
+    await borrarFotoVieja(id);
+    await pos.escribir(() => actualizarFotoDeItem(pos.p, id, null));
+    return { item: paraPantalla(id) };
   });
 }

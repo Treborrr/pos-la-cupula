@@ -6,6 +6,8 @@
 import { describe, expect, it, afterEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { ulid } from "ulid";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 
 import { construirApp } from "../src/http/app";
 import { ImpresoraVistaPrevia } from "../src/adaptadores/impresora/ImpresoraVistaPrevia";
@@ -21,16 +23,20 @@ afterEach(async () => {
 
 async function apiDePrueba(
   opciones: { exigirCliente?: boolean } = {},
-): Promise<{ app: FastifyInstance; pos: ServicioPos }> {
+): Promise<{ app: FastifyInstance; pos: ServicioPos; dir: string }> {
   const dir = await carpetaTemporal();
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
   // Salvo que la prueba sea justamente sobre la regla, se apaga: lo que se
   // ejercita aquí es el camino HTTP → dominio → disco.
   await pos.guardarConfig("ventas.exigirCliente", opciones.exigirCliente ?? false);
+  // Idem con la caja: el default real es exigirla, pero la mayoría de estas
+  // pruebas no son sobre turnos — abrir uno en cada una sería ruido.
+  await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
   const app = await construirApp({
     pos,
     impresora: new ImpresoraVistaPrevia(),
     respaldos: new ServicioDeRespaldos(dir, relojDelSistema, null),
+    carpetaDatos: dir,
     version: "pruebas",
   });
   aCerrar.push(async () => {
@@ -38,7 +44,7 @@ async function apiDePrueba(
     await pos.cerrar();
     await borrar(dir);
   });
-  return { app, pos };
+  return { app, pos, dir };
 }
 
 async function crearServicio(app: FastifyInstance, codigo: string, nombre: string, precio: number) {
@@ -76,6 +82,97 @@ describe("catálogo", () => {
     expect(r.statusCode).toBe(400);
     expect(r.json().error.codigo).toBe("CODIGO_REPETIDO");
     expect(r.json().error.sugerencia).toMatch(/no se puede vender/);
+  });
+});
+
+describe("fotos de catálogo", () => {
+  const jpegDePrueba = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+  it("sube la foto, queda en disco y el ítem la referencia", async () => {
+    const { app, dir } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE CLASICO", 2000);
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/jpeg" },
+      payload: jpegDePrueba,
+    });
+
+    expect(r.statusCode).toBe(201);
+    expect(r.json().item.foto).toBe(`${itemId}.jpg`);
+
+    const archivos = await readdir(join(dir, "fotos"));
+    expect(archivos).toEqual([`${itemId}.jpg`]);
+  });
+
+  it("rechaza un tipo de archivo que no sea JPG, PNG o WEBP", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE CLASICO", 2000);
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "application/pdf" },
+      payload: Buffer.from("no es una imagen"),
+    });
+
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error.codigo).toBe("DATO_INVALIDO");
+  });
+
+  it("reemplazar la foto borra la vieja, aunque cambie de extensión", async () => {
+    const { app, dir } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE CLASICO", 2000);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/png" },
+      payload: jpegDePrueba,
+    });
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/jpeg" },
+      payload: jpegDePrueba,
+    });
+
+    expect(r.json().item.foto).toBe(`${itemId}.jpg`);
+    const archivos = await readdir(join(dir, "fotos"));
+    expect(archivos).toEqual([`${itemId}.jpg`]); // la .png ya no está
+  });
+
+  it("quitar la foto la borra de disco y limpia la referencia", async () => {
+    const { app, dir } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE CLASICO", 2000);
+    await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/jpeg" },
+      payload: jpegDePrueba,
+    });
+
+    const r = await app.inject({ method: "POST", url: `/api/catalogo/${itemId}/foto/quitar` });
+
+    expect(r.json().item.foto).toBeNull();
+    const archivos = await readdir(join(dir, "fotos"));
+    expect(archivos).toEqual([]);
+  });
+
+  it("se puede ver la foto en /fotos/:archivo", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE CLASICO", 2000);
+    await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/jpeg" },
+      payload: jpegDePrueba,
+    });
+
+    const r = await app.inject({ method: "GET", url: `/fotos/${itemId}.jpg` });
+    expect(r.statusCode).toBe(200);
+    expect(r.rawPayload).toEqual(jpegDePrueba);
   });
 });
 
@@ -392,6 +489,36 @@ describe("enrutador de escaneos", () => {
 });
 
 describe("inventario y caja por HTTP", () => {
+  it("una compra actualiza el inventario y genera el egreso solo", async () => {
+    const { app } = await apiDePrueba();
+    const cera = (
+      await app.inject({
+        method: "POST",
+        url: "/api/catalogo",
+        payload: { codigo: "CERA", nombre: "CERA", tipo: "PRODUCTO", categoria: "P", precio: 4500 },
+      })
+    ).json().item;
+
+    await app.inject({ method: "POST", url: "/api/caja/abrir", payload: { montoInicial: 50000 } });
+
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/inventario/compra",
+      payload: {
+        lineas: [{ itemId: cera.id, cantidad: 10, costoUnitario: 2000 }],
+        proveedor: "Distribuidora XYZ",
+      },
+    });
+
+    expect(r.statusCode).toBe(201);
+    expect(r.json().total).toBe(20000);
+    expect(r.json().productos[0].stock).toBe(10);
+
+    const caja = await app.inject({ method: "GET", url: "/api/caja" });
+    expect(caja.json().arqueo.efectivoEnCajon).toBe(30000);
+    expect(caja.json().egresos[0]).toMatchObject({ categoria: "COMPRA", monto: 20000 });
+  });
+
   it("descuenta stock al vender y lo refleja en el kardex", async () => {
     const { app } = await apiDePrueba();
     const item = (
@@ -656,9 +783,9 @@ describe("salud", () => {
     const r = await app.inject({ method: "GET", url: "/api/salud" });
     const cuerpo = r.json();
     expect(cuerpo.log.integro).toBe(true);
-    // Dos: el `item.creado` de arriba y el `config.actualizada` que escribe
-    // `apiDePrueba` al apagar la exigencia de cliente.
-    expect(cuerpo.log.eventos).toBe(2);
+    // Tres: el `item.creado` de arriba y los dos `config.actualizada` que
+    // escribe `apiDePrueba` al apagar la exigencia de cliente y de caja abierta.
+    expect(cuerpo.log.eventos).toBe(3);
     expect(cuerpo.impresora.disponible).toBe(false);
     expect(cuerpo.memoria.usadaMB).toBeGreaterThan(0);
   });
@@ -668,5 +795,78 @@ describe("salud", () => {
     const r = await app.inject({ method: "GET", url: "/api/no-existe" });
     expect(r.statusCode).toBe(404);
     expect(r.json().error.codigo).toBe("NO_ENCONTRADO");
+  });
+});
+
+describe("barberos por HTTP", () => {
+  it("el reporte trae producción de la semana y adelantos pendientes", async () => {
+    const { app } = await apiDePrueba();
+    const itemId = await crearServicio(app, "COR", "CORTE", 2000);
+    const barbero = (
+      await app.inject({ method: "POST", url: "/api/barberos", payload: { nombre: "Kevin" } })
+    ).json().barbero;
+
+    await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId, cantidad: 1, barberoId: barbero.id }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/caja/egreso",
+      payload: { monto: 3000, motivo: "Taxi", categoria: "ADELANTO", barberoId: barbero.id },
+    });
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/barberos/${barbero.id}/reporte?desde=2020-01-01&hasta=${hoy}`,
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().saldoPendiente).toBe(3000);
+    expect(r.json().semanas[0].total).toBe(2000);
+  });
+
+  it("404 si el barbero no existe", async () => {
+    const { app } = await apiDePrueba();
+    const r = await app.inject({ method: "GET", url: "/api/barberos/no-existe/reporte?desde=2020-01-01&hasta=2030-01-01" });
+    expect(r.statusCode).toBe(404);
+  });
+
+  it("liquidar deja el saldo en cero", async () => {
+    const { app } = await apiDePrueba();
+    const barbero = (
+      await app.inject({ method: "POST", url: "/api/barberos", payload: { nombre: "Kevin" } })
+    ).json().barbero;
+    await app.inject({
+      method: "POST",
+      url: "/api/caja/egreso",
+      payload: { monto: 3000, motivo: "Taxi", categoria: "ADELANTO", barberoId: barbero.id },
+    });
+
+    const liq = await app.inject({ method: "POST", url: `/api/barberos/${barbero.id}/liquidar` });
+    expect(liq.statusCode).toBe(201);
+    expect(liq.json().liquidacion.monto).toBe(3000);
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/barberos/${barbero.id}/reporte?desde=2020-01-01&hasta=${hoy}`,
+    });
+    expect(r.json().saldoPendiente).toBe(0);
+  });
+
+  it("rechaza liquidar sin saldo pendiente", async () => {
+    const { app } = await apiDePrueba();
+    const barbero = (
+      await app.inject({ method: "POST", url: "/api/barberos", payload: { nombre: "Kevin" } })
+    ).json().barbero;
+
+    const r = await app.inject({ method: "POST", url: `/api/barberos/${barbero.id}/liquidar` });
+    expect(r.statusCode).toBe(400);
   });
 });

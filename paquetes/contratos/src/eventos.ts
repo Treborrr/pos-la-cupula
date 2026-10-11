@@ -64,7 +64,13 @@ export const ACTOR_SISTEMA: Actor = { tipo: "sistema", id: "servidor" };
  * eventos viejos y no requiere subir `v`. (PLIN y transferencia entran aquí el
  * día que hagan falta.)
  */
-export const esquemaMedioPago = z.enum(["EFECTIVO", "YAPE", "TARJETA"]);
+/**
+ * ADELANTO: el barbero se lleva el producto o servicio, pero no paga — se le
+ * descuenta de lo que le corresponde cobrar esa semana (ver §4 de
+ * dominio/barberos). No es efectivo cobrado: el arqueo lo deja fuera a
+ * propósito, así el cajón no espera una plata que nunca entró.
+ */
+export const esquemaMedioPago = z.enum(["EFECTIVO", "YAPE", "TARJETA", "ADELANTO"]);
 export type MedioPago = z.infer<typeof esquemaMedioPago>;
 
 export const esquemaTipoItem = z.enum(["SERVICIO", "PRODUCTO"]);
@@ -243,6 +249,21 @@ export const itemReactivado = definir(
   z.object({ itemId: esquemaUlid }),
 );
 
+/**
+ * La foto vive como ARCHIVO en `datos/fotos/`, nunca en el log: una imagen en
+ * base64 adentro de un evento lo infla sin sentido, y cada cambio de foto
+ * quedaría escrito para siempre aunque la vieja ya no sirva para nada. Acá
+ * solo se guarda el NOMBRE del archivo — la referencia, no el contenido.
+ */
+export const itemFotoActualizada = definir(
+  "item.foto_actualizada",
+  z.object({
+    itemId: esquemaUlid,
+    /** Null = se quitó la foto. */
+    archivo: z.string().max(80).nullable(),
+  }),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inventario (solo ítems tipo PRODUCTO)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,6 +369,8 @@ export const esquemaPago = z.object({
   /** Solo en efectivo: con cuánto pagó, para dejar registro del vuelto. */
   recibido: esquemaCentimosPositivo.optional(),
   vuelto: esquemaCentimosPositivo.optional(),
+  /** Obligatorio cuando medio es ADELANTO: a quién se le descuenta. */
+  barberoId: esquemaUlid.optional(),
 });
 export type Pago = z.infer<typeof esquemaPago>;
 
@@ -434,6 +457,21 @@ export const cajaTurnoAbierto = definir(
 );
 
 /**
+ * Para qué salió. Todas representan plata que salió DE VERDAD del cajón
+ * físico —incluida YAPE/DEPOSITO: es efectivo convertido a saldo digital o
+ * llevado al banco, no un pago que nunca tocó el cajón— así que las cuatro
+ * se restan igual del efectivo esperado. La categoría es para poder
+ * reportarlas por separado, no para cambiar esa cuenta.
+ *
+ * ADELANTO es la única que además liga el egreso a un barbero: es plata que
+ * se le descuenta de su sueldo más adelante, y por eso la sección Barberos
+ * necesita saber a quién.
+ */
+export const CATEGORIAS_EGRESO = ["ADELANTO", "COMPRA", "YAPE", "DEPOSITO", "OTRO"] as const;
+export const esquemaCategoriaEgreso = z.enum(CATEGORIAS_EGRESO);
+export type CategoriaEgreso = (typeof CATEGORIAS_EGRESO)[number];
+
+/**
  * Salió plata del cajón que no es una venta: insumos, un adelanto, el taxi.
  *
  * Es el evento que hace que el arqueo signifique algo. Sin él, el sistema
@@ -460,6 +498,13 @@ export const cajaEgresoRegistrado = definir(
     motivo: texto(200),
     /** Número de boleta o factura del gasto, si lo hay. */
     comprobante: textoOpcional(80),
+    /**
+     * Opcional: los egresos escritos antes de esto no la traen, y se leen
+     * como "OTRO" (ver Proyeccion.ts). Campo nuevo y opcional no sube `v`.
+     */
+    categoria: esquemaCategoriaEgreso.optional(),
+    /** Obligatorio cuando categoria es ADELANTO; ausente en cualquier otra. */
+    barberoId: esquemaUlid.optional(),
   }),
 );
 
@@ -477,7 +522,12 @@ export const cajaTurnoCerrado = definir(
       /** Lo que salió del cajón en el turno. Opcional: los cierres anteriores
        *  a que existieran los egresos no lo traen. */
       egresos: esquemaCentimosPositivo.optional(),
-      efectivoEnCajon: esquemaCentimosPositivo,
+      /**
+       * Puede dar negativo: si los egresos del turno superan lo que había más
+       * lo cobrado en efectivo, lo que "debería haber" es un faltante, no
+       * cero. Una compra grande pagada con la caja del día alcanza para esto.
+       */
+      efectivoEnCajon: esquemaCentimos,
     }),
     /** Lo que la persona contó de verdad. */
     contadoEfectivo: esquemaCentimosPositivo,
@@ -544,6 +594,24 @@ export const barberoDesactivado = definir(
   z.object({ barberoId: esquemaUlid }),
 );
 
+/**
+ * El dueño le pagó al barbero y los adelantos pendientes quedan en cero para
+ * seguir la semana que entra. NO calcula ni paga sueldo —D6 sigue intacta,
+ * sueldo fijo sin comisiones—, solo limpia la cuenta de lo que se le había
+ * adelantado. `monto` es una FOTO de cuánto se liquidó en ese momento, para
+ * el historial; el saldo pendiente real se recalcula siempre desde los
+ * adelantos con fecha posterior a esta liquidación.
+ */
+export const barberoLiquidado = definir(
+  "barbero.liquidado",
+  z.object({
+    liquidacionId: esquemaUlid,
+    barberoId: esquemaUlid,
+    monto: esquemaCentimosPositivo.min(1),
+    notas: textoOpcional(500),
+  }),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración
 // ─────────────────────────────────────────────────────────────────────────────
@@ -568,6 +636,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   itemCostoCambiado,
   itemDesactivado,
   itemReactivado,
+  itemFotoActualizada,
   stockEntrada,
   stockAjustado,
   stockMerma,
@@ -584,6 +653,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   barberoCreado,
   barberoActualizado,
   barberoDesactivado,
+  barberoLiquidado,
   configActualizada,
 ]);
 
@@ -627,6 +697,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "item.costo_cambiado": 1,
   "item.desactivado": 1,
   "item.reactivado": 1,
+  "item.foto_actualizada": 1,
   "stock.entrada": 1,
   "stock.ajustado": 1,
   "stock.merma": 1,
@@ -643,6 +714,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "barbero.creado": 1,
   "barbero.actualizado": 1,
   "barbero.desactivado": 1,
+  "barbero.liquidado": 1,
   "config.actualizada": 1,
 };
 

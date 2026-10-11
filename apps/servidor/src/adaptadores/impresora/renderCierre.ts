@@ -59,6 +59,9 @@ function pintar(salida: SalidaDeTicket, cierre: DatosDelCierre, negocio: DatosDe
   if (cierre.medios.EFECTIVO > 0) salida.dosColumnas("  Efectivo", aTextoConSimbolo(cierre.medios.EFECTIVO));
   if (cierre.medios.YAPE > 0) salida.dosColumnas("  Yape", aTextoConSimbolo(cierre.medios.YAPE));
   if (cierre.medios.TARJETA > 0) salida.dosColumnas("  Tarjeta", aTextoConSimbolo(cierre.medios.TARJETA));
+  // No es efectivo cobrado —se le descuenta al barbero de su sueldo—, pero
+  // sin esta línea "total vendido" no cerraría contra la suma de medios.
+  if (cierre.medios.ADELANTO > 0) salida.dosColumnas("  Adelanto a barbero", aTextoConSimbolo(cierre.medios.ADELANTO));
 
   if (cierre.egresos.length > 0) {
     salida.separador();

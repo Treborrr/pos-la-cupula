@@ -192,7 +192,7 @@ export function registrarVenta(
   }
   const total = subtotal - descuento;
 
-  validarPagos(pedido.pagos, total);
+  validarPagos(p, pedido.pagos, total);
   validarBarberos(p, pedido.lineas);
 
   if (pedido.clienteId && !p.clientes.has(pedido.clienteId)) {
@@ -276,12 +276,12 @@ export function validarBarberos(p: Proyeccion, lineas: LineaPedida[]): void {
  * arqueo signifique algo: si se aceptara una diferencia "chica", el cajón
  * nunca cuadraría y nadie sabría por qué.
  */
-export function validarPagos(pagos: Pago[], total: Centimos): void {
+export function validarPagos(p: Proyeccion, pagos: Pago[], total: Centimos): void {
   if (!pagos || pagos.length === 0) {
     throw new ErrorDeNegocio("PAGOS_NO_CUADRAN", "Falta indicar cómo se paga.", "Elige efectivo, YAPE o tarjeta.");
   }
 
-  const sumado = pagos.reduce((a, p) => a + p.monto, 0);
+  const sumado = pagos.reduce((a, pago) => a + pago.monto, 0);
   if (sumado !== total) {
     const diferencia = sumado - total;
     throw new ErrorDeNegocio(
@@ -302,6 +302,25 @@ export function validarPagos(pagos: Pago[], total: Centimos): void {
         "EFECTIVO_INSUFICIENTE",
         `El cliente entregó ${moneda(pago.recibido)} y el pago en efectivo es de ${moneda(pago.monto)}.`,
       );
+    }
+
+    // ADELANTO es plata que nunca entra al cajón: se le descuenta al barbero
+    // de lo que cobre esa semana. Sin dueño, ese descuento no se le puede
+    // cargar a nadie — es indistinguible de un regalo sin registrar.
+    if (pago.medio === "ADELANTO") {
+      if (!pago.barberoId) {
+        throw new ErrorDeNegocio(
+          "DATO_INVALIDO",
+          "Un pago a cuenta de adelanto tiene que decir de qué barbero.",
+          "Elige el barbero antes de cobrar.",
+        );
+      }
+      const barbero = p.barberos.get(pago.barberoId);
+      if (!barbero || !barbero.activo) {
+        throw new ErrorDeNegocio("BARBERO_INACTIVO", "Ese barbero ya no está activo.");
+      }
+    } else if (pago.barberoId) {
+      throw new ErrorDeNegocio("DATO_INVALIDO", "Solo un pago de adelanto puede llevar barbero.");
     }
   }
 }

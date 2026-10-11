@@ -31,6 +31,7 @@ async function posConMovimientos() {
   // habitual" se dispara sola si las pruebas corren de madrugada, y el archivo
   // de auditoría sale distinto según la hora del día.
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir, { reloj: relojFijo() }));
+  await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
 
   const corte = await pos.transaccion(() => {
     const r = crearItem(pos.p, { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "B", precio: 2000 });
@@ -170,9 +171,12 @@ describe("auditoría", () => {
 
     const a = await construirAuditoria(pos.almacen, dir, "2026-09-18T20:00:00.000-05:00");
 
-    // Un día sin nada raro no debe producir ruido: si esto empieza a fallar,
+    // Un día sin nada raro no debe producir ruido MÁS ALLÁ de lo que de
+    // verdad pasó: `posConMovimientos()` apaga "exigir caja abierta" al
+    // armar el escenario, y ESO sí es un cambio de regla de negocio real —
+    // tiene que seguir marcado. Si esto empieza a fallar con algo distinto,
     // las señales dejaron de significar algo.
-    expect(a.señales).toHaveLength(0);
+    expect(a.señales.map((s) => s.tipo)).toEqual(["Cambios de reglas de negocio"]);
     expect(a.integridad.ok).toBe(true);
     await pos.cerrar();
   });

@@ -24,7 +24,7 @@ function cierreDePrueba(cambios: Partial<DatosDelCierre> = {}): DatosDelCierre {
     abiertoEn: "2026-09-16T09:00:00.000-05:00",
     cerradoEn: "2026-09-16T21:03:00.000-05:00",
     montoInicial: 10000,
-    medios: { EFECTIVO: 32000, YAPE: 12000, TARJETA: 10000 },
+    medios: { EFECTIVO: 32000, YAPE: 12000, TARJETA: 10000, ADELANTO: 0 },
     totalVendido: 54000,
     cantidadVentas: 18,
     egresos: [
@@ -74,7 +74,7 @@ describe("ticket de cierre de turno", () => {
 
   it("solo muestra los medios de pago que de verdad se usaron", () => {
     const texto = renderCierreTexto(
-      cierreDePrueba({ medios: { EFECTIVO: 20000, YAPE: 0, TARJETA: 0 } }),
+      cierreDePrueba({ medios: { EFECTIVO: 20000, YAPE: 0, TARJETA: 0, ADELANTO: 0 } }),
       NEGOCIO,
       PERFIL_GENERICO_80,
     );

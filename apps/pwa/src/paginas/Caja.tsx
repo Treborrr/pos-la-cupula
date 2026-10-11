@@ -21,10 +21,19 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { api, FalloDeApi, type Arqueo, type Egreso, type ResultadoImpresion, type Turno } from "../lib/api";
+import {
+  api,
+  FalloDeApi,
+  type Arqueo,
+  type Barbero,
+  type CategoriaEgreso,
+  type Egreso,
+  type ResultadoImpresion,
+  type Turno,
+} from "../lib/api";
 import { aCentimos, aTextoConSimbolo, fechaYHora, hora } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
-import { Campo, EncabezadoPagina, Pagina, Recuadro } from "../componentes/Piezas";
+import { Campo, EncabezadoPagina, Pagina, Pastilla, Recuadro } from "../componentes/Piezas";
 
 export function Caja() {
   const qc = useQueryClient();
@@ -232,6 +241,11 @@ function Egresos({
   alRegistrar: () => void;
 }) {
   const [abierto, setAbierto] = useState(false);
+  const barberos = useQuery({
+    queryKey: ["barberos"],
+    queryFn: () => api.get<{ barberos: Barbero[] }>("/barberos"),
+  });
+  const nombreDe = (barberoId?: string) => barberos.data?.barberos.find((b) => b.id === barberoId)?.nombre;
 
   return (
     <>
@@ -259,7 +273,18 @@ function Egresos({
             {egresos.map((e) => (
               <li key={e.id} className="flex items-baseline justify-between gap-4 px-6 py-3">
                 <span className="min-w-0">
-                  <span className="block font-medium">{e.motivo}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{e.motivo}</span>
+                    {e.categoria === "ADELANTO" ? (
+                      <Pastilla tono="laton">Adelanto{nombreDe(e.barberoId) ? ` · ${nombreDe(e.barberoId)}` : ""}</Pastilla>
+                    ) : e.categoria === "COMPRA" ? (
+                      <Pastilla>Compra</Pastilla>
+                    ) : e.categoria === "YAPE" ? (
+                      <Pastilla>Yape</Pastilla>
+                    ) : e.categoria === "DEPOSITO" ? (
+                      <Pastilla>Depósito</Pastilla>
+                    ) : null}
+                  </span>
                   <span className="ayuda cifra">
                     {hora(e.ts)}
                     {e.comprobante ? ` · ${e.comprobante}` : ""}
@@ -285,13 +310,33 @@ function Egresos({
   );
 }
 
+const CATEGORIAS: { id: CategoriaEgreso; texto: string; ayuda: string }[] = [
+  { id: "OTRO", texto: "Otro", ayuda: "Insumos, el taxi, cualquier gasto suelto del día." },
+  { id: "ADELANTO", texto: "Adelanto a barbero", ayuda: "Se descuenta de su sueldo — queda pendiente en Barberos." },
+  { id: "YAPE", texto: "Yape", ayuda: "Efectivo que pasó a la cuenta de Yape del negocio." },
+  { id: "DEPOSITO", texto: "Depósito", ayuda: "Efectivo que se llevó al banco." },
+];
+
 function RegistrarEgreso({ alCerrar, alHecho }: { alCerrar: () => void; alHecho: () => void }) {
   const [monto, setMonto] = useState("");
   const [motivo, setMotivo] = useState("");
   const [comprobante, setComprobante] = useState("");
+  const [categoria, setCategoria] = useState<CategoriaEgreso>("OTRO");
+  const [barberoId, setBarberoId] = useState<string | null>(null);
+
+  const barberos = useQuery({
+    queryKey: ["barberos"],
+    queryFn: () => api.get<{ barberos: Barbero[] }>("/barberos"),
+  });
+  const barberosActivos = barberos.data?.barberos ?? [];
 
   const centimos = aCentimos(monto);
-  const valido = monto.trim() !== "" && centimos !== null && centimos > 0 && motivo.trim().length > 0;
+  const valido =
+    monto.trim() !== "" &&
+    centimos !== null &&
+    centimos > 0 &&
+    motivo.trim().length > 0 &&
+    (categoria !== "ADELANTO" || barberoId !== null);
 
   const guardar = useMutation({
     mutationFn: () =>
@@ -299,6 +344,8 @@ function RegistrarEgreso({ alCerrar, alHecho }: { alCerrar: () => void; alHecho:
         monto: centimos,
         motivo: motivo.trim(),
         comprobante: comprobante.trim() || undefined,
+        categoria,
+        barberoId: categoria === "ADELANTO" ? barberoId : undefined,
       }),
     onSuccess: () => {
       alHecho();
@@ -352,6 +399,60 @@ function RegistrarEgreso({ alCerrar, alHecho }: { alCerrar: () => void; alHecho:
             />
           </div>
         </Campo>
+
+        <Campo
+          etiqueta="¿Qué tipo de salida es?"
+          ayuda={CATEGORIAS.find((c) => c.id === categoria)?.ayuda}
+        >
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIAS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setCategoria(c.id);
+                  if (c.id !== "ADELANTO") setBarberoId(null);
+                }}
+                aria-pressed={categoria === c.id}
+                className={`h-11 rounded-xl border px-4 text-[0.95rem] font-semibold transition-colors ${
+                  categoria === c.id
+                    ? "border-tinta bg-tinta text-white"
+                    : "border-linea bg-white text-tinta/70 hover:border-tinta/30 hover:text-tinta"
+                }`}
+              >
+                {c.texto}
+              </button>
+            ))}
+          </div>
+        </Campo>
+
+        {categoria === "ADELANTO" ? (
+          <Campo etiqueta="¿A quién?">
+            {barberosActivos.length === 0 ? (
+              <p className="ayuda">
+                Todavía no hay barberos cargados. Agrégalos en Barberos para poder registrar el adelanto.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {barberosActivos.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setBarberoId(b.id)}
+                    aria-pressed={barberoId === b.id}
+                    className={`h-11 rounded-xl border px-4 text-[0.95rem] font-semibold transition-colors ${
+                      barberoId === b.id
+                        ? "border-tinta bg-tinta text-white"
+                        : "border-linea bg-white text-tinta/70 hover:border-tinta/30 hover:text-tinta"
+                    }`}
+                  >
+                    {b.nombre}
+                  </button>
+                ))}
+              </div>
+            )}
+          </Campo>
+        ) : null}
 
         <Campo etiqueta="¿Para qué?" ayuda="Obligatorio. Sin motivo, al cerrar la caja no se distingue de un faltante.">
           <input

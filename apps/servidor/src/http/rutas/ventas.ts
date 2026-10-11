@@ -14,10 +14,12 @@ import type { Dependencias } from "../app";
 import { booleanoDeQuery } from "./catalogo";
 
 const esquemaPago = z.object({
-  medio: z.enum(["EFECTIVO", "YAPE", "TARJETA"]),
+  medio: z.enum(["EFECTIVO", "YAPE", "TARJETA", "ADELANTO"]),
   monto: z.number().int().min(1),
   recibido: z.number().int().min(0).optional(),
   vuelto: z.number().int().min(0).optional(),
+  /** Obligatorio cuando medio es ADELANTO: a qué barbero se le descuenta. */
+  barberoId: z.string().min(1).optional(),
 });
 
 const esquemaCobro = z.object({

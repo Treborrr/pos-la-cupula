@@ -28,10 +28,12 @@ async function posDePrueba() {
   aBorrar.push(dir);
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
 
-  // Estas pruebas son de pagos, stock, idempotencia y caja: exigir cliente en
-  // todas agregaría ruido sin probar nada. La regla tiene sus propias pruebas
-  // más abajo, en «cliente obligatorio».
+  // Estas pruebas son de pagos, stock, idempotencia y caja: exigir cliente o
+  // caja abierta en todas agregaría ruido sin probar nada. Las dos reglas
+  // tienen sus propias pruebas más abajo, en «cliente obligatorio» y «exigir
+  // caja abierta».
   await pos.guardarConfig("ventas.exigirCliente", false);
+  await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
 
   const ids: Record<string, string> = {};
 
@@ -542,6 +544,33 @@ describe("caja", () => {
     await pos.cerrar();
   });
 
+  it("si los egresos superan lo que había, el cajón cierra en negativo sin romperse", async () => {
+    // Una compra grande de mercadería pagada con la caja del día puede
+    // superar todo lo cobrado en efectivo. El cajón queda "debiendo" —no es
+    // un bug, es el negocio— y el cierre tiene que poder escribirse igual.
+    const { pos, ids } = await posDePrueba();
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    // Salen 10000 — mucho más de lo que había (5000 + 2000 = 7000).
+    await pos.escribir(() => registrarEgreso(pos.p, { monto: 10000, motivo: "Compra grande de mercadería" }).eventos);
+
+    const arqueo = arquear(pos.p);
+    expect(arqueo.efectivoEnCajon).toBe(-3000);
+
+    const cierre = await pos.transaccion(() => {
+      const r = cerrarTurno(pos.p, { contadoEfectivo: 0 });
+      return { eventos: r.eventos, resultado: r };
+    });
+    expect(cierre.diferencia).toBe(3000); // contaron 0, "esperaban" −3000: sobra 3000 de diferencia.
+    expect(pos.p.turnoAbierto).toBeNull();
+    await pos.cerrar();
+  });
+
   it("un egreso sin motivo se rechaza", async () => {
     // Un egreso sin motivo es indistinguible de plata que falta, que es
     // exactamente el problema que los egresos vienen a resolver.
@@ -550,6 +579,65 @@ describe("caja", () => {
 
     expect(() => registrarEgreso(pos.p, { monto: 1000, motivo: "   " })).toThrow(/para qué salió/);
     expect(() => registrarEgreso(pos.p, { monto: 0, motivo: "Taxi" })).toThrow(/mayor a cero/);
+    await pos.cerrar();
+  });
+
+  it("un egreso sin categoría queda como OTRO", async () => {
+    const { pos } = await posDePrueba();
+    await pos.escribir(() => registrarEgreso(pos.p, { monto: 1000, motivo: "Taxi" }).eventos);
+    expect([...pos.p.egresos.values()][0].categoria).toBe("OTRO");
+    await pos.cerrar();
+  });
+
+  it("un adelanto exige decir a qué barbero", async () => {
+    const { pos } = await posDePrueba();
+    expect(() =>
+      registrarEgreso(pos.p, { monto: 2000, motivo: "Adelanto", categoria: "ADELANTO" }),
+    ).toThrow(/a qué barbero/);
+    await pos.cerrar();
+  });
+
+  it("un adelanto rechaza un barbero que ya no está activo", async () => {
+    const { pos } = await posDePrueba();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Kevin");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+    await pos.escribir(() => desactivarBarbero(pos.p, barberoId));
+
+    expect(() =>
+      registrarEgreso(pos.p, { monto: 2000, motivo: "Adelanto", categoria: "ADELANTO", barberoId }),
+    ).toThrow(/ya no está activo/);
+    await pos.cerrar();
+  });
+
+  it("solo un adelanto puede llevar barbero", async () => {
+    const { pos } = await posDePrueba();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Kevin");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    expect(() =>
+      registrarEgreso(pos.p, { monto: 2000, motivo: "Taxi", categoria: "YAPE", barberoId }),
+    ).toThrow(/Solo un adelanto/);
+    await pos.cerrar();
+  });
+
+  it("un adelanto válido queda registrado con el barbero y la categoría", async () => {
+    const { pos } = await posDePrueba();
+    const barberoId = await pos.transaccion(() => {
+      const r = crearBarbero(pos.p, "Kevin");
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+
+    await pos.escribir(
+      () => registrarEgreso(pos.p, { monto: 5000, motivo: "Para el almuerzo", categoria: "ADELANTO", barberoId }).eventos,
+    );
+
+    const egreso = [...pos.p.egresos.values()][0];
+    expect(egreso.categoria).toBe("ADELANTO");
+    expect(egreso.barberoId).toBe(barberoId);
     await pos.cerrar();
   });
 
@@ -741,6 +829,7 @@ describe("propinas", () => {
     {
       const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
       await pos.guardarConfig("ventas.exigirCliente", false);
+      await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
       const { itemId } = await pos.transaccion(() => {
         const r = crearItem(pos.p, { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "B", precio: 2000 });
         return { eventos: r.eventos, resultado: r };
@@ -773,6 +862,7 @@ describe("reconstrucción", () => {
     {
       const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
       await pos.guardarConfig("ventas.exigirCliente", false);
+      await pos.guardarConfig("ventas.exigirTurnoAbierto", false);
       const { itemId } = await pos.transaccion(() => {
         const r = crearItem(pos.p, {
           codigo: "CERA",
@@ -909,6 +999,143 @@ describe("reconstrucción", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Reglas que llegaron con la v0.2.0
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe("exigir caja abierta", () => {
+  it("no deja cobrar con la caja cerrada cuando la regla está encendida", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.guardarConfig("ventas.exigirTurnoAbierto", true);
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/La caja está cerrada/);
+
+    await pos.cerrar();
+  });
+
+  it("deja cobrar en cuanto se abre el turno", async () => {
+    const { pos, ids } = await posDePrueba();
+    await pos.guardarConfig("ventas.exigirTurnoAbierto", true);
+    await pos.transaccion(() => {
+      const r = abrirTurno(pos.p, { montoInicial: 0 });
+      return { eventos: r.eventos, resultado: null };
+    });
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(venta.total).toBe(2000);
+
+    await pos.cerrar();
+  });
+
+  it("apagada (el default), cobra igual con la caja cerrada", async () => {
+    const { pos, ids } = await posDePrueba();
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+      claveIdempotencia: ulid(),
+    });
+    expect(venta.turnoId).toBeNull();
+
+    await pos.cerrar();
+  });
+});
+
+describe("pago por adelanto", () => {
+  async function conBarberoActivo(pos: ServicioPos, nombre = "Kevin"): Promise<string> {
+    return pos.transaccion(() => {
+      const r = crearBarbero(pos.p, nombre);
+      return { eventos: r.eventos, resultado: r.barberoId };
+    });
+  }
+
+  it("exige decir a qué barbero se le descuenta", async () => {
+    const { pos, ids } = await posDePrueba();
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "ADELANTO", monto: 2000 }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/de qué barbero/);
+    await pos.cerrar();
+  });
+
+  it("rechaza un barbero que ya no está activo", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarberoActivo(pos);
+    await pos.escribir(() => desactivarBarbero(pos.p, barberoId));
+
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "ADELANTO", monto: 2000, barberoId }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/ya no está activo/);
+    await pos.cerrar();
+  });
+
+  it("solo un pago de adelanto puede llevar barbero", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarberoActivo(pos);
+    await expect(
+      pos.cobrar({
+        lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000, barberoId }],
+        claveIdempotencia: ulid(),
+      }),
+    ).rejects.toThrow(/Solo un pago de adelanto/);
+    await pos.cerrar();
+  });
+
+  it("una venta pagada por adelanto no cuenta como efectivo en el arqueo", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarberoActivo(pos);
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 10000 }).eventos);
+
+    const { venta } = await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }],
+      pagos: [{ medio: "ADELANTO", monto: 2000, barberoId }],
+      claveIdempotencia: ulid(),
+    });
+
+    expect(venta.total).toBe(2000); // la venta es real, por el precio real
+    const arqueo = arquear(pos.p);
+    expect(arqueo.medios.ADELANTO).toBe(2000);
+    expect(arqueo.medios.EFECTIVO).toBe(0);
+    // Nada entró al cajón: sigue siendo exactamente el monto inicial.
+    expect(arqueo.efectivoEnCajon).toBe(10000);
+    await pos.cerrar();
+  });
+
+  it("se puede combinar con efectivo en la misma venta", async () => {
+    const { pos, ids } = await posDePrueba();
+    const barberoId = await conBarberoActivo(pos);
+    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 0 }).eventos);
+
+    await pos.cobrar({
+      lineas: [{ itemId: ids["COR"], cantidad: 1 }], // 20.00
+      pagos: [
+        { medio: "ADELANTO", monto: 1500, barberoId },
+        { medio: "EFECTIVO", monto: 500 },
+      ],
+      claveIdempotencia: ulid(),
+    });
+
+    const arqueo = arquear(pos.p);
+    expect(arqueo.medios.ADELANTO).toBe(1500);
+    expect(arqueo.efectivoEnCajon).toBe(500);
+    await pos.cerrar();
+  });
+});
 
 describe("cliente obligatorio", () => {
   it("no deja cobrar sin cliente cuando la regla está encendida", async () => {

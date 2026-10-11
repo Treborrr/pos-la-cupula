@@ -1,60 +1,38 @@
 /**
- * Catálogo: servicios y productos, y la lista de barberos.
+ * Catálogo: servicios y productos.
  *
  * El código de cada ítem lo asigna el sistema (P0001 productos, S0001
  * servicios): en el Excel había códigos repetidos que volvían invendibles a
  * productos sin que nadie se enterara.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, LayoutGrid, Package, Pencil, Plus, RotateCcw, Scissors, Search, Tags, UserRound, X } from "lucide-react";
+import { Camera, Check, LayoutGrid, Package, Plus, Scissors, Search, Tags, Upload } from "lucide-react";
 
-import { api, FalloDeApi, type Barbero, type Item } from "../lib/api";
+import { api, FalloDeApi, type Item } from "../lib/api";
 import { aCentimos, aTexto, aTextoConSimbolo, margenLegible, montoOAusente } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Segmentado } from "../componentes/Piezas";
 
-const PESTANAS = [
-  { id: "items", texto: "Servicios y productos", icono: LayoutGrid },
-  { id: "barberos", texto: "Barberos", icono: UserRound },
-] as const;
-
 export function Catalogo() {
   const qc = useQueryClient();
-  const ubicacion = useLocation();
-  const navegar = useNavigate();
-  const pestana = ubicacion.hash === "#barberos" ? "barberos" : "items";
   const [editando, setEditando] = useState<Item | "nuevo" | null>(null);
 
   return (
     <Pagina>
       <EncabezadoPagina
         titulo="Catálogo"
-        descripcion={
-          pestana === "items"
-            ? "Lo que se vende en Cobrar. Los servicios no llevan stock; los productos sí y se descuentan al venderlos."
-            : "Quién atiende. Al cobrar se elige el barbero de cada servicio para saber la producción de cada uno."
-        }
+        descripcion="Lo que se vende en Cobrar. Los servicios no llevan stock; los productos sí y se descuentan al venderlos."
         acciones={
-          <>
-            <Segmentado
-              opciones={PESTANAS}
-              valor={pestana}
-              alCambiar={(v) => navegar({ hash: v === "barberos" ? "barberos" : "" }, { replace: true })}
-            />
-            {pestana === "items" ? (
-              <button className="boton-primario" onClick={() => setEditando("nuevo")}>
-                <Plus className="h-5 w-5" />
-                Nuevo
-              </button>
-            ) : null}
-          </>
+          <button className="boton-primario" onClick={() => setEditando("nuevo")}>
+            <Plus className="h-5 w-5" />
+            Nuevo
+          </button>
         }
       />
 
-      {pestana === "items" ? <ListaDeItems alAbrir={setEditando} alNuevo={() => setEditando("nuevo")} /> : <Barberos />}
+      <ListaDeItems alAbrir={setEditando} alNuevo={() => setEditando("nuevo")} />
 
       {editando ? (
         <FormularioDeItem
@@ -242,7 +220,16 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
                     <td className="cifra font-semibold">{i.codigo}</td>
                     <td className="text-tinta/65">{i.marca || <span className="text-tinta/30">—</span>}</td>
                     <td>
-                      <span className="font-medium">{i.nombre}</span>
+                      <span className="flex items-center gap-2.5">
+                        {i.foto ? (
+                          <img
+                            src={`/fotos/${i.foto}`}
+                            alt=""
+                            className="h-8 w-8 shrink-0 rounded-md border border-linea object-cover"
+                          />
+                        ) : null}
+                        <span className="font-medium">{i.nombre}</span>
+                      </span>
                       {!i.activo ? (
                         <span className="ml-2">
                           <Pastilla>Desactivado</Pastilla>
@@ -508,6 +495,25 @@ function FormularioDeItem({
   const [costo, setCosto] = useState(item?.costo != null ? aTexto(item.costo) : "");
   const [stockMinimo, setStockMinimo] = useState(String(item?.stockMinimo ?? 0));
   const [stockInicial, setStockInicial] = useState("0");
+  const [fotoActual, setFotoActual] = useState(item?.foto ?? null);
+
+  const qc = useQueryClient();
+  const refCampoFoto = useRef<HTMLInputElement>(null);
+
+  const subirFoto = useMutation({
+    mutationFn: (archivo: File) => api.subirFoto<{ item: Item }>(`/catalogo/${item!.id}/foto`, archivo),
+    onSuccess: (r) => {
+      setFotoActual(r.item.foto);
+      qc.invalidateQueries({ queryKey: ["catalogo"] });
+    },
+  });
+  const quitarFoto = useMutation({
+    mutationFn: () => api.post<{ item: Item }>(`/catalogo/${item!.id}/foto/quitar`),
+    onSuccess: (r) => {
+      setFotoActual(r.item.foto);
+      qc.invalidateQueries({ queryKey: ["catalogo"] });
+    },
+  });
 
   const siguiente = useQuery({
     queryKey: ["siguiente-codigo", tipo],
@@ -604,6 +610,61 @@ function FormularioDeItem({
             {fallo.sugerencia}
           </Aviso>
         ) : null}
+
+        <div>
+          <span className="etiqueta mb-2 block">Foto</span>
+          {!item ? (
+            <p className="ayuda">Guarda el ítem primero; después podrás subirle una foto.</p>
+          ) : (
+            <div className="flex items-center gap-4">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-linea bg-hueso">
+                {fotoActual ? (
+                  <img src={`/fotos/${fotoActual}`} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <Camera className="h-8 w-8 text-tinta/25" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <input
+                  ref={refCampoFoto}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const archivo = e.target.files?.[0];
+                    if (archivo) subirFoto.mutate(archivo);
+                    e.target.value = "";
+                  }}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="boton-suave boton-chico"
+                    disabled={subirFoto.isPending}
+                    onClick={() => refCampoFoto.current?.click()}
+                  >
+                    <Upload className="h-4 w-4" />
+                    {subirFoto.isPending ? "Subiendo…" : fotoActual ? "Cambiar" : "Subir foto"}
+                  </button>
+                  {fotoActual ? (
+                    <button
+                      type="button"
+                      className="boton-suave boton-chico"
+                      disabled={quitarFoto.isPending}
+                      onClick={() => quitarFoto.mutate()}
+                    >
+                      Quitar
+                    </button>
+                  ) : null}
+                </div>
+                <p className="ayuda">JPG, PNG o WEBP, hasta 3 MB.</p>
+                {subirFoto.error ? (
+                  <p className="text-sm text-mal">{(subirFoto.error as FalloDeApi).message}</p>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </div>
 
         {!item ? (
           <div>
@@ -929,170 +990,3 @@ function normalizar(s: string): string {
     .trim();
 }
 
-function Barberos() {
-  const qc = useQueryClient();
-  const [nombre, setNombre] = useState("");
-  const [editando, setEditando] = useState<string | null>(null);
-  const [confirmando, setConfirmando] = useState<Barbero | null>(null);
-
-  const barberos = useQuery({
-    queryKey: ["barberos", "admin"],
-    queryFn: () => api.get<{ barberos: Barbero[] }>("/barberos?incluirInactivos=true"),
-  });
-  const refrescar = () => qc.invalidateQueries({ queryKey: ["barberos"] });
-
-  const crear = useMutation({
-    mutationFn: () => api.post("/barberos", { nombre }),
-    onSuccess: () => {
-      setNombre("");
-      refrescar();
-    },
-  });
-  const cambiarEstado = useMutation({
-    mutationFn: (b: Barbero) => api.post(`/barberos/${b.id}/${b.activo ? "desactivar" : "reactivar"}`),
-    onSuccess: () => {
-      setConfirmando(null);
-      refrescar();
-    },
-  });
-
-  const lista = barberos.data?.barberos ?? [];
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-      <div className="tarjeta overflow-hidden">
-        {lista.length === 0 ? (
-          <Vacio icono={UserRound} titulo="Todavía no hay barberos">
-            Agrégalos con el formulario. Sirven para saber quién atendió cada servicio.
-          </Vacio>
-        ) : (
-          <ul className="divide-y divide-linea">
-            {lista.map((b) => (
-              <li key={b.id} className="flex items-center gap-4 px-5 py-4">
-                <span
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full font-semibold ${
-                    b.activo ? "bg-laton-claro text-laton-oscuro" : "bg-hueso text-tinta/35"
-                  }`}
-                >
-                  {b.nombre.charAt(0).toUpperCase()}
-                </span>
-                {editando === b.id ? (
-                  <RenombrarBarbero
-                    barbero={b}
-                    alTerminar={() => {
-                      setEditando(null);
-                      refrescar();
-                    }}
-                  />
-                ) : (
-                  <>
-                    <span className={`min-w-0 flex-1 truncate text-lg font-medium ${b.activo ? "" : "text-tinta/40"}`}>
-                      {b.nombre}
-                    </span>
-                    {!b.activo ? <Pastilla>Inactivo</Pastilla> : null}
-                    <button className="boton-icono" onClick={() => setEditando(b.id)} aria-label={`Renombrar a ${b.nombre}`} title="Renombrar">
-                      <Pencil className="h-5 w-5" />
-                    </button>
-                    {b.activo ? (
-                      <button className="boton-suave boton-chico" onClick={() => setConfirmando(b)}>
-                        Desactivar
-                      </button>
-                    ) : (
-                      <button className="boton-suave boton-chico" onClick={() => cambiarEstado.mutate(b)}>
-                        <RotateCcw className="h-4 w-4" />
-                        Reactivar
-                      </button>
-                    )}
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        <div className="tarjeta p-5">
-          <h2 className="mb-4 text-lg font-semibold">Agregar barbero</h2>
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (nombre.trim()) crear.mutate();
-            }}
-          >
-            <input
-              className="campo"
-              placeholder="Nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-            />
-            <button type="submit" className="boton-primario w-full" disabled={!nombre.trim() || crear.isPending}>
-              <Plus className="h-5 w-5" />
-              Agregar
-            </button>
-          </form>
-          {crear.error ? (
-            <div className="mt-3">
-              <Aviso tono="mal">{(crear.error as Error).message}</Aviso>
-            </div>
-          ) : null}
-        </div>
-        <Aviso tono="info">
-          Solo se registra quién atendió, como dato para los reportes. <strong>No se calculan comisiones</strong>: en La
-          Cúpula los barberos tienen sueldo fijo.
-        </Aviso>
-      </div>
-
-      {confirmando ? (
-        <Modal
-          titulo={`¿Desactivar a ${confirmando.nombre}?`}
-          alCerrar={() => setConfirmando(null)}
-          pie={
-            <div className="flex justify-end gap-3">
-              <button className="boton-suave" onClick={() => setConfirmando(null)}>
-                Cancelar
-              </button>
-              <button className="boton-primario" disabled={cambiarEstado.isPending} onClick={() => cambiarEstado.mutate(confirmando)}>
-                Sí, desactivar
-              </button>
-            </div>
-          }
-        >
-          <p className="text-tinta/75">
-            Deja de aparecer al cobrar. Sus ventas anteriores y su producción en los reportes se conservan, y puedes
-            reactivarlo cuando quieras.
-          </p>
-        </Modal>
-      ) : null}
-    </div>
-  );
-}
-
-function RenombrarBarbero({ barbero, alTerminar }: { barbero: Barbero; alTerminar: () => void }) {
-  const [nombre, setNombre] = useState(barbero.nombre);
-  const guardar = useMutation({
-    mutationFn: () => api.patch(`/barberos/${barbero.id}`, { nombre }),
-    onSuccess: alTerminar,
-  });
-  const campo = useRef<HTMLInputElement>(null);
-  useEffect(() => campo.current?.select(), []);
-
-  return (
-    <form
-      className="flex min-w-0 flex-1 items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (nombre.trim()) guardar.mutate();
-      }}
-    >
-      <input ref={campo} className="campo" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-      <button type="submit" className="boton-primario" disabled={!nombre.trim() || guardar.isPending}>
-        Guardar
-      </button>
-      <button type="button" className="boton-icono" onClick={alTerminar} aria-label="Cancelar">
-        <X className="h-5 w-5" />
-      </button>
-    </form>
-  );
-}

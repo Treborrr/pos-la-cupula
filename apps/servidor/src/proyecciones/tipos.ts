@@ -8,7 +8,7 @@
  * se reproduce el log y listo.
  */
 
-import type { Centimos, MedioPago, Pago, TipoItem, LineaVenta } from "@cupula/contratos";
+import type { CategoriaEgreso, Centimos, MedioPago, Pago, TipoItem, LineaVenta } from "@cupula/contratos";
 
 export interface Item {
   id: string;
@@ -39,6 +39,8 @@ export interface Item {
   activo: boolean;
   creadoEn: string;
   actualizadoEn: string;
+  /** Nombre del archivo en datos/fotos/, servido por /fotos/:archivo. Null = sin foto. */
+  foto: string | null;
 }
 
 export interface Venta {
@@ -79,6 +81,10 @@ export interface Egreso {
   monto: Centimos;
   motivo: string;
   comprobante?: string;
+  /** "OTRO" en los egresos escritos antes de que existiera esta categoría. */
+  categoria: CategoriaEgreso;
+  /** Solo presente cuando categoria es ADELANTO. */
+  barberoId?: string;
 }
 
 /**
@@ -115,6 +121,15 @@ export interface Barbero {
   activo: boolean;
 }
 
+/** El dueño le pagó al barbero: los adelantos de antes de esta fecha quedan saldados. */
+export interface Liquidacion {
+  id: string;
+  ts: string;
+  barberoId: string;
+  monto: Centimos;
+  notas?: string;
+}
+
 /** Un movimiento del kardex, venga de una venta o de un ajuste manual. */
 export interface MovimientoStock {
   ts: string;
@@ -131,10 +146,12 @@ export interface TotalesPorMedio {
   EFECTIVO: Centimos;
   YAPE: Centimos;
   TARJETA: Centimos;
+  /** Lo vendido a cuenta del sueldo de un barbero. No es efectivo cobrado. */
+  ADELANTO: Centimos;
 }
 
 export function mediosEnCero(): TotalesPorMedio {
-  return { EFECTIVO: 0, YAPE: 0, TARJETA: 0 };
+  return { EFECTIVO: 0, YAPE: 0, TARJETA: 0, ADELANTO: 0 };
 }
 
 export type { MedioPago };

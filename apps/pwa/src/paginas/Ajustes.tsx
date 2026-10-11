@@ -235,8 +235,9 @@ function AjustesDeVentas({
         alCambiar={(v) => alGuardar({ "ventas.exigirTurnoAbierto": v })}
         titulo="Exigir la caja abierta para cobrar"
       >
-        Recomendado dejarlo apagado: si se exige y alguien olvida abrir el turno, no se puede cobrar. Con esto apagado se
-        cobra igual y el arqueo del turno siguiente lo muestra aparte.
+        Encendido (el default), nadie cobra sin abrir la caja antes: ninguna venta se escapa del arqueo del día. La
+        contra es que si alguien se olvida de abrir el turno, no se puede cobrar hasta que lo abra. Apagado, se cobra
+        igual con la caja cerrada y el arqueo del turno siguiente lo muestra aparte.
       </Casilla>
     </div>
   );

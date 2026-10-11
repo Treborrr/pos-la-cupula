@@ -5,6 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
+import { CATEGORIAS_EGRESO } from "@cupula/contratos";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../../dominio/caja/caja";
 import { ErrorDeNegocio } from "../../dominio/errores";
 import type { DatosDelCierre } from "../../puertos/Impresora";
@@ -46,6 +47,8 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
         monto: z.number().int().min(1),
         motivo: z.string().trim().min(1).max(200),
         comprobante: z.string().trim().max(80).optional(),
+        categoria: z.enum(CATEGORIAS_EGRESO).optional(),
+        barberoId: z.string().min(1).optional(),
       })
       .parse(peticion.body);
 

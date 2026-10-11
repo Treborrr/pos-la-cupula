@@ -54,10 +54,15 @@ export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
   "ventas.correlativoInicial": 30,
 
   /**
-   * En false a propósito: si se exigiera la caja abierta, olvidarse de abrirla
-   * costaría ventas. Se registran con turno null y el arqueo las reporta aparte.
+   * En true a pedido explícito del dueño: prefiere que el mostrador no pueda
+   * cobrar sin abrir la caja antes, aunque eso signifique un cliente parado
+   * esperando un minuto mientras alguien abre el turno. Sigue siendo una
+   * variable de configuración — no una regla fija — para la instalación que
+   * prefiera la otra prioridad (nunca perder una venta) puede apagarla desde
+   * Ajustes. Apagada, las ventas se registran con turno null y el arqueo las
+   * reporta aparte.
    */
-  "ventas.exigirTurnoAbierto": false,
+  "ventas.exigirTurnoAbierto": true,
 
   /**
    * Cada venta queda a nombre de un cliente: es lo que arma el historial, las

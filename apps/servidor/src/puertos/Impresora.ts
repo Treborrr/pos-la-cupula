@@ -64,7 +64,7 @@ export interface DatosDelCierre {
   abiertoEn: string;
   cerradoEn: string;
   montoInicial: Centimos;
-  medios: { EFECTIVO: Centimos; YAPE: Centimos; TARJETA: Centimos };
+  medios: { EFECTIVO: Centimos; YAPE: Centimos; TARJETA: Centimos; ADELANTO: Centimos };
   totalVendido: Centimos;
   cantidadVentas: number;
   egresos: { monto: Centimos; motivo: string }[];

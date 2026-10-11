@@ -33,11 +33,12 @@ nada.
 | H12 | Egresos de caja, margen real, reposición y ventas por hora | ✅ |
 | H13 | Listo para Railway: `PORT`, datos en Volumen persistente, candado de acceso opcional | ✅ |
 | H14 | Aviso de reloj atrasado, alertas persistentes, propinas, cierre de turno impreso | ✅ |
+| H15 | Caja obligatoria por defecto, fotos de producto, compras multi-línea, egresos con categoría, sección Barberos (reporte semanal y liquidación de adelantos) | ✅ |
 
-**245 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**287 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
 importación de catálogo, reportes de margen, respaldos, auditoría, el candado
-de acceso y las propinas.
+de acceso, las propinas y los adelantos a barberos.
 
 ### Lo que queda pendiente
 
@@ -51,6 +52,27 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.9.0** — caja obligatoria, fotos de producto, compras, egresos con categoría y la sección Barberos.
+
+- **Caja obligatoria por defecto.** El ajuste `ventas.exigirTurnoAbierto` ya
+  existía; ahora empieza encendido, para que no se pueda cobrar por accidente
+  con la caja cerrada. Sigue siendo apagable en Ajustes.
+- **Fotos de producto.** JPG, PNG o WEBP hasta 3 MB, guardadas como archivo en
+  `datos/fotos/` (viaja con el respaldo) y nunca como base64 en el log. Se ven
+  en Catálogo y en la grilla de Cobrar.
+- **Compras multi-línea**, vinculadas al inventario: varios productos de un
+  proveedor en una sola acción, con comprobante opcional y un interruptor
+  "¿salió de la caja?" que decide si se genera el egreso. Reusa la misma
+  lógica de costo promedio ponderado que una entrada de mercadería suelta.
+- **Egresos con categoría** (adelanto a barbero, compra, Yape, depósito, otro)
+  y un cuarto medio de pago, **Adelanto a barbero**: una venta real que el
+  barbero se lleva a cuenta de su sueldo, que no cuenta como efectivo cobrado
+  para el arqueo.
+- **Sección Barberos**, ahora de primer nivel: alta, reporte de producción por
+  semana (incluidos los cortes gratis del programa de fidelidad) y
+  **Liquidar**, que salda los adelantos pendientes sin calcular ni pagar
+  sueldo — D6 (sin comisiones) sigue intacta.
 
 **v0.8.0** — reloj atrasado, alertas que se ven solas, propinas y el cierre de turno en papel.
 

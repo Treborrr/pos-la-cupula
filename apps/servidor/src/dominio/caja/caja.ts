@@ -14,7 +14,7 @@
  * es indistinguible de plata que falta.
  */
 
-import type { Centimos, EventoNuevo } from "@cupula/contratos";
+import type { CategoriaEgreso, Centimos, EventoNuevo } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
@@ -56,7 +56,13 @@ export function abrirTurno(
  */
 export function registrarEgreso(
   p: Proyeccion,
-  datos: { monto: Centimos; motivo: string; comprobante?: string },
+  datos: {
+    monto: Centimos;
+    motivo: string;
+    comprobante?: string;
+    categoria?: CategoriaEgreso;
+    barberoId?: string;
+  },
 ): { eventos: EventoNuevo[]; egresoId: string } {
   if (!(datos.monto > 0)) {
     throw new ErrorDeNegocio("DATO_INVALIDO", "El monto del egreso tiene que ser mayor a cero.");
@@ -67,6 +73,27 @@ export function registrarEgreso(
       "Falta decir para qué salió la plata.",
       "Un egreso sin motivo es indistinguible de un faltante al cerrar la caja.",
     );
+  }
+
+  const categoria = datos.categoria ?? "OTRO";
+
+  // Solo ADELANTO lleva barbero: es la única categoría que se le descuenta a
+  // alguien en particular. Las demás con barbero serían un dato suelto que
+  // nadie sabría de dónde salió.
+  if (categoria === "ADELANTO") {
+    if (!datos.barberoId) {
+      throw new ErrorDeNegocio(
+        "DATO_INVALIDO",
+        "Un adelanto tiene que decir a qué barbero se le dio.",
+        "Elige el barbero antes de guardar.",
+      );
+    }
+    const barbero = p.barberos.get(datos.barberoId);
+    if (!barbero || !barbero.activo) {
+      throw new ErrorDeNegocio("BARBERO_INACTIVO", "Ese barbero ya no está activo.");
+    }
+  } else if (datos.barberoId) {
+    throw new ErrorDeNegocio("DATO_INVALIDO", "Solo un adelanto puede llevar barbero.");
   }
 
   const egresoId = ulid();
@@ -81,6 +108,8 @@ export function registrarEgreso(
           monto: datos.monto,
           motivo: datos.motivo.trim(),
           comprobante: datos.comprobante?.trim() || undefined,
+          categoria,
+          barberoId: categoria === "ADELANTO" ? datos.barberoId : undefined,
         },
       },
     ],

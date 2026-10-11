@@ -79,6 +79,9 @@ export const api = {
     pedir<T>(ruta, { method: "PATCH", body: JSON.stringify(cuerpo) }),
   put: <T>(ruta: string, cuerpo: unknown) =>
     pedir<T>(ruta, { method: "PUT", body: JSON.stringify(cuerpo) }),
+  /** Para fotos: el archivo va crudo, no como JSON. */
+  subirFoto: <T>(ruta: string, archivo: File) =>
+    pedir<T>(ruta, { method: "POST", headers: { "Content-Type": archivo.type }, body: archivo }),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +106,8 @@ export interface Item {
   orden: number;
   activo: boolean;
   stock: number | null;
+  /** Nombre del archivo en /fotos/, o null si no tiene. */
+  foto: string | null;
 }
 
 export interface LineaVenta {
@@ -121,11 +126,15 @@ export interface LineaVenta {
   total: number;
 }
 
+export type MedioPago = "EFECTIVO" | "YAPE" | "TARJETA" | "ADELANTO";
+
 export interface Pago {
-  medio: "EFECTIVO" | "YAPE" | "TARJETA";
+  medio: MedioPago;
   monto: number;
   recibido?: number;
   vuelto?: number;
+  /** Solo cuando medio es ADELANTO: a qué barbero se le descuenta. */
+  barberoId?: string;
 }
 
 export interface Venta {
@@ -185,6 +194,8 @@ export interface Turno {
 }
 
 /** Una salida de efectivo del cajón que no es una venta. */
+export type CategoriaEgreso = "ADELANTO" | "COMPRA" | "YAPE" | "DEPOSITO" | "OTRO";
+
 export interface Egreso {
   id: string;
   ts: string;
@@ -192,13 +203,15 @@ export interface Egreso {
   monto: number;
   motivo: string;
   comprobante?: string;
+  categoria: CategoriaEgreso;
+  barberoId?: string;
 }
 
 export interface Arqueo {
   turnoId: string;
   abiertoEn: string;
   montoInicial: number;
-  medios: { EFECTIVO: number; YAPE: number; TARJETA: number };
+  medios: { EFECTIVO: number; YAPE: number; TARJETA: number; ADELANTO: number };
   totalVendido: number;
   cantidadVentas: number;
   /** Lo que salió del cajón en este turno. */

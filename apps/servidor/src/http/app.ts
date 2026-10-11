@@ -11,6 +11,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
 import * as path from "node:path";
+import { mkdir } from "node:fs/promises";
 
 import { esErrorDeNegocio } from "../dominio/errores";
 import type { ServicioPos } from "../servicios/Pos";
@@ -24,6 +25,7 @@ import { rutasVentas } from "./rutas/ventas";
 import { rutasInventario } from "./rutas/inventario";
 import { rutasCaja } from "./rutas/caja";
 import { rutasClientes } from "./rutas/clientes";
+import { rutasBarberos } from "./rutas/barberos";
 import { rutasMantenimiento } from "./rutas/mantenimiento";
 
 export interface Dependencias {
@@ -32,6 +34,8 @@ export interface Dependencias {
   respaldos: ServicioDeRespaldos;
   /** Carpeta con la PWA compilada. Si no existe, solo se sirve el API. */
   carpetaPwa?: string;
+  /** La carpeta `datos/`. Hoy solo la usan las fotos de catálogo. */
+  carpetaDatos: string;
   version: string;
 }
 
@@ -47,6 +51,17 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
   // Antes que cualquier otra cosa: si hay CLAVE_DE_ACCESO configurada, nada
   // de lo que sigue —API ni PWA— se sirve sin ella primero.
   await candadoDeAcceso(app);
+
+  // Las fotos de catálogo llegan CRUDAS —ni JSON ni multipart—, con el
+  // Content-Type real de la imagen. `'*'` es el comodín que Fastify usa SOLO
+  // cuando ningún parser más específico matcheó —el de `application/json`
+  // de toda la vida sigue intacto—, así que cualquier Content-Type que no
+  // sea JSON llega como Buffer a la ruta. Eso es a propósito: si se
+  // registrara solo para los tres tipos de imagen válidos, un archivo con
+  // Content-Type inesperado (un PDF, un .gif) nunca llegaría a la ruta —la
+  // rechazaría Fastify con un 415 genérico— en vez del mensaje claro de
+  // "la foto tiene que ser JPG, PNG o WEBP" que la ruta ya sabe dar.
+  app.addContentTypeParser("*", { parseAs: "buffer" }, (_peticion, cuerpo, listo) => listo(null, cuerpo));
 
   /**
    * Un solo lugar traduce excepciones a respuestas.
@@ -103,6 +118,7 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
       await rutasInventario(api, deps);
       await rutasCaja(api, deps);
       await rutasClientes(api, deps);
+      await rutasBarberos(api, deps);
       await rutasMantenimiento(api, deps);
     },
     { prefix: "/api" },
@@ -124,6 +140,17 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
       },
     });
   }
+
+  // Las fotos de catálogo, servidas tal cual quedaron en disco. `decorateReply:
+  // false` porque `reply.sendFile` ya lo decoró el registro de arriba —hacerlo
+  // dos veces revienta con "decorator already added"— y acá no hace falta: esta
+  // ruta solo necesita servir archivos por prefijo, no mandar uno a mano.
+  await mkdir(path.join(deps.carpetaDatos, "fotos"), { recursive: true });
+  await app.register(fastifyStatic, {
+    root: path.join(deps.carpetaDatos, "fotos"),
+    prefix: "/fotos/",
+    decorateReply: false,
+  });
 
   return app;
 }

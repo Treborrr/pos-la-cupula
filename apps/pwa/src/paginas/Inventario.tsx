@@ -2,15 +2,26 @@
  * Inventario: existencias, movimientos y kardex. Solo productos físicos.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Boxes, ClipboardCheck, PackageMinus, PackagePlus, Plus, type LucideIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Boxes,
+  ClipboardCheck,
+  PackageMinus,
+  PackagePlus,
+  Plus,
+  Search,
+  ShoppingCart,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 
-import { api, type Item } from "../lib/api";
-import { aTextoConSimbolo, cantidad, fechaYHora, montoOAusente } from "../lib/formato";
+import { api, FalloDeApi, type Item } from "../lib/api";
+import { aCentimos, aTextoConSimbolo, cantidad, fechaYHora, montoOAusente } from "../lib/formato";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
-import { EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
+import { Campo, EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
 
 interface ProductoConStock extends Item {
   stock: number;
@@ -50,7 +61,9 @@ const NOMBRE_ORIGEN: Record<Movimiento["origen"], string> = {
 };
 
 export function Inventario() {
+  const qc = useQueryClient();
   const [abierto, setAbierto] = useState<ProductoConStock | null>(null);
+  const [comprando, setComprando] = useState(false);
   const [filtro, setFiltro] = useState<"todos" | "alerta">("todos");
 
   const inventario = useQuery({
@@ -68,6 +81,14 @@ export function Inventario() {
       <EncabezadoPagina
         titulo="Inventario"
         descripcion="Cuántas unidades hay de cada producto. Toca uno para registrar mercadería que llegó, un conteo o una pérdida."
+        acciones={
+          productos.length > 0 ? (
+            <button className="boton-primario" onClick={() => setComprando(true)}>
+              <ShoppingCart className="h-5 w-5" />
+              Registrar compra
+            </button>
+          ) : undefined
+        }
       />
 
       {productos.length > 0 ? (
@@ -193,6 +214,18 @@ export function Inventario() {
         <FichaDeProducto
           producto={productos.find((p) => p.id === abierto.id) ?? abierto}
           alCerrar={() => setAbierto(null)}
+        />
+      ) : null}
+
+      {comprando ? (
+        <RegistrarCompra
+          productos={productos}
+          alCerrar={() => setComprando(false)}
+          alHecho={() => {
+            qc.invalidateQueries({ queryKey: ["inventario"] });
+            qc.invalidateQueries({ queryKey: ["caja"] });
+            qc.invalidateQueries({ queryKey: ["estado"] });
+          }}
         />
       ) : null}
     </Pagina>
@@ -409,5 +442,255 @@ function FormularioDeMovimiento({
         </button>
       </div>
     </div>
+  );
+}
+
+interface LineaEnEdicion {
+  itemId: string;
+  nombre: string;
+  codigo: string;
+  cantidad: string;
+  costo: string;
+}
+
+/**
+ * Varios productos de un proveedor en una sola acción: cada línea entra al
+ * inventario con su costo y, si de verdad salió plata del cajón, un solo
+ * egreso por el total —no hay que anotarlo dos veces.
+ */
+function RegistrarCompra({
+  productos,
+  alCerrar,
+  alHecho,
+}: {
+  productos: ProductoConStock[];
+  alCerrar: () => void;
+  alHecho: () => void;
+}) {
+  const [busqueda, setBusqueda] = useState("");
+  const [lineas, setLineas] = useState<LineaEnEdicion[]>([]);
+  const [proveedor, setProveedor] = useState("");
+  const [comprobante, setComprobante] = useState("");
+  const [salioDeLaCaja, setSalioDeLaCaja] = useState(true);
+
+  const coincidencias = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+    if (!termino) return [];
+    const yaAgregados = new Set(lineas.map((l) => l.itemId));
+    return productos
+      .filter((p) => !yaAgregados.has(p.id))
+      .filter((p) => `${p.codigo} ${p.nombreCompleto}`.toLowerCase().includes(termino))
+      .slice(0, 8);
+  }, [productos, busqueda, lineas]);
+
+  function agregar(p: ProductoConStock) {
+    setLineas((ls) => [
+      ...ls,
+      {
+        itemId: p.id,
+        nombre: p.nombreCompleto,
+        codigo: p.codigo,
+        cantidad: "1",
+        costo: p.costo !== null ? (p.costo / 100).toFixed(2) : "",
+      },
+    ]);
+    setBusqueda("");
+  }
+
+  function quitar(itemId: string) {
+    setLineas((ls) => ls.filter((l) => l.itemId !== itemId));
+  }
+
+  function actualizar(itemId: string, campo: "cantidad" | "costo", valor: string) {
+    setLineas((ls) => ls.map((l) => (l.itemId === itemId ? { ...l, [campo]: valor } : l)));
+  }
+
+  const lineasParseadas = lineas.map((l) => ({
+    ...l,
+    n: Number(l.cantidad.replace(",", ".")),
+    centimos: aCentimos(l.costo),
+  }));
+
+  const todoValido =
+    lineasParseadas.length > 0 &&
+    lineasParseadas.every((l) => Number.isFinite(l.n) && l.n > 0 && l.centimos !== null && l.centimos >= 0);
+
+  const total = todoValido ? lineasParseadas.reduce((a, l) => a + l.n * (l.centimos ?? 0), 0) : 0;
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      api.post("/inventario/compra", {
+        lineas: lineasParseadas.map((l) => ({ itemId: l.itemId, cantidad: l.n, costoUnitario: l.centimos })),
+        proveedor: proveedor.trim() || undefined,
+        comprobante: comprobante.trim() || undefined,
+        salioDeLaCaja,
+      }),
+    onSuccess: () => {
+      alHecho();
+      alCerrar();
+    },
+  });
+  const fallo = guardar.error as FalloDeApi | undefined;
+
+  return (
+    <Modal
+      titulo="Registrar una compra"
+      subtitulo="Varios productos de un proveedor, en una sola acción"
+      alCerrar={alCerrar}
+      ancho="max-w-2xl"
+      pie={
+        <div className="flex items-center gap-3">
+          <div className="mr-auto text-sm text-tinta/60">
+            {lineas.length > 0 ? (
+              <>
+                Total: <strong className="cifra text-tinta">{aTextoConSimbolo(total)}</strong>
+              </>
+            ) : null}
+          </div>
+          <button className="boton-suave" onClick={alCerrar}>
+            Cancelar
+          </button>
+          <button className="boton-primario" disabled={!todoValido || guardar.isPending} onClick={() => guardar.mutate()}>
+            {guardar.isPending ? "Guardando…" : "Registrar compra"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        {fallo ? (
+          <Aviso tono="mal" titulo={fallo.message}>
+            {fallo.sugerencia}
+          </Aviso>
+        ) : null}
+
+        <Campo etiqueta="Agregar producto">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-tinta/35" />
+            <input
+              className="campo h-12 pl-11"
+              autoFocus
+              placeholder="Buscar por nombre o código"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && coincidencias.length === 1) agregar(coincidencias[0]);
+              }}
+            />
+          </div>
+          {coincidencias.length > 0 ? (
+            <div className="scroll-fino mt-2 max-h-48 overflow-y-auto rounded-xl border border-linea">
+              {coincidencias.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors hover:bg-hueso"
+                  onClick={() => agregar(p)}
+                >
+                  <span>
+                    <span className="block font-medium">{p.nombreCompleto}</span>
+                    <span className="ayuda cifra">{p.codigo}</span>
+                  </span>
+                  <span className="ayuda cifra">{montoOAusente(p.costo)}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </Campo>
+
+        {lineas.length === 0 ? (
+          <p className="ayuda rounded-xl border border-dashed border-linea p-6 text-center">
+            Busca y agrega los productos que llegaron.
+          </p>
+        ) : (
+          <div className="scroll-fino overflow-x-auto rounded-xl border border-linea">
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th className="text-right">Cantidad</th>
+                  <th className="text-right">Costo unitario</th>
+                  <th className="text-right">Subtotal</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {lineasParseadas.map((l) => (
+                  <tr key={l.itemId}>
+                    <td>
+                      <div className="font-medium">{l.nombre}</div>
+                      <div className="ayuda cifra">{l.codigo}</div>
+                    </td>
+                    <td className="text-right">
+                      <input
+                        className="campo cifra h-10 w-20 text-right"
+                        inputMode="decimal"
+                        value={l.cantidad}
+                        onChange={(e) => actualizar(l.itemId, "cantidad", e.target.value)}
+                      />
+                    </td>
+                    <td className="text-right">
+                      <div className="relative inline-block">
+                        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-tinta/40">
+                          S/
+                        </span>
+                        <input
+                          className="campo cifra h-10 w-28 pl-7 text-right"
+                          inputMode="decimal"
+                          value={l.costo}
+                          onChange={(e) => actualizar(l.itemId, "costo", e.target.value)}
+                        />
+                      </div>
+                    </td>
+                    <td className="cifra text-right font-medium">
+                      {Number.isFinite(l.n) && l.centimos !== null ? aTextoConSimbolo(l.n * l.centimos) : "—"}
+                    </td>
+                    <td>
+                      <button className="boton-icono" aria-label="Quitar" onClick={() => quitar(l.itemId)}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo etiqueta="Proveedor" opcional>
+            <input
+              className="campo h-12"
+              placeholder="Distribuidora…"
+              value={proveedor}
+              onChange={(e) => setProveedor(e.target.value)}
+            />
+          </Campo>
+          <Campo etiqueta="Comprobante" opcional>
+            <input
+              className="campo h-12"
+              placeholder="N° de boleta o factura"
+              value={comprobante}
+              onChange={(e) => setComprobante(e.target.value)}
+            />
+          </Campo>
+        </div>
+
+        <label className="flex items-center gap-3 rounded-xl border border-linea p-4">
+          <input
+            type="checkbox"
+            className="h-5 w-5"
+            checked={salioDeLaCaja}
+            onChange={(e) => setSalioDeLaCaja(e.target.checked)}
+          />
+          <span>
+            <span className="block font-medium">Salió plata del cajón</span>
+            <span className="ayuda block">
+              Desactívalo si se pagó por otro lado —transferencia, crédito del proveedor— y no debe descontarse del
+              efectivo esperado.
+            </span>
+          </span>
+        </label>
+      </div>
+    </Modal>
   );
 }

@@ -364,7 +364,7 @@ function LectorDeTicket({
   );
 }
 
-const NOMBRE_MEDIO: Record<string, string> = { EFECTIVO: "Efectivo", YAPE: "YAPE", TARJETA: "Tarjeta" };
+const NOMBRE_MEDIO: Record<string, string> = { EFECTIVO: "Efectivo", YAPE: "YAPE", TARJETA: "Tarjeta", ADELANTO: "Adelanto a barbero" };
 
 function Fila({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
