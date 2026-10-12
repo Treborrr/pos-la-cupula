@@ -626,6 +626,40 @@ export const configActualizada = definir(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Notificaciones por correo
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Cada intento de mandar un correo —exitoso o no— queda escrito. Es la única
+ * fuente de verdad para tres cosas que si no, vivirían solo en memoria y se
+ * perderían en cualquier reinicio: el contador diario (cuántos van hoy contra
+ * el tope de Resend), qué alertas técnicas ya se avisaron hoy (para no
+ * repetirlas aunque sigan activas) y si el reporte de cierre de hoy ya salió.
+ *
+ * Solo se cuentan contra el tope los `ok: true`: un intento fallido (Resend
+ * caído, sin API key) no consumió cupo real, así que no debe bloquear el
+ * resto del día.
+ */
+export const esquemaCategoriaCorreo = z.enum(["alerta_tecnica", "alerta_dev", "reporte_dia", "recibo_venta"]);
+export type CategoriaCorreo = z.infer<typeof esquemaCategoriaCorreo>;
+
+export const correoEnviado = definir(
+  "correo.enviado",
+  z.object({
+    categoria: esquemaCategoriaCorreo,
+    destinatarios: z.array(z.string().trim().min(3).max(160)).min(1),
+    asunto: texto(200),
+    ok: z.boolean(),
+    /** Motivo del fallo, o del "no se mandó" (ej. tope alcanzado). */
+    detalle: textoOpcional(300),
+    /** Solo en categoria "alerta_tecnica": qué códigos de `calcularAlertas` venían en el lote. */
+    codigosAlerta: z.array(z.string().max(40)).max(10).optional(),
+    /** Solo en categoria "recibo_venta": a qué venta corresponde. */
+    ventaId: esquemaUlid.optional(),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // La unión
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -655,6 +689,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   barberoDesactivado,
   barberoLiquidado,
   configActualizada,
+  correoEnviado,
 ]);
 
 export type Evento = z.infer<typeof esquemaEvento>;
@@ -716,6 +751,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "barbero.desactivado": 1,
   "barbero.liquidado": 1,
   "config.actualizada": 1,
+  "correo.enviado": 1,
 };
 
 /**

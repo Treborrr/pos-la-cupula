@@ -23,6 +23,7 @@ import {
   type Item,
   type Liquidacion,
   type Propina,
+  type ResumenCorreosDelDia,
   type Turno,
   type TotalesPorMedio,
   type Venta,
@@ -37,7 +38,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 5;
+export const FORMATO_PROYECCION = 6;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -99,6 +100,9 @@ export class Proyeccion {
   readonly ultimaLiquidacionPorBarbero = new Map<string, Liquidacion>();
 
   readonly config = new Map<string, unknown>();
+
+  /** "2026-09-16" → resumen de correos de ese día. Ver `ResumenCorreosDelDia`. */
+  readonly correosPorDia = new Map<string, ResumenCorreosDelDia>();
 
   // ───────────────────────────────────────────────────────────────────────────
   // Reducer
@@ -412,6 +416,34 @@ export class Proyeccion {
         this.config.set(e.datos.clave, e.datos.valor);
         break;
 
+      case "correo.enviado": {
+        const d = e.datos;
+        const dia = e.ts.slice(0, 10);
+        const resumen =
+          this.correosPorDia.get(dia) ??
+          ({
+            usadosTotal: 0,
+            usadosAlertas: 0,
+            codigosAlertaNotificados: new Set<string>(),
+            reporteDiaEnviado: false,
+          } satisfies ResumenCorreosDelDia);
+
+        // Un intento fallido (sin API key, Resend caído) no consumió cupo de
+        // verdad: no cuenta contra el tope, y tampoco marca una alerta como
+        // "ya avisada" — si se repite, se vuelve a intentar en el próximo lote.
+        if (d.ok) {
+          resumen.usadosTotal++;
+          if (d.categoria === "alerta_tecnica") {
+            resumen.usadosAlertas++;
+            for (const codigo of d.codigosAlerta ?? []) resumen.codigosAlertaNotificados.add(codigo);
+          }
+          if (d.categoria === "reporte_dia") resumen.reporteDiaEnviado = true;
+        }
+
+        this.correosPorDia.set(dia, resumen);
+        break;
+      }
+
       default: {
         // Si aparece un tipo que este código no conoce, se ignora en vez de
         // reventar: un log escrito por una versión más nueva tiene que poder
@@ -659,6 +691,10 @@ export class Proyeccion {
       barberos: [...this.barberos.values()],
       liquidaciones: [...this.liquidaciones.values()],
       config: [...this.config.entries()],
+      correosPorDia: [...this.correosPorDia.entries()].map(([dia, r]) => [
+        dia,
+        { ...r, codigosAlertaNotificados: [...r.codigosAlertaNotificados] },
+      ]),
     };
   }
 
@@ -710,6 +746,9 @@ export class Proyeccion {
       if (!actual || l.ts > actual.ts) p.ultimaLiquidacionPorBarbero.set(l.barberoId, l);
     }
     for (const [k, v] of d.config ?? []) p.config.set(k, v);
+    for (const [dia, r] of d.correosPorDia ?? []) {
+      p.correosPorDia.set(dia, { ...r, codigosAlertaNotificados: new Set(r.codigosAlertaNotificados ?? []) });
+    }
 
     return p;
   }

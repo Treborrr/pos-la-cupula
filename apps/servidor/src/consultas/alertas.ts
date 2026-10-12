@@ -15,9 +15,35 @@
  * Diagnóstico, que se revisa a demanda.
  */
 
+import type { ServicioPos } from "../servicios/Pos";
+import type { ServicioDeRespaldos } from "../servicios/Respaldos";
+import type { Impresora } from "../puertos/Impresora";
+
 export interface Alerta {
   codigo: string;
   mensaje: string;
+}
+
+/**
+ * Junta los datos de `calcularAlertas` desde sus fuentes reales (el almacén,
+ * los respaldos, la impresora, la config). Un solo lugar para esto: antes
+ * vivía repetido en la ruta `/estado` y hubiera vuelto a repetirse en el
+ * chequeo periódico que manda las alertas por correo — y las dos copias
+ * divergiendo con el tiempo es exactamente el tipo de bug que no se nota
+ * hasta que una pantalla dice una cosa y el correo dice otra.
+ */
+export async function alertasActivas(deps: {
+  pos: ServicioPos;
+  respaldos: ServicioDeRespaldos;
+  impresora: Impresora;
+}): Promise<Alerta[]> {
+  const modoImpresora = deps.pos.config<string>("impresora.modo");
+  return calcularAlertas({
+    ...deps.pos.almacen.diagnosticoDeArranque(),
+    respaldos: deps.respaldos.estadoCacheado(),
+    impresoraConfigurada: Boolean(modoImpresora && modoImpresora !== "vistaPrevia"),
+    impresora: await deps.impresora.estado(),
+  });
 }
 
 export function calcularAlertas(datos: {

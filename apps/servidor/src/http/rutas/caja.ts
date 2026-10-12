@@ -24,7 +24,7 @@ function egresosDelTurno(pos: Dependencias["pos"], turnoId: string) {
     .sort((a, b) => b.ts.localeCompare(a.ts));
 }
 
-export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresora }: Dependencias) {
+export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresora, notificaciones }: Dependencias) {
   app.get("/caja", async () => {
     if (!pos.p.turnoAbierto) {
       const ultimo = [...pos.p.turnos.values()].sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
@@ -111,6 +111,11 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
         if (!r.ok) app.log.error({ motivo: r.motivo }, "falló el respaldo al cerrar turno");
       })
       .catch((e) => app.log.error({ err: e }, "falló el respaldo al cerrar turno"));
+
+    // El reporte del día se manda recién cuando cierra caja, nunca antes —
+    // y si cierran dos veces el mismo día, esto reprograma el envío en vez
+    // de duplicarlo: solo sale un correo, el del último cierre.
+    notificaciones.alCerrarTurno();
 
     return {
       turno: pos.p.turnos.get(cierre.arqueo.turnoId),

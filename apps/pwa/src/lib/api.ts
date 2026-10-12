@@ -241,6 +241,7 @@ export interface EstadoGeneral {
   alertasDeStock: number;
   impresora: { disponible: boolean; descripcion: string; detalle?: string };
   alertas: Alerta[];
+  correos: { usadosHoy: number; topeTotal: number; usadosAlertas: number; topeAlertas: number };
 }
 
 export type RespuestaEscaneo =

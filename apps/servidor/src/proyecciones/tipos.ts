@@ -88,6 +88,25 @@ export interface Egreso {
 }
 
 /**
+ * Cuántos correos salieron HOY y cuáles alertas técnicas ya se avisaron hoy.
+ *
+ * Se guarda por día (clave "2026-09-16") y se reconstruye de los eventos
+ * `correo.enviado`: es lo que permite que el tope diario y el "no repetir una
+ * alerta ya avisada" sobrevivan un reinicio del servidor, en vez de vivir
+ * solo en memoria y perderse justo el día que más importa que no se pierdan.
+ */
+export interface ResumenCorreosDelDia {
+  /** Correos que de verdad salieron hoy (solo `ok: true`), de cualquier categoría. */
+  usadosTotal: number;
+  /** De esos, cuántos fueron alertas técnicas agrupadas (no cuenta el reporte del día). */
+  usadosAlertas: number;
+  /** Códigos de `calcularAlertas` ya avisados hoy: no se repiten aunque sigan activos. */
+  codigosAlertaNotificados: Set<string>;
+  /** Si ya salió el reporte de cierre de hoy — evita mandarlo dos veces el mismo día. */
+  reporteDiaEnviado: boolean;
+}
+
+/**
  * Propina de un cliente a un barbero por una línea de una venta. No afecta el
  * total de la venta ni el arqueo: es puro registro, para reportar — nunca
  * para liquidar (D6: sueldo fijo, sin comisiones).

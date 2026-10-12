@@ -15,7 +15,10 @@ import { AlmacenArchivoJsonl } from "./adaptadores/almacen/ArchivoJsonl";
 import { ImpresoraConfigurable } from "./adaptadores/impresora/ImpresoraConfigurable";
 import { ServicioPos } from "./servicios/Pos";
 import { ServicioDeRespaldos } from "./servicios/Respaldos";
+import { ServicioDeNotificaciones } from "./servicios/Notificaciones";
+import { EnviadorResend } from "./adaptadores/correo/Resend";
 import { relojDelSistema } from "./puertos/Reloj";
+import { alertasActivas } from "./consultas/alertas";
 import { construirApp } from "./http/app";
 import { construirAuditoria, formatearAuditoria } from "./consultas/auditoria";
 import { generarPlantilla } from "./adaptadores/planilla/plantillaCatalogo";
@@ -189,14 +192,35 @@ async function principal() {
     pos.config<string>("respaldos.destinoExterno") ?? null,
   );
 
+  // RESEND_API_KEY y RESEND_FROM son credenciales de la cuenta de Resend:
+  // viven SOLO en el entorno de cada despliegue, nunca con un valor de
+  // respaldo en el código (ver `EnviadorResend`). Sin ellas el sistema
+  // arranca igual, simplemente no manda nada hasta que se configuren.
+  //
+  // El correo del dueño Y el del desarrollador (`negocio.correoDueno`,
+  // `negocio.correoDev`) NO son variables de entorno: son config de la
+  // instalación como cualquier otra, se asignan desde Ajustes.
+  const notificaciones = new ServicioDeNotificaciones(
+    pos,
+    relojDelSistema,
+    new EnviadorResend(process.env.RESEND_API_KEY ?? null, process.env.RESEND_FROM ?? null),
+    () => alertasActivas({ pos, respaldos, impresora }),
+  );
+
   const app = await construirApp({
     pos,
     impresora,
     respaldos,
+    notificaciones,
     carpetaPwa: await carpetaDeLaPwa(),
     carpetaDatos: directorio,
     version: VERSION,
   });
+
+  // Si hoy ya hubo un cierre de turno sin que saliera su reporte —por
+  // ejemplo, el servidor se reinició a mitad de la espera de 60 min—, esto
+  // lo retoma: lo manda si ya pasó la ventana, o reprograma si todavía no.
+  await notificaciones.recuperarAlArrancar().catch((e) => app.log.error({ err: e }, "falló recuperarAlArrancar"));
 
   // PORT es de Railway (y de casi toda plataforma en la nube): lo asigna ella
   // y hay que escuchar exactamente en ese número, no en uno fijo. PUERTO es
@@ -253,6 +277,18 @@ async function principal() {
         .catch((e) => app.log.error({ err: e }, "falló el respaldo horario"));
     },
     60 * 60 * 1000,
+  ).unref();
+
+  /**
+   * Chequeo de notificaciones cada 2 minutos: junta alertas técnicas nuevas
+   * en su ventana de lote, y manda el reporte de cierre si ya venció su
+   * espera. Ver `ServicioDeNotificaciones.tick()`.
+   */
+  setInterval(
+    () => {
+      void notificaciones.tick().catch((e) => app.log.error({ err: e }, "falló el chequeo de notificaciones"));
+    },
+    2 * 60 * 1000,
   ).unref();
 
   // Verificar el destino externo al arrancar y AVISAR si no sirve. Descubrir

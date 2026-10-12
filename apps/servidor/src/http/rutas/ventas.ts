@@ -45,27 +45,39 @@ const esquemaCobro = z.object({
    * dos veces.
    */
   claveIdempotencia: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+  /** Opcional: si viene, se manda un recibo por correo además del ticket. */
+  correoRecibo: z.string().trim().email().optional(),
 });
 
-export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Dependencias) {
+export async function rutasVentas(app: FastifyInstance, { pos, impresora, notificaciones }: Dependencias) {
   app.post("/ventas", async (peticion, respuesta) => {
     const pedido = esquemaCobro.parse(peticion.body);
     const { venta, advertencias, duplicada } = await pos.cobrar(pedido);
 
     // La impresión va DESPUÉS de que la venta está en disco, y su resultado no
     // afecta al de la venta: que falle la ticketera no puede deshacer un cobro
-    // ni impedir que se responda que se cobró.
+    // ni impedir que se responda que se cobró. El correo del recibo sigue la
+    // misma regla.
     const impresion = await imprimir(venta).catch((e) => ({
       impreso: false,
       vistaPrevia: "",
       motivo: e instanceof Error ? e.message : "Falló la impresión",
     }));
 
+    let correo: { enviado: boolean; detalle?: string } | undefined;
+    if (pedido.correoRecibo) {
+      const resultado = await notificaciones
+        .notificarRecibo(pedido.correoRecibo, venta, datosDelNegocio(), opcionesDeImpresion(venta))
+        .catch((e) => ({ ok: false, detalle: e instanceof Error ? e.message : "Falló el envío" }));
+      correo = { enviado: resultado.ok, detalle: resultado.detalle };
+    }
+
     return respuesta.status(duplicada ? 200 : 201).send({
       venta,
       advertencias,
       duplicada,
       impresion,
+      correo,
     });
   });
 
@@ -193,7 +205,18 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Depe
     return construirReporte(pos.p, desde, hasta);
   });
 
-  async function imprimir(venta: Venta, reimpresion = false) {
+  function datosDelNegocio() {
+    return {
+      nombre: pos.config<string>("negocio.nombre"),
+      direccion: pos.config<string>("negocio.direccion"),
+      ciudad: pos.config<string>("negocio.ciudad"),
+      ruc: pos.config<string>("negocio.ruc"),
+      pie: pos.config<string>("negocio.pie"),
+    };
+  }
+
+  /** Lo mismo le hace falta al ticket impreso y al recibo por correo. */
+  function opcionesDeImpresion(venta: Venta, reimpresion = false) {
     const nombresDeBarbero: Record<string, string> = {};
     for (const linea of venta.lineas) {
       if (linea.barberoId) {
@@ -201,20 +224,14 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora }: Depe
       }
     }
 
-    return impresora.imprimirVenta(
-      venta,
-      {
-        nombre: pos.config<string>("negocio.nombre"),
-        direccion: pos.config<string>("negocio.direccion"),
-        ciudad: pos.config<string>("negocio.ciudad"),
-        ruc: pos.config<string>("negocio.ruc"),
-        pie: pos.config<string>("negocio.pie"),
-      },
-      {
-        reimpresion,
-        nombresDeBarbero,
-        nombreDelCliente: venta.clienteId ? pos.p.clientes.get(venta.clienteId)?.nombre : undefined,
-      },
-    );
+    return {
+      reimpresion,
+      nombresDeBarbero,
+      nombreDelCliente: venta.clienteId ? pos.p.clientes.get(venta.clienteId)?.nombre : undefined,
+    };
+  }
+
+  async function imprimir(venta: Venta, reimpresion = false) {
+    return impresora.imprimirVenta(venta, datosDelNegocio(), opcionesDeImpresion(venta, reimpresion));
   }
 }

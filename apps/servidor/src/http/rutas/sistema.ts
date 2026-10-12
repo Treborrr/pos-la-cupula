@@ -14,7 +14,7 @@ import type { Dependencias } from "../app";
 
 export async function rutasSistema(
   app: FastifyInstance,
-  { pos, impresora, respaldos, version }: Dependencias,
+  { pos, impresora, respaldos, notificaciones, version }: Dependencias,
 ) {
   /**
    * Diagnóstico. Es la PRIMERA pregunta cuando algo falla, y está pensada para
@@ -72,6 +72,7 @@ export async function rutasSistema(
       turnoAbierto: pos.p.turnoAbierto,
       exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
       alertasDeStock: stockBajo(pos.p).length,
+      correos: notificaciones.contadorDeHoy(),
       impresora: estadoImpresora,
       // Barato a propósito: nada de lo que entra acá vuelve a tocar el disco
       // ni la red. Ver `consultas/alertas.ts`.

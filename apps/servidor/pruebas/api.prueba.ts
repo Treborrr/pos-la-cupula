@@ -14,7 +14,7 @@ import { ImpresoraVistaPrevia } from "../src/adaptadores/impresora/ImpresoraVist
 import { ServicioPos } from "../src/servicios/Pos";
 import { ServicioDeRespaldos } from "../src/servicios/Respaldos";
 import { relojDelSistema } from "../src/puertos/Reloj";
-import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
+import { abrirAlmacen, borrar, carpetaTemporal, notificacionesDePrueba } from "./ayuda";
 
 const aCerrar: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -36,6 +36,7 @@ async function apiDePrueba(
     pos,
     impresora: new ImpresoraVistaPrevia(),
     respaldos: new ServicioDeRespaldos(dir, relojDelSistema, null),
+    notificaciones: notificacionesDePrueba(pos),
     carpetaDatos: dir,
     version: "pruebas",
   });

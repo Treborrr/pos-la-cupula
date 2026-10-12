@@ -96,6 +96,41 @@ export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
    * exactamente lo que no sirve el día que el disco se quema.
    */
   "respaldos.destinoExterno": "",
+
+  /**
+   * Correo del dueño del negocio, para las alertas técnicas, la caja no
+   * cuadrada y el reporte de cierre del día. Vacío = todavía no se configuró
+   * en esta instalación (arranca vacío por la misma razón que `negocio.ruc`:
+   * es un dato de la instalación, no del programa). Sin esto, el servicio de
+   * notificaciones simplemente no tiene a quién mandarle nada.
+   */
+  "negocio.correoDueno": "",
+
+  /**
+   * Correo de soporte técnico (el del desarrollador/distribuidor del
+   * sistema). Config de la instalación, igual que `negocio.correoDueno` —
+   * NO una variable de entorno: así se asigna desde Ajustes como cualquier
+   * otro dato, sin que el correo de una persona viva escrito en un lugar
+   * aparte (infraestructura) que haya que recordar configurar en cada
+   * instalación nueva.
+   */
+  "negocio.correoDev": "",
+
+  /**
+   * Cuántos correos de ALERTAS TÉCNICAS + reporte diario se permiten por día,
+   * como máximo. El plan gratis de Resend da 100/día en total
+   * (`notificaciones.topeTotalDiario`); este tope más chico reserva cupo para
+   * que las alertas nunca se coman el presupuesto que hace falta para mandar
+   * recibos de venta por correo.
+   */
+  "notificaciones.topeAlertasDiario": 10,
+
+  /**
+   * Tope total de correos del día, de cualquier tipo (alertas, reporte,
+   * recibos de venta). Por defecto el límite del plan gratis de Resend —
+   * subirlo acá es lo que hay que tocar el día que se pase a un plan pago.
+   */
+  "notificaciones.topeTotalDiario": 100,
 };
 
 export interface ResultadoCobro {

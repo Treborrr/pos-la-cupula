@@ -54,11 +54,13 @@ import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { BotonesDeMedio, DetalleDePagos, MEDIOS } from "../componentes/PanelDePago";
 import { CampoCliente, normalizarNombre } from "../componentes/CampoCliente";
 import { CampoBarbero } from "../componentes/CampoBarbero";
+import { Casilla } from "../componentes/Piezas";
 
 interface VentaRecienCobrada {
   venta: Venta;
   advertencias: string[];
   impresion: ResultadoImpresion;
+  correo?: { enviado: boolean; detalle?: string };
 }
 
 export function Cobrar() {
@@ -70,6 +72,8 @@ export function Cobrar() {
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [mensaje, setMensaje] = useState<{ tono: "aviso" | "mal" | "bien"; texto: string } | null>(null);
   const [cobrada, setCobrada] = useState<VentaRecienCobrada | null>(null);
+  const [correoHabilitado, setCorreoHabilitado] = useState(false);
+  const [correoRecibo, setCorreoRecibo] = useState("");
   const [ambiguo, setAmbiguo] = useState<Extract<RespuestaEscaneo, { tipo: "clienteAmbiguo" }> | null>(null);
 
   const refBusqueda = useRef<HTMLInputElement>(null);
@@ -151,16 +155,19 @@ export function Cobrar() {
         clienteId,
         notas: carrito.notas || undefined,
         claveIdempotencia: carrito.claveIdempotencia,
+        correoRecibo: correoHabilitado && correoRecibo.trim() ? correoRecibo.trim() : undefined,
       });
     },
     onSuccess: (r) => {
-      setCobrada({ venta: r.venta, advertencias: r.advertencias, impresion: r.impresion });
+      setCobrada({ venta: r.venta, advertencias: r.advertencias, impresion: r.impresion, correo: r.correo });
       // `reiniciar` y no `vaciar`: estrena la clave de idempotencia, que es lo
       // que permite que el SIGUIENTE ticket sea un cobro distinto.
       carrito.reiniciar();
       setPagos([]);
       setBusqueda("");
       setMensaje(null);
+      setCorreoHabilitado(false);
+      setCorreoRecibo("");
       qc.invalidateQueries({ queryKey: ["estado"] });
       qc.invalidateQueries({ queryKey: ["catalogo"] });
       qc.invalidateQueries({ queryKey: ["ventas"] });
@@ -488,6 +495,13 @@ export function Cobrar() {
                 }}
               />
               <DetalleDePagos total={total} pagos={pagos} alCambiar={setPagos} barberos={barberosActivos} />
+              <RecibirPorCorreo
+                habilitado={correoHabilitado}
+                correo={correoRecibo}
+                alCambiarHabilitado={setCorreoHabilitado}
+                alCambiarCorreo={setCorreoRecibo}
+                contador={estado.data?.correos}
+              />
             </div>
           ) : null}
         </div>
@@ -904,10 +918,59 @@ function Propina({
   );
 }
 
+/**
+ * Opcional, abajo del detalle de pagos: manda una copia del ticket por
+ * correo al cliente, además del impreso. El contador se muestra ahí mismo
+ * para que quien cobra sepa cuánto cupo diario queda antes de ofrecerlo.
+ */
+function RecibirPorCorreo({
+  habilitado,
+  correo,
+  alCambiarHabilitado,
+  alCambiarCorreo,
+  contador,
+}: {
+  habilitado: boolean;
+  correo: string;
+  alCambiarHabilitado: (v: boolean) => void;
+  alCambiarCorreo: (v: string) => void;
+  contador?: { usadosHoy: number; topeTotal: number };
+}) {
+  const sinCupo = contador ? contador.usadosHoy >= contador.topeTotal : false;
+
+  return (
+    <div className="pt-1">
+      <Casilla marcada={habilitado} alCambiar={alCambiarHabilitado} titulo="Enviar recibo por correo">
+        Además del ticket impreso, se manda una copia al correo del cliente.
+      </Casilla>
+      {habilitado ? (
+        <div className="mt-3 space-y-1.5">
+          <input
+            type="email"
+            className="campo h-11 w-full"
+            placeholder="correo@cliente.com"
+            value={correo}
+            autoFocus
+            aria-label="Correo para el recibo"
+            onChange={(e) => alCambiarCorreo(e.target.value)}
+          />
+          {contador ? (
+            <p className={`ayuda text-sm ${sinCupo ? "text-mal" : ""}`}>
+              Correos usados hoy: {contador.usadosHoy} / {contador.topeTotal}
+              {sinCupo ? " — se alcanzó el tope, hoy no se podrá mandar." : ""}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function VentaCobrada({
   venta,
   advertencias,
   impresion: impresionInicial,
+  correo,
   alCerrar,
 }: VentaRecienCobrada & { alCerrar: () => void }) {
   const reintento = useMutation({
@@ -966,6 +1029,19 @@ function VentaCobrada({
           </Aviso>
         )}
         {reintento.error ? <Aviso tono="mal">{(reintento.error as Error).message}</Aviso> : null}
+
+        {correo ? (
+          correo.enviado ? (
+            <div className="flex items-center gap-2 text-tinta/60">
+              <Check className="h-5 w-5" />
+              Recibo enviado por correo.
+            </div>
+          ) : (
+            <Aviso tono="aviso" titulo="No se pudo mandar el recibo por correo">
+              La venta sí quedó registrada. {correo.detalle}
+            </Aviso>
+          )
+        ) : null}
 
         {advertencias.map((a, i) => (
           <Aviso key={i} tono="aviso" titulo="Atención">

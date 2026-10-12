@@ -115,8 +115,25 @@ export function Ajustes() {
                     alGuardar={(v) => guardar.mutate({ [clave]: v })}
                   />
                 ))}
+                <CampoGuardable
+                  key={`negocio.correoDueno-${String(config.data["negocio.correoDueno"] ?? "")}`}
+                  etiqueta="Correo del dueño"
+                  ayuda="Acá llegan las alertas del sistema, la caja descuadrada y el reporte de cierre del día."
+                  valor={String(config.data["negocio.correoDueno"] ?? "")}
+                  alGuardar={(v) => guardar.mutate({ "negocio.correoDueno": v })}
+                  placeholder="dueno@correo.com"
+                />
+                <CampoGuardable
+                  key={`negocio.correoDev-${String(config.data["negocio.correoDev"] ?? "")}`}
+                  etiqueta="Correo de soporte técnico"
+                  ayuda="Del desarrollador del sistema. Avisa de problemas que no se resuelven desde esta pantalla (ej. algo que requiere revisar el código)."
+                  valor={String(config.data["negocio.correoDev"] ?? "")}
+                  alGuardar={(v) => guardar.mutate({ "negocio.correoDev": v })}
+                  placeholder="soporte@correo.com"
+                />
               </div>
             ) : null}
+            <CorreosDeHoy />
           </Bloque>
 
           <Bloque id="ventas" titulo="Tickets y cobro">
@@ -174,6 +191,34 @@ function Bloque({
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * Cuántos correos salieron hoy contra el tope del día. Mismo `useQuery` de
+ * `/estado` que ya usa toda la app (misma clave, mismo caché de React Query):
+ * no es una llamada nueva, es leer un campo más de la que ya corre cada 15 s.
+ */
+function CorreosDeHoy() {
+  const estado = useQuery({
+    queryKey: ["estado"],
+    queryFn: () =>
+      api.get<{ correos: { usadosHoy: number; topeTotal: number; usadosAlertas: number; topeAlertas: number } }>(
+        "/estado",
+      ),
+  });
+  const correos = estado.data?.correos;
+  if (!correos) return null;
+
+  return (
+    <div className="mt-6 border-t border-linea pt-6">
+      <Dato
+        etiqueta="Correos usados hoy"
+        valor={`${correos.usadosHoy} / ${correos.topeTotal}`}
+        nota={`De esos, hasta ${correos.topeAlertas} son para alertas y reporte del día (van ${correos.usadosAlertas}). El resto queda para recibos por correo.`}
+        tono={correos.usadosHoy >= correos.topeTotal ? "mal" : undefined}
+      />
+    </div>
   );
 }
 

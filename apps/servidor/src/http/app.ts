@@ -17,6 +17,7 @@ import { esErrorDeNegocio } from "../dominio/errores";
 import type { ServicioPos } from "../servicios/Pos";
 import type { Impresora } from "../puertos/Impresora";
 import type { ServicioDeRespaldos } from "../servicios/Respaldos";
+import type { ServicioDeNotificaciones } from "../servicios/Notificaciones";
 
 import { candadoDeAcceso } from "./candadoDeAcceso";
 import { rutasSistema } from "./rutas/sistema";
@@ -32,6 +33,7 @@ export interface Dependencias {
   pos: ServicioPos;
   impresora: Impresora;
   respaldos: ServicioDeRespaldos;
+  notificaciones: ServicioDeNotificaciones;
   /** Carpeta con la PWA compilada. Si no existe, solo se sirve el API. */
   carpetaPwa?: string;
   /** La carpeta `datos/`. Hoy solo la usan las fotos de catálogo. */
