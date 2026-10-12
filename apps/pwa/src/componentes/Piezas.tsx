@@ -131,6 +131,7 @@ export function CampoGuardable({
   alGuardar,
   textoBoton = "Guardar",
   placeholder,
+  tipo = "text",
 }: {
   etiqueta: string;
   ayuda?: ReactNode;
@@ -138,6 +139,7 @@ export function CampoGuardable({
   alGuardar: (v: string) => void;
   textoBoton?: string;
   placeholder?: string;
+  tipo?: "text" | "password" | "email";
 }) {
   const [texto, setTexto] = useState(valor);
   const sucio = texto !== valor;
@@ -148,6 +150,7 @@ export function CampoGuardable({
       <div className="flex gap-2">
         <input
           className="campo"
+          type={tipo}
           value={texto}
           placeholder={placeholder}
           onChange={(e) => setTexto(e.target.value)}

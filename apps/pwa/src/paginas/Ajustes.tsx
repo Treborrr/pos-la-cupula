@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Check, FileSpreadsheet, HardDrive, Printer, Receipt, RefreshCw, Store, type LucideIcon } from "lucide-react";
+import { Activity, Check, FileSpreadsheet, HardDrive, Lock, Printer, Receipt, RefreshCw, Store, type LucideIcon } from "lucide-react";
 
 import { api } from "../lib/api";
 import { Aviso } from "../componentes/Modal";
@@ -39,6 +39,7 @@ const SECCIONES: { id: string; texto: string; icono: LucideIcon }[] = [
   { id: "catalogo", texto: "Catálogo", icono: FileSpreadsheet },
   { id: "ticketera", texto: "Ticketera", icono: Printer },
   { id: "respaldos", texto: "Respaldos", icono: HardDrive },
+  { id: "seguridad", texto: "Seguridad", icono: Lock },
   { id: "diagnostico", texto: "Diagnóstico", icono: Activity },
 ];
 
@@ -161,6 +162,24 @@ export function Ajustes() {
               key={String(config.data?.["respaldos.destinoExterno"] ?? "")}
               destinoConfigurado={String(config.data?.["respaldos.destinoExterno"] ?? "")}
             />
+          </Bloque>
+
+          <Bloque
+            id="seguridad"
+            titulo="Seguridad"
+            descripcion="Solo importa si este sistema es accesible desde internet (por ejemplo, alojado en Railway). En la computadora de la barbería, en su red local, se puede dejar vacío."
+          >
+            {config.data ? (
+              <CampoGuardable
+                key={`seguridad.claveAcceso-${String(config.data["seguridad.claveAcceso"] ?? "")}`}
+                etiqueta="Clave de acceso"
+                tipo="password"
+                ayuda="Vacío = sin candado. Si se pone una clave, hace falta para entrar a cualquier pantalla, incluida esta — no la pierdas sin anotarla en otro lado."
+                valor={String(config.data["seguridad.claveAcceso"] ?? "")}
+                alGuardar={(v) => guardar.mutate({ "seguridad.claveAcceso": v })}
+                placeholder="Sin clave (acceso abierto)"
+              />
+            ) : null}
           </Bloque>
 
           <Bloque id="diagnostico" titulo="Diagnóstico" descripcion="Si algo falla, lee esta sección a quien te ayude.">

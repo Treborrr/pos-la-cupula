@@ -14,14 +14,18 @@
  * compartida, por HTTP Basic, que el navegador recuerda solo y que cualquier
  * cliente HTTP sabe hablar sin código nuevo.
  *
- * Por defecto NO HACE NADA: si no existe CLAVE_DE_ACCESO en el entorno, el
- * comportamiento es exactamente el de siempre. Se activa poniendo esa
- * variable a mano en Railway (Settings → Variables) — la instalación de la
- * barbería, que no la define, no se entera de que esto existe.
+ * `seguridad.claveAcceso` es config de la instalación — como
+ * `negocio.correoDueno` — NO una variable de entorno: se asigna desde
+ * Ajustes, sin tocar Railway ni reiniciar el servidor, y un cambio hecho
+ * ahí se aplica en la siguiente petición. Por defecto NO HACE NADA: si la
+ * clave está vacía (instalación nueva, o la de la barbería en la LAN que
+ * nunca la toca), el comportamiento es exactamente el de siempre.
  */
 
 import type { FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
+
+import type { ServicioPos } from "../servicios/Pos";
 
 const USUARIO = "cupula";
 
@@ -35,11 +39,13 @@ function igual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-export async function candadoDeAcceso(app: FastifyInstance): Promise<void> {
-  const clave = process.env.CLAVE_DE_ACCESO;
-  if (!clave) return;
-
+export async function candadoDeAcceso(app: FastifyInstance, pos: ServicioPos): Promise<void> {
   app.addHook("onRequest", async (peticion, respuesta) => {
+    // Se lee en CADA petición, no una vez al registrar el hook: así un cambio
+    // de clave desde Ajustes se aplica de inmediato, sin reiniciar el proceso.
+    const clave = pos.config<string>("seguridad.claveAcceso");
+    if (!clave) return;
+
     // El healthcheck de Railway pega directo a esta ruta sin credenciales:
     // si se la exige, Railway nunca ve el deploy como sano y lo reinicia en
     // bucle. Lo que expone (versión, integridad del log, memoria) no es dato

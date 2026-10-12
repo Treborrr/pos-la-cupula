@@ -1,7 +1,9 @@
 /**
  * El candado de acceso tiene que quedar invisible mientras nadie configure
- * CLAVE_DE_ACCESO (esa es la instalación de la barbería) y bloquear todo lo
- * demás en cuanto se configure (ese es el caso de publicarlo en internet).
+ * `seguridad.claveAcceso` (esa es la instalación de la barbería) y bloquear
+ * todo lo demás en cuanto se configure (ese es el caso de publicarlo en
+ * internet). Es config de la instalación, no una variable de entorno — se
+ * asigna desde Ajustes, y un cambio se aplica sin reiniciar el servidor.
  */
 
 import { describe, expect, it, afterEach } from "vitest";
@@ -17,12 +19,12 @@ import { abrirAlmacen, borrar, carpetaTemporal, notificacionesDePrueba } from ".
 const aCerrar: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const fn of aCerrar.splice(0)) await fn().catch(() => undefined);
-  delete process.env.CLAVE_DE_ACCESO;
 });
 
-async function appDePrueba(): Promise<FastifyInstance> {
+async function appDePrueba(clave?: string): Promise<{ app: FastifyInstance; pos: ServicioPos }> {
   const dir = await carpetaTemporal();
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
+  if (clave !== undefined) await pos.guardarConfig("seguridad.claveAcceso", clave);
   const app = await construirApp({
     pos,
     impresora: new ImpresoraVistaPrevia(),
@@ -36,7 +38,7 @@ async function appDePrueba(): Promise<FastifyInstance> {
     await pos.cerrar();
     await borrar(dir);
   });
-  return app;
+  return { app, pos };
 }
 
 function basic(usuario: string, clave: string): string {
@@ -44,22 +46,20 @@ function basic(usuario: string, clave: string): string {
 }
 
 describe("candado de acceso", () => {
-  it("sin CLAVE_DE_ACCESO configurada, no pide nada (instalación local de siempre)", async () => {
-    const app = await appDePrueba();
+  it("sin clave configurada, no pide nada (instalación local de siempre)", async () => {
+    const { app } = await appDePrueba();
     const r = await app.inject({ method: "GET", url: "/api/catalogo" });
     expect(r.statusCode).toBe(200);
   });
 
-  it("con CLAVE_DE_ACCESO configurada, rechaza sin credenciales", async () => {
-    process.env.CLAVE_DE_ACCESO = "una-clave-larga-de-verdad";
-    const app = await appDePrueba();
+  it("con la clave configurada, rechaza sin credenciales", async () => {
+    const { app } = await appDePrueba("una-clave-larga-de-verdad");
     const r = await app.inject({ method: "GET", url: "/api/catalogo" });
     expect(r.statusCode).toBe(401);
   });
 
   it("rechaza con la clave equivocada", async () => {
-    process.env.CLAVE_DE_ACCESO = "una-clave-larga-de-verdad";
-    const app = await appDePrueba();
+    const { app } = await appDePrueba("una-clave-larga-de-verdad");
     const r = await app.inject({
       method: "GET",
       url: "/api/catalogo",
@@ -69,8 +69,7 @@ describe("candado de acceso", () => {
   });
 
   it("deja pasar con la clave correcta", async () => {
-    process.env.CLAVE_DE_ACCESO = "una-clave-larga-de-verdad";
-    const app = await appDePrueba();
+    const { app } = await appDePrueba("una-clave-larga-de-verdad");
     const r = await app.inject({
       method: "GET",
       url: "/api/catalogo",
@@ -80,8 +79,7 @@ describe("candado de acceso", () => {
   });
 
   it("la clave puede llevar ':' sin romperse", async () => {
-    process.env.CLAVE_DE_ACCESO = "clave:con:dos:puntos";
-    const app = await appDePrueba();
+    const { app } = await appDePrueba("clave:con:dos:puntos");
     const r = await app.inject({
       method: "GET",
       url: "/api/catalogo",
@@ -91,9 +89,27 @@ describe("candado de acceso", () => {
   });
 
   it("/api/salud nunca pide clave: es lo que lee el healthcheck de Railway", async () => {
-    process.env.CLAVE_DE_ACCESO = "una-clave-larga-de-verdad";
-    const app = await appDePrueba();
+    const { app } = await appDePrueba("una-clave-larga-de-verdad");
     const r = await app.inject({ method: "GET", url: "/api/salud" });
     expect(r.statusCode).toBe(200);
+  });
+
+  it("un cambio de clave hecho en caliente (vía Ajustes) se aplica sin reiniciar", async () => {
+    const { app, pos } = await appDePrueba("clave-vieja");
+    const bloqueada = await app.inject({
+      method: "GET",
+      url: "/api/catalogo",
+      headers: { authorization: basic("cupula", "clave-nueva") },
+    });
+    expect(bloqueada.statusCode).toBe(401);
+
+    await pos.guardarConfig("seguridad.claveAcceso", "clave-nueva");
+
+    const permitida = await app.inject({
+      method: "GET",
+      url: "/api/catalogo",
+      headers: { authorization: basic("cupula", "clave-nueva") },
+    });
+    expect(permitida.statusCode).toBe(200);
   });
 });

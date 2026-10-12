@@ -231,7 +231,7 @@ async function principal() {
   // WiFi sin cambiar nada, y es también lo que pide un contenedor en la nube
   // (el proxy de Railway no llega a 127.0.0.1). En una LAN eso es una
   // comodidad; expuesto a internet sin más es la razón por la que existe el
-  // candado de CLAVE_DE_ACCESO (ver http/candadoDeAcceso.ts).
+  // candado de `seguridad.claveAcceso` (ver http/candadoDeAcceso.ts).
   await app.listen({ port: puerto, host: "0.0.0.0" });
 
   app.log.info(

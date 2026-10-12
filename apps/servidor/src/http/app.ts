@@ -50,9 +50,9 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     bodyLimit: 1_000_000,
   });
 
-  // Antes que cualquier otra cosa: si hay CLAVE_DE_ACCESO configurada, nada
-  // de lo que sigue —API ni PWA— se sirve sin ella primero.
-  await candadoDeAcceso(app);
+  // Antes que cualquier otra cosa: si hay `seguridad.claveAcceso` configurada,
+  // nada de lo que sigue —API ni PWA— se sirve sin ella primero.
+  await candadoDeAcceso(app, deps.pos);
 
   // Las fotos de catálogo llegan CRUDAS —ni JSON ni multipart—, con el
   // Content-Type real de la imagen. `'*'` es el comodín que Fastify usa SOLO
