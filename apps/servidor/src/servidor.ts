@@ -229,9 +229,7 @@ async function principal() {
   const puerto = Number(process.env.PORT ?? process.env.PUERTO ?? 7070);
   // 0.0.0.0 y no 127.0.0.1: así se puede entrar desde un celular en el mismo
   // WiFi sin cambiar nada, y es también lo que pide un contenedor en la nube
-  // (el proxy de Railway no llega a 127.0.0.1). En una LAN eso es una
-  // comodidad; expuesto a internet sin más es la razón por la que existe el
-  // candado de `seguridad.claveAcceso` (ver http/candadoDeAcceso.ts).
+  // (el proxy de Railway no llega a 127.0.0.1).
   await app.listen({ port: puerto, host: "0.0.0.0" });
 
   app.log.info(

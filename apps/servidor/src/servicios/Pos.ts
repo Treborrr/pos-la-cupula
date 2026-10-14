@@ -131,14 +131,6 @@ export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
    * subirlo acá es lo que hay que tocar el día que se pase a un plan pago.
    */
   "notificaciones.topeTotalDiario": 100,
-
-  /**
-   * Candado de HTTP Basic para cuando el POS se publica en internet (ver
-   * `http/candadoDeAcceso.ts`). Vacío = sin candado, el comportamiento de
-   * siempre en la instalación de la barbería en su LAN. Config de la
-   * instalación, no variable de entorno: se asigna desde Ajustes.
-   */
-  "seguridad.claveAcceso": "",
 };
 
 export interface ResultadoCobro {

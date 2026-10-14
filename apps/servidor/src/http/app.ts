@@ -19,7 +19,6 @@ import type { Impresora } from "../puertos/Impresora";
 import type { ServicioDeRespaldos } from "../servicios/Respaldos";
 import type { ServicioDeNotificaciones } from "../servicios/Notificaciones";
 
-import { candadoDeAcceso } from "./candadoDeAcceso";
 import { rutasSistema } from "./rutas/sistema";
 import { rutasCatalogo } from "./rutas/catalogo";
 import { rutasVentas } from "./rutas/ventas";
@@ -49,10 +48,6 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     // El cuerpo más grande que puede llegar es un ticket con muchas líneas.
     bodyLimit: 1_000_000,
   });
-
-  // Antes que cualquier otra cosa: si hay `seguridad.claveAcceso` configurada,
-  // nada de lo que sigue —API ni PWA— se sirve sin ella primero.
-  await candadoDeAcceso(app, deps.pos);
 
   // Las fotos de catálogo llegan CRUDAS —ni JSON ni multipart—, con el
   // Content-Type real de la imagen. `'*'` es el comodín que Fastify usa SOLO
