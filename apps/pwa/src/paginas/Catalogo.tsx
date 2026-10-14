@@ -12,11 +12,14 @@ import { Camera, Check, LayoutGrid, Package, Plus, Scissors, Search, Tags, Uploa
 
 import { api, FalloDeApi, type Item } from "../lib/api";
 import { aCentimos, aTexto, aTextoConSimbolo, margenLegible, montoOAusente } from "../lib/formato";
+import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Segmentado } from "../componentes/Piezas";
 
 export function Catalogo() {
   const qc = useQueryClient();
+  const usuario = usarUsuario();
+  const esAdmin = usuario.rol === "ADMIN";
   const [editando, setEditando] = useState<Item | "nuevo" | null>(null);
 
   return (
@@ -25,14 +28,16 @@ export function Catalogo() {
         titulo="Catálogo"
         descripcion="Lo que se vende en Cobrar. Los servicios no llevan stock; los productos sí y se descuentan al venderlos."
         acciones={
-          <button className="boton-primario" onClick={() => setEditando("nuevo")}>
-            <Plus className="h-5 w-5" />
-            Nuevo
-          </button>
+          esAdmin ? (
+            <button className="boton-primario" onClick={() => setEditando("nuevo")}>
+              <Plus className="h-5 w-5" />
+              Nuevo
+            </button>
+          ) : undefined
         }
       />
 
-      <ListaDeItems alAbrir={setEditando} alNuevo={() => setEditando("nuevo")} />
+      <ListaDeItems alAbrir={esAdmin ? setEditando : () => {}} alNuevo={esAdmin ? () => setEditando("nuevo") : undefined} />
 
       {editando ? (
         <FormularioDeItem
@@ -57,7 +62,7 @@ interface RespuestaCatalogo {
   sinCosto: number;
 }
 
-function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuevo: () => void }) {
+function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuevo?: () => void }) {
   const [verInactivos, setVerInactivos] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [tipo, setTipo] = useState<"todos" | "SERVICIO" | "PRODUCTO">("todos");
@@ -186,10 +191,12 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
             icono={LayoutGrid}
             titulo="El catálogo está vacío"
             accion={
-              <button className="boton-primario" onClick={alNuevo}>
-                <Plus className="h-5 w-5" />
-                Crear el primer servicio o producto
-              </button>
+              alNuevo ? (
+                <button className="boton-primario" onClick={alNuevo}>
+                  <Plus className="h-5 w-5" />
+                  Crear el primer servicio o producto
+                </button>
+              ) : undefined
             }
           >
             Carga los servicios de la barbería (cortes, barba…) y los productos que venden (ceras, vapes…). Si tienes

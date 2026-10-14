@@ -104,6 +104,21 @@ export const esquemaCodigo = z
   .regex(/^[A-Za-z0-9._-]+$/, "el código admite letras, números, punto, guion y guion bajo")
   .transform((s) => s.toUpperCase());
 
+/**
+ * Handle de login. Se normaliza a minúsculas siempre — mismo problema que el
+ * código de ítem, mismo arreglo. A propósito NO se usa `normalizar()` (esa
+ * función saca tildes y puntuación para que la búsqueda de marca/cliente sea
+ * difusa a propósito; un handle de login necesita lo contrario: exacto, sin
+ * ambigüedad, para no autenticar a la persona equivocada).
+ */
+export const esquemaUsuarioHandle = z
+  .string()
+  .trim()
+  .min(3)
+  .max(32)
+  .regex(/^[A-Za-z0-9._-]+$/, "el usuario admite letras, números, punto, guion y guion bajo")
+  .transform((s) => s.toLowerCase());
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sobre del evento
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,6 +628,50 @@ export const barberoLiquidado = definir(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Usuarios (login)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ADMIN: los dueños, ven y hacen todo. CAJERO: uso operativo del mostrador,
+ * con varias áreas restringidas (ver el hook de autorización en `http/`).
+ * Agregar un rol acá es un cambio ADITIVO — no rompe cuentas viejas.
+ */
+export const ROLES_USUARIO = ["ADMIN", "CAJERO"] as const;
+export const esquemaRolUsuario = z.enum(ROLES_USUARIO);
+export type RolUsuario = (typeof ROLES_USUARIO)[number];
+
+/**
+ * Alta de una cuenta de login. También sirve para REACTIVAR una desactivada
+ * —mismo truco que `barbero.creado`—: se reemite con el mismo `usuarioId` y
+ * los datos que tenía, en vez de inventar un `usuario.reactivado`.
+ *
+ * `hash` llega YA CALCULADO: generarlo necesita una sal aleatoria, y nada
+ * que dependa de azar puede vivir en el dominio ni en lo que se reproduce al
+ * reconstruir la proyección. Ver `seguridad/contrasenas.ts`.
+ */
+export const usuarioCreado = definir(
+  "usuario.creado",
+  z.object({
+    usuarioId: esquemaUlid,
+    usuario: esquemaUsuarioHandle,
+    nombre: texto(80),
+    rol: esquemaRolUsuario,
+    hash: z.string().min(1).max(200),
+  }),
+);
+
+export const usuarioContrasenaCambiada = definir(
+  "usuario.contrasena_cambiada",
+  z.object({ usuarioId: esquemaUlid, hash: z.string().min(1).max(200) }),
+);
+
+/** Nunca se borra una cuenta: el historial (quién vendió, quién anuló) sigue apuntando a su id. */
+export const usuarioDesactivado = definir(
+  "usuario.desactivado",
+  z.object({ usuarioId: esquemaUlid }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Configuración
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -688,6 +747,9 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   barberoActualizado,
   barberoDesactivado,
   barberoLiquidado,
+  usuarioCreado,
+  usuarioContrasenaCambiada,
+  usuarioDesactivado,
   configActualizada,
   correoEnviado,
 ]);
@@ -750,6 +812,9 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "barbero.actualizado": 1,
   "barbero.desactivado": 1,
   "barbero.liquidado": 1,
+  "usuario.creado": 1,
+  "usuario.contrasena_cambiada": 1,
+  "usuario.desactivado": 1,
   "config.actualizada": 1,
   "correo.enviado": 1,
 };

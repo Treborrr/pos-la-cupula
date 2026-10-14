@@ -22,6 +22,8 @@ import {
   abrirAlmacen,
   borrar,
   carpetaTemporal,
+  conSesionAdmin,
+  dependenciasDeSeguridadDePrueba,
   enviadorDeCorreoFalso,
   itemNuevo,
   notificacionesDePrueba,
@@ -277,7 +279,9 @@ describe("recibo de venta por HTTP", () => {
       notificaciones: notificacionesDePrueba(pos, relojFijo(), { enviador }),
       carpetaDatos: dir,
       version: "pruebas",
+      ...dependenciasDeSeguridadDePrueba(),
     });
+    await conSesionAdmin(app, pos);
     return { app, pos, itemId: itemIdDe(evento) };
   }
 

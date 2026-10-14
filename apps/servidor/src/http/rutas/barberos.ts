@@ -2,6 +2,11 @@
  * Barberos: alta, producción por semana y adelantos. Solo atribución y
  * gestión — nada de comisiones ni liquidación de sueldo (D6 de
  * ARQUITECTURA.md). "Liquidar" acá es saldar los adelantos, no pagar sueldo.
+ *
+ * El cajero puede VER el listado, el reporte y el saldo pendiente —lo
+ * necesita para elegir barbero al cobrar y para saber si alguien tiene
+ * adelantos—, pero el alta/edición/baja del plantel y Liquidar quedan para
+ * ADMIN.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -19,7 +24,7 @@ import { booleanoDeQuery } from "./catalogo";
 import type { Dependencias } from "../app";
 
 export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias) {
-  app.get("/barberos", async (peticion) => {
+  app.get("/barberos", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { incluirInactivos } = z
       .object({ incluirInactivos: booleanoDeQuery().optional() })
       .parse(peticion.query);
@@ -30,31 +35,31 @@ export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias)
     return { barberos };
   });
 
-  app.post("/barberos", async (peticion, respuesta) => {
+  app.post("/barberos", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const { nombre } = z.object({ nombre: z.string().trim().min(1).max(80) }).parse(peticion.body);
     const barberoId = await pos.transaccion(() => {
       const r = crearBarbero(pos.p, nombre);
       return { eventos: r.eventos, resultado: r.barberoId };
-    });
+    }, peticion.actor);
     return respuesta.status(201).send({ barbero: pos.p.barberos.get(barberoId) });
   });
 
-  app.patch("/barberos/:id", async (peticion) => {
+  app.patch("/barberos/:id", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { nombre } = z.object({ nombre: z.string().trim().min(1).max(80) }).parse(peticion.body);
-    await pos.escribir(() => actualizarBarbero(pos.p, id, nombre));
+    await pos.escribir(() => actualizarBarbero(pos.p, id, nombre), peticion.actor);
     return { barbero: pos.p.barberos.get(id) };
   });
 
-  app.post("/barberos/:id/reactivar", async (peticion) => {
+  app.post("/barberos/:id/reactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    await pos.escribir(() => reactivarBarbero(pos.p, id));
+    await pos.escribir(() => reactivarBarbero(pos.p, id), peticion.actor);
     return { barbero: pos.p.barberos.get(id) };
   });
 
-  app.post("/barberos/:id/desactivar", async (peticion) => {
+  app.post("/barberos/:id/desactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    await pos.escribir(() => desactivarBarbero(pos.p, id));
+    await pos.escribir(() => desactivarBarbero(pos.p, id), peticion.actor);
     return { barbero: pos.p.barberos.get(id) };
   });
 
@@ -64,7 +69,7 @@ export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias)
    * pendientes y la última liquidación no dependen del rango: son el estado
    * actual de la cuenta, se mire la semana que se mire.
    */
-  app.get("/barberos/:id/reporte", async (peticion, respuesta) => {
+  app.get("/barberos/:id/reporte", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { desde, hasta } = z
       .object({
@@ -87,14 +92,14 @@ export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias)
    * Salda los adelantos pendientes de un barbero. No paga sueldo ni calcula
    * comisión: eso sigue totalmente fuera del sistema.
    */
-  app.post("/barberos/:id/liquidar", async (peticion, respuesta) => {
+  app.post("/barberos/:id/liquidar", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { notas } = z.object({ notas: z.string().trim().max(500).optional() }).parse(peticion.body ?? {});
 
     const liquidacionId = await pos.transaccion(() => {
       const r = liquidarBarbero(pos.p, id, notas);
       return { eventos: r.eventos, resultado: r.liquidacionId };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({ liquidacion: pos.p.liquidaciones.get(liquidacionId) });
   });

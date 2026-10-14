@@ -272,3 +272,17 @@ export interface FichaCliente {
   ventas: Venta[];
   habituales: { nombre: string; veces: number }[];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Usuarios (login)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RolUsuario = "ADMIN" | "CAJERO";
+
+export interface Usuario {
+  id: string;
+  usuario: string;
+  nombre: string;
+  rol: RolUsuario;
+  activo: boolean;
+}

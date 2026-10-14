@@ -13,7 +13,7 @@
  * crítica tiene que abarcar las dos cosas, no solo la escritura.
  */
 
-import type { EventoNuevo } from "@cupula/contratos";
+import { ACTOR_SISTEMA, type Actor, type EventoNuevo } from "@cupula/contratos";
 
 import type { AlmacenDeEventos } from "../puertos/AlmacenDeEventos";
 import { Proyeccion } from "../proyecciones/Proyeccion";
@@ -131,6 +131,15 @@ export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
    * subirlo acá es lo que hay que tocar el día que se pase a un plan pago.
    */
   "notificaciones.topeTotalDiario": 100,
+
+  /**
+   * Lista de IPs/CIDR permitidas para el login de CAJERO, separadas por coma
+   * ("181.64.123.45,100.64.0.0/10"). El de ADMIN nunca tiene esta
+   * restricción: tiene que poder entrar desde cualquier lado. Vacío = sin
+   * restricción — mismo "apagado por defecto, bien visible si nadie lo
+   * configuró" que ya usaba el candado único que este sistema tenía antes.
+   */
+  "seguridad.redesCajero": "",
 };
 
 export interface ResultadoCobro {
@@ -179,11 +188,19 @@ export class ServicioPos {
    * Corre `fn` en exclusión mutua con cualquier otra transacción. `fn` lee la
    * proyección y devuelve los eventos a escribir; aquí se escriben y se
    * aplican. Nadie ve un estado intermedio.
+   *
+   * `actor` identifica a quién hacer responsable de estos eventos en el log.
+   * Opcional y no al revés —a propósito—: exigirlo en todos lados habría
+   * obligado a tocar cada prueba existente que llama `transaccion`/`escribir`
+   * solo para armar su estado inicial. La única ruta que de verdad NO puede
+   * olvidarse de pasarlo es la HTTP, y esa la cubre
+   * `herramientas/verificar-actor.mjs`, no el tipo. Sin `actor`, el evento
+   * queda a nombre de `ACTOR_SISTEMA` — nunca del viejo "mostrador" genérico.
    */
-  async transaccion<T>(fn: () => { eventos: EventoNuevo[]; resultado: T }): Promise<T> {
+  async transaccion<T>(fn: () => { eventos: EventoNuevo[]; resultado: T }, actor?: Actor): Promise<T> {
     const corrida = this.cola.then(
-      () => this.correr(fn),
-      () => this.correr(fn),
+      () => this.correr(fn, actor),
+      () => this.correr(fn, actor),
     );
     // La cola no muere si una transacción falla: un error de validación no
     // puede dejar el POS trabado hasta que alguien lo reinicie.
@@ -194,11 +211,14 @@ export class ServicioPos {
     return corrida;
   }
 
-  private async correr<T>(fn: () => { eventos: EventoNuevo[]; resultado: T }): Promise<T> {
+  private async correr<T>(fn: () => { eventos: EventoNuevo[]; resultado: T }, actor?: Actor): Promise<T> {
     const { eventos, resultado } = fn();
     if (eventos.length === 0) return resultado;
 
-    const escritos = await this.almacen.agregar(eventos);
+    // Un evento que ya trae su propio `actor` (poco común, pero el tipo lo
+    // permite) no se pisa.
+    const conActor = eventos.map((e) => (e.actor ? e : { ...e, actor: actor ?? ACTOR_SISTEMA }));
+    const escritos = await this.almacen.agregar(conActor);
 
     // Recién aquí la proyección se entera. Si `agregar` falla, el estado en
     // memoria queda igual que el disco: coherentes, aunque la operación se
@@ -219,8 +239,8 @@ export class ServicioPos {
   }
 
   /** Atajo para operaciones que solo escriben y no devuelven nada útil. */
-  async escribir(construir: () => EventoNuevo[]): Promise<void> {
-    await this.transaccion(() => ({ eventos: construir(), resultado: undefined }));
+  async escribir(construir: () => EventoNuevo[], actor?: Actor): Promise<void> {
+    await this.transaccion(() => ({ eventos: construir(), resultado: undefined }), actor);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -235,15 +255,15 @@ export class ServicioPos {
     return { ...CONFIG_POR_DEFECTO, ...Object.fromEntries(this.p.config) };
   }
 
-  async guardarConfig(clave: string, valor: unknown): Promise<void> {
-    await this.escribir(() => [{ tipo: "config.actualizada", datos: { clave, valor } }]);
+  async guardarConfig(clave: string, valor: unknown, actor?: Actor): Promise<void> {
+    await this.escribir(() => [{ tipo: "config.actualizada", datos: { clave, valor } }], actor);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
   // Cobrar
   // ───────────────────────────────────────────────────────────────────────────
 
-  async cobrar(pedido: PedidoDeVenta): Promise<ResultadoCobro> {
+  async cobrar(pedido: PedidoDeVenta, actor?: Actor): Promise<ResultadoCobro> {
     const { ventaId, advertencias, duplicada } = await this.transaccion(() => {
       // La idempotencia se revisa DENTRO de la sección crítica. Si se revisara
       // fuera, dos envíos simultáneos del mismo pedido pasarían los dos el
@@ -287,19 +307,19 @@ export class ServicioPos {
           duplicada: false,
         },
       };
-    });
+    }, actor);
 
     // Ya escrita y aplicada: la venta existe en la proyección.
     return { venta: this.p.ventas.get(ventaId)!, advertencias, duplicada };
   }
 
-  async anular(ventaId: string, motivo: string): Promise<Venta> {
-    await this.escribir(() => anularVenta(this.p, ventaId, motivo));
+  async anular(ventaId: string, motivo: string, actor?: Actor): Promise<Venta> {
+    await this.escribir(() => anularVenta(this.p, ventaId, motivo), actor);
     return this.p.ventas.get(ventaId)!;
   }
 
-  async registrarReimpresion(ventaId: string): Promise<void> {
-    await this.escribir(() => marcarReimpresion(this.p, ventaId));
+  async registrarReimpresion(ventaId: string, actor?: Actor): Promise<void> {
+    await this.escribir(() => marcarReimpresion(this.p, ventaId), actor);
   }
 
   // ───────────────────────────────────────────────────────────────────────────

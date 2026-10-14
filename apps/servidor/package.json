@@ -1,6 +1,6 @@
 {
   "name": "@cupula/servidor",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,12 +9,16 @@
     "build": "node ../../herramientas/empaquetar.mjs",
     "test": "vitest run",
     "test:mirar": "vitest",
-    "tipos": "tsc --noEmit"
+    "tipos": "tsc --noEmit",
+    "crear-usuario": "tsx herramientas/crear-usuario.mts"
   },
   "dependencies": {
     "@cupula/contratos": "*",
+    "@fastify/cookie": "^11.1.3",
+    "@fastify/rate-limit": "^11.2.1",
     "@fastify/static": "^10.1.3",
     "fastify": "^5.12.5",
+    "ipaddr.js": "^2.5.0",
     "qrcode": "^1.5.4",
     "ulid": "^2.3.0",
     "zod": "^3.23.8"

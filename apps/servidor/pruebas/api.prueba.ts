@@ -14,7 +14,7 @@ import { ImpresoraVistaPrevia } from "../src/adaptadores/impresora/ImpresoraVist
 import { ServicioPos } from "../src/servicios/Pos";
 import { ServicioDeRespaldos } from "../src/servicios/Respaldos";
 import { relojDelSistema } from "../src/puertos/Reloj";
-import { abrirAlmacen, borrar, carpetaTemporal, notificacionesDePrueba } from "./ayuda";
+import { abrirAlmacen, borrar, carpetaTemporal, conSesionAdmin, dependenciasDeSeguridadDePrueba, notificacionesDePrueba } from "./ayuda";
 
 const aCerrar: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -39,7 +39,13 @@ async function apiDePrueba(
     notificaciones: notificacionesDePrueba(pos),
     carpetaDatos: dir,
     version: "pruebas",
+    ...dependenciasDeSeguridadDePrueba(),
   });
+  // Estas pruebas son sobre la regla de negocio, no sobre el login: loguea
+  // una vez un ADMIN (ve y hace todo) y de ahí en más `app.inject` manda la
+  // cookie sola. Lo que SÍ prueba el login/los roles vive en
+  // `autenticacion.prueba.ts`, con `app.inject` crudo.
+  await conSesionAdmin(app, pos);
   aCerrar.push(async () => {
     await app.close();
     await pos.cerrar();
@@ -784,9 +790,10 @@ describe("salud", () => {
     const r = await app.inject({ method: "GET", url: "/api/salud" });
     const cuerpo = r.json();
     expect(cuerpo.log.integro).toBe(true);
-    // Tres: el `item.creado` de arriba y los dos `config.actualizada` que
-    // escribe `apiDePrueba` al apagar la exigencia de cliente y de caja abierta.
-    expect(cuerpo.log.eventos).toBe(3);
+    // Cuatro: el `usuario.creado` del admin de prueba, los dos
+    // `config.actualizada` que escribe `apiDePrueba` al apagar la exigencia
+    // de cliente y de caja abierta, y el `item.creado` de arriba.
+    expect(cuerpo.log.eventos).toBe(4);
     expect(cuerpo.impresora.disponible).toBe(false);
     expect(cuerpo.memoria.usadaMB).toBeGreaterThan(0);
   });

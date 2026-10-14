@@ -10,16 +10,35 @@
  * salen del Excel real. Los nombres de barberos y clientes, los productos y
  * las ventas son de mentira.
  *
- * Para empezar de cero:  rm -rf datos-dev  (y reiniciar el servidor)
+ * Para empezar de cero:
+ *   rm -rf datos-dev
+ *   npm run crear-usuario --workspace=@cupula/servidor -- --usuario admin --nombre "Admin de prueba" --rol ADMIN
+ *   npm run dev --workspace=@cupula/servidor   (en otra terminal)
+ *   node herramientas/sembrar-demostracion.mjs --usuario admin --contrasena <lo que hayas puesto>
  *
- * Uso:  node herramientas/sembrar-demostracion.mjs [--url http://localhost:7070]
+ * Desde que el sistema exige login, este script necesita una cuenta YA
+ * creada para entrar — no la crea él: eso es a propósito un camino que no
+ * pasa por HTTP (ver `apps/servidor/herramientas/crear-usuario.mts`).
+ *
+ * Uso:  node herramientas/sembrar-demostracion.mjs --usuario <u> --contrasena <c> [--url http://localhost:7070]
  */
 
 import { argv, exit } from "node:process";
 
 const argumentos = argv.slice(2);
-const posicionUrl = argumentos.indexOf("--url");
-const url = (posicionUrl >= 0 ? argumentos[posicionUrl + 1] : "http://localhost:7070").replace(/\/$/, "");
+const leer = (nombre) => {
+  const i = argumentos.indexOf(`--${nombre}`);
+  return i >= 0 ? argumentos[i + 1] : undefined;
+};
+const url = (leer("url") ?? "http://localhost:7070").replace(/\/$/, "");
+const usuarioLogin = leer("usuario");
+const contrasenaLogin = leer("contrasena");
+
+if (!usuarioLogin || !contrasenaLogin) {
+  console.error("Uso: node herramientas/sembrar-demostracion.mjs --usuario <u> --contrasena <c>");
+  console.error('Hace falta una cuenta YA creada con "npm run crear-usuario" — ver el comentario de arriba.');
+  exit(1);
+}
 
 const ulid = () => {
   const C = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -28,12 +47,20 @@ const ulid = () => {
   return s;
 };
 
+/** Se completa al loguear, abajo, y viaja en cada pedido de ahí en más. */
+let cookieDeSesion = "";
+
 async function api(metodo, ruta, cuerpo) {
   const res = await fetch(`${url}/api${ruta}`, {
     method: metodo,
-    headers: cuerpo ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(cuerpo ? { "Content-Type": "application/json" } : {}),
+      ...(cookieDeSesion ? { cookie: cookieDeSesion } : {}),
+    },
     body: cuerpo ? JSON.stringify(cuerpo) : undefined,
   });
+  const crudo = res.headers.get("set-cookie");
+  if (crudo) cookieDeSesion = crudo.split(";")[0];
   const datos = await res.json().catch(() => null);
   if (!res.ok && res.status !== 200) return { error: datos?.error, estado: res.status };
   return datos;
@@ -45,6 +72,13 @@ try {
   console.error(`No responde el POS en ${url}. Levántalo con  npm run dev.`);
   exit(1);
 }
+
+const login = await api("POST", "/auth/login", { usuario: usuarioLogin, contrasena: contrasenaLogin });
+if (!login?.usuario) {
+  console.error(`No se pudo loguear como "${usuarioLogin}": ${login?.error?.mensaje ?? "credenciales inválidas"}`);
+  exit(1);
+}
+console.log(`Logueado como ${login.usuario.nombre} (${login.usuario.rol}).\n`);
 
 console.log("Sembrando datos de DEMOSTRACIÓN…\n");
 

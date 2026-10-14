@@ -22,7 +22,7 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 |---|---|---|
 | D1 | **PWA servida por un servidor Node local** en la PC de la barbería | El navegador es solo pantalla. El servidor manda. El mismo API HTTP sube a la nube sin tocar el front |
 | D2 | **Sin base de datos. Log append-only en archivos** (JSON Lines) | Cero instalación de motor de BD, cero administración, y cada línea del log es un `INSERT` el día que migremos |
-| D3 | **Un solo usuario**, operando desde la PC del mostrador | Sin login, sin PIN, sin roles. El modelo de datos igual lleva `actor` para no rehacerlo después |
+| D3 | **Login real, dos roles.** (Revisada en v0.11.0 — ver la nota después de esta tabla) | ADMIN (los dueños, ven y hacen todo) y CAJERO (mostrador, varias áreas restringidas). Sigue siendo una sola persona operando a la vez de cada rol en el cajero — no multiusuario simultáneo del mismo tipo de cuenta sin querer: solo una sesión de CAJERO activa en todo el sistema |
 | D4 | **Impresión ESC/POS cruda desde el servidor** | Ticket idéntico siempre, corte automático, QR nítido, sin diálogo de Windows. Perfil genérico 80 mm hasta conocer el modelo |
 | D5 | **Solo nota de venta interna.** Nada de SUNAT | Sin IGV desglosado, sin serie/tipo de comprobante, sin firma digital. Correlativo propio `NV######` |
 | D6 | **Sin comisiones.** Los barberos tienen sueldo fijo | Se registra *quién atendió* como dato para reportes, pero no se calcula ni se liquida sueldo. "Liquidar" (§2.8) salda adelantos en efectivo, no paga comisión |
@@ -33,8 +33,11 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 ### Fuera de alcance en v1 (decidido, no olvidado)
 
 Agenda de citas · promociones y paquetes · devoluciones
-parciales · comisiones · facturación electrónica · multiusuario y roles · multisucursal ·
+parciales · comisiones · facturación electrónica · multisucursal ·
 app nativa · sincronización en la nube.
+
+(**Multiusuario y roles** salió de esta lista en la v0.11.0 — dejó de estar
+fuera de alcance. Ver la nota de D3 abajo.)
 
 > **Los egresos se encendieron en la v0.6.0.** Eran el defecto más grande del
 > sistema: sin registrar las salidas de efectivo (compra de insumos, adelanto a
@@ -73,6 +76,41 @@ app nativa · sincronización en la nube.
 > - **Liquidar** (§2.8): un cursor por `ts` contra la última liquidación, no un
 >   saldo mutable — dos lecturas del mismo log nunca pueden desincronizarse. No
 >   toca D6: deja la cuenta en cero, no calcula ni paga sueldo.
+
+> **La v0.11.0 reversó D3: login real con dos roles.** El sistema iba a subir
+> a Railway como un único servicio público — sin esto, cualquiera que
+> encontrara la URL cobraba, anulaba ventas o leía clientes. Dos piezas que ya
+> estaban reservadas desde el principio hicieron el cambio más chico de lo que
+> parece: el campo `actor` ya existía en cada evento desde el día 1 (antes
+> siempre `ACTOR_MOSTRADOR`), y el modelo de datos nunca asumió un solo
+> usuario real.
+> - **Dos cuentas ADMIN**, los dueños, ven y hacen todo. Se crean con
+>   `crear-usuario.mts` corriendo directo contra el log de eventos —
+>   **nunca** por una pantalla ni un endpoint HTTP. Es el único paso manual
+>   recurrente del sistema.
+> - **Hasta 3 cuentas CAJERO**, de uso diario en el mostrador, creadas por un
+>   ADMIN desde Ajustes → Usuarios (usuario y contraseña elegidos ahí mismo).
+>   Solo las activas cuentan para el tope; desactivar una libera un cupo.
+> - Cajero puede cobrar, operar caja completa, ver catálogo e inventario con
+>   costos y márgenes, registrar entrada/merma/compra de inventario, ver
+>   clientes, ver y anular historial de ventas, y ver el saldo de adelantos
+>   pendientes de los barberos. Cajero **no** puede: Reportes, ninguna
+>   sección de Ajustes, Liquidar, alta/edición/desactivación de catálogo o
+>   barberos, ni ajustar stock por conteo (`/inventario/ajuste` queda ADMIN
+>   a propósito — un ajuste puede absorber en silencio una merma real, sin
+>   ninguna señal secundaria para el dueño, a diferencia de una entrada o
+>   merma explícita).
+> - **Sesión larga**: expira a las 8h de inactividad, igual para los dos
+>   roles. **Una sola sesión de CAJERO activa a la vez** en todo el sistema —
+>   un login nuevo de cualquiera de las 3 cuentas cierra la que estuviera
+>   activa. Los dos ADMIN sí pueden estar logueados a la vez.
+> - El login (y cada pedido posterior) de una sesión CAJERO se valida contra
+>   una lista de IPs/CIDRs configurable en Ajustes → Seguridad (vacía = sin
+>   restricción); el login ADMIN no tiene restricción de red, porque los
+>   dueños necesitan entrar desde cualquier lado.
+> - Cada ruta HTTP lleva un rol explícito (`PUBLICO`/`CAJERO`/`ADMIN`) contra
+>   un único hook global; una ruta sin tag queda ADMIN por defecto
+>   (fail-closed) en vez de accidentalmente abierta.
 
 ---
 
@@ -968,7 +1006,7 @@ nota hasta el día que pasa.
 | Homónimos en el QR de fidelidad | Medio | Selector en pantalla; recomendación de pasar a `qrContent: "serial"` (§8) |
 | El arqueo no cuadra por egresos no registrados | ~~Medio~~ Resuelto en v0.6.0 | `caja.egreso_registrado` descuenta del efectivo esperado. Ver §1 |
 | Cambio de alcance a mitad de obra | Alto | Este documento. Lo que no está en §2 no está en la v1 |
-| **D3 (sin login) publicado en internet** | **Crítico si pasa** | D3 asume que solo llega al puerto quien está en la LAN del local o entró por Tailscale. Una URL pública de Railway no tiene ese filtro: cualquiera que la encuentre cobra, anula o lee clientes. `CLAVE_DE_ACCESO` (v0.7.0) es el candado mínimo — un secreto compartido, no un login con roles, para no ensanchar D3. Se activa a mano por variable de entorno; **queda en cero por defecto**, así que hay que acordarse de ponerlo antes de generar el dominio público |
+| Publicado en internet sin control de acceso | ~~Crítico si pasa~~ Resuelto en v0.11.0 | Login real por usuario, dos roles (D3). Contraseñas con `scrypt`, sesión de 8h, rate-limit + bloqueo en `/auth/login`, lista de IPs permitidas para CAJERO, una sola sesión de CAJERO activa a la vez. Ver la nota de D3 en §1 |
 
 ---
 

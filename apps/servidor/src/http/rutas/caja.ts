@@ -25,7 +25,7 @@ function egresosDelTurno(pos: Dependencias["pos"], turnoId: string) {
 }
 
 export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresora, notificaciones }: Dependencias) {
-  app.get("/caja", async () => {
+  app.get("/caja", { config: { rol: "CAJERO" } }, async () => {
     if (!pos.p.turnoAbierto) {
       const ultimo = [...pos.p.turnos.values()].sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
       return { abierto: false, ultimoTurno: ultimo ?? null };
@@ -41,7 +41,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
    * caja haría que el gasto no quede en ningún lado, y eso es justo lo que
    * rompía el arqueo antes de que esto existiera.
    */
-  app.post("/caja/egreso", async (peticion, respuesta) => {
+  app.post("/caja/egreso", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         monto: z.number().int().min(1),
@@ -55,7 +55,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
     const egresoId = await pos.transaccion(() => {
       const r = registrarEgreso(pos.p, datos);
       return { eventos: r.eventos, resultado: r.egresoId };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({
       egreso: pos.p.egresos.get(egresoId),
@@ -63,7 +63,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
     });
   });
 
-  app.post("/caja/abrir", async (peticion, respuesta) => {
+  app.post("/caja/abrir", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { montoInicial, notas } = z
       .object({
         montoInicial: z.number().int().min(0),
@@ -74,12 +74,12 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
     const turnoId = await pos.transaccion(() => {
       const r = abrirTurno(pos.p, { montoInicial, notas });
       return { eventos: r.eventos, resultado: r.turnoId };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({ turno: pos.p.turnos.get(turnoId) });
   });
 
-  app.post("/caja/cerrar", async (peticion) => {
+  app.post("/caja/cerrar", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { contadoEfectivo, notas } = z
       .object({
         contadoEfectivo: z.number().int().min(0),
@@ -90,7 +90,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
     const cierre = await pos.transaccion(() => {
       const r = cerrarTurno(pos.p, { contadoEfectivo, notas });
       return { eventos: r.eventos, resultado: r };
-    });
+    }, peticion.actor);
 
     // El cierre de turno es el momento natural para tres tareas de
     // mantenimiento: dejar el arranque acotado, confirmarle al dueño que los
@@ -126,7 +126,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
     };
   });
 
-  app.get("/caja/turnos", async (peticion) => {
+  app.get("/caja/turnos", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { limite } = z
       .object({ limite: z.coerce.number().int().min(1).max(200).default(30) })
       .parse(peticion.query);
@@ -142,7 +142,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
    * nada —no es un evento, es releer lo que ya quedó en el log— así que se
    * puede reimprimir el cierre de hoy o el de la semana pasada por igual.
    */
-  app.post("/caja/turnos/:turnoId/imprimir", async (peticion) => {
+  app.post("/caja/turnos/:turnoId/imprimir", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { turnoId } = z.object({ turnoId: z.string().min(1) }).parse(peticion.params);
     const turno = pos.p.turnos.get(turnoId);
     if (!turno || !turno.cerradoEn) {

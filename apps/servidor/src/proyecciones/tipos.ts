@@ -8,7 +8,7 @@
  * se reproduce el log y listo.
  */
 
-import type { CategoriaEgreso, Centimos, MedioPago, Pago, TipoItem, LineaVenta } from "@cupula/contratos";
+import type { CategoriaEgreso, Centimos, MedioPago, Pago, RolUsuario, TipoItem, LineaVenta } from "@cupula/contratos";
 
 export interface Item {
   id: string;
@@ -137,6 +137,17 @@ export interface Cliente {
 export interface Barbero {
   id: string;
   nombre: string;
+  activo: boolean;
+}
+
+/** Una cuenta de login. Nunca se borra: el historial sigue apuntando a su id. */
+export interface Usuario {
+  id: string;
+  usuario: string;
+  nombre: string;
+  rol: RolUsuario;
+  /** Formato auto-descriptivo de `seguridad/contrasenas.ts`. Nunca texto plano. */
+  hash: string;
   activo: boolean;
 }
 

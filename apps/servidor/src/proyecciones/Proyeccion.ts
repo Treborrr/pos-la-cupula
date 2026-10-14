@@ -26,6 +26,7 @@ import {
   type ResumenCorreosDelDia,
   type Turno,
   type TotalesPorMedio,
+  type Usuario,
   type Venta,
 } from "./tipos";
 
@@ -38,7 +39,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 6;
+export const FORMATO_PROYECCION = 7;
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
@@ -98,6 +99,14 @@ export class Proyeccion {
   readonly liquidaciones = new Map<string, Liquidacion>();
   /** barberoId → su liquidación más reciente. Es el cursor del saldo pendiente. */
   readonly ultimaLiquidacionPorBarbero = new Map<string, Liquidacion>();
+
+  readonly usuarios = new Map<string, Usuario>();
+  /**
+   * handle (minúsculas) → usuarioId. Solo activos — mismo patrón que
+   * `porCodigo`: se libera al desactivar, así que un handle que dejó de usarse
+   * puede dárselo a una persona nueva sin tocar la cuenta vieja.
+   */
+  readonly porNombreDeUsuario = new Map<string, string>();
 
   readonly config = new Map<string, unknown>();
 
@@ -412,6 +421,38 @@ export class Proyeccion {
         break;
       }
 
+      // También cubre la reactivación: se reemite con el mismo `usuarioId`
+      // (igual que `barbero.creado`), así que simplemente vuelve a quedar
+      // activo con el handle reindexado.
+      case "usuario.creado":
+        this.usuarios.set(e.datos.usuarioId, {
+          id: e.datos.usuarioId,
+          usuario: e.datos.usuario,
+          nombre: e.datos.nombre,
+          rol: e.datos.rol,
+          hash: e.datos.hash,
+          activo: true,
+        });
+        this.porNombreDeUsuario.set(e.datos.usuario, e.datos.usuarioId);
+        break;
+
+      case "usuario.contrasena_cambiada": {
+        const u = this.usuarios.get(e.datos.usuarioId);
+        if (u) u.hash = e.datos.hash;
+        break;
+      }
+
+      case "usuario.desactivado": {
+        const u = this.usuarios.get(e.datos.usuarioId);
+        if (u) {
+          u.activo = false;
+          if (this.porNombreDeUsuario.get(u.usuario) === u.id) {
+            this.porNombreDeUsuario.delete(u.usuario);
+          }
+        }
+        break;
+      }
+
       case "config.actualizada":
         this.config.set(e.datos.clave, e.datos.valor);
         break;
@@ -690,6 +731,7 @@ export class Proyeccion {
       clientes: [...this.clientes.values()],
       barberos: [...this.barberos.values()],
       liquidaciones: [...this.liquidaciones.values()],
+      usuarios: [...this.usuarios.values()],
       config: [...this.config.entries()],
       correosPorDia: [...this.correosPorDia.entries()].map(([dia, r]) => [
         dia,
@@ -744,6 +786,10 @@ export class Proyeccion {
       p.liquidaciones.set(l.id, l);
       const actual = p.ultimaLiquidacionPorBarbero.get(l.barberoId);
       if (!actual || l.ts > actual.ts) p.ultimaLiquidacionPorBarbero.set(l.barberoId, l);
+    }
+    for (const u of d.usuarios ?? []) {
+      p.usuarios.set(u.id, u);
+      if (u.activo) p.porNombreDeUsuario.set(u.usuario, u.id);
     }
     for (const [k, v] of d.config ?? []) p.config.set(k, v);
     for (const [dia, r] of d.correosPorDia ?? []) {

@@ -31,14 +31,16 @@ nada.
 | H10 | Rediseño de la interfaz, primeros pasos guiados, lector de tickets | ✅ |
 | H11 | Auditoría exportable y acceso remoto por Tailscale | ✅ |
 | H12 | Egresos de caja, margen real, reposición y ventas por hora | ✅ |
-| H13 | Listo para Railway: `PORT`, datos en Volumen persistente, candado de acceso opcional | ✅ |
+| H13 | Listo para Railway: `PORT`, datos en Volumen persistente | ✅ |
 | H14 | Aviso de reloj atrasado, alertas persistentes, propinas, cierre de turno impreso | ✅ |
 | H15 | Caja obligatoria por defecto, fotos de producto, compras multi-línea, egresos con categoría, sección Barberos (reporte semanal y liquidación de adelantos) | ✅ |
+| H16 | Alertas técnicas y reporte de cierre por correo, recibo de venta al cliente (Resend) | ✅ |
+| H17 | Login real, dos roles (ADMIN/CAJERO), sesiones, lista de IPs permitidas para el mostrador | ✅ |
 
-**287 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**366 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
-importación de catálogo, reportes de margen, respaldos, auditoría, el candado
-de acceso, las propinas y los adelantos a barberos.
+importación de catálogo, reportes de margen, respaldos, auditoría, autenticación
+y roles, las propinas y los adelantos a barberos.
 
 ### Lo que queda pendiente
 
@@ -52,6 +54,39 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.11.0** — login real, dos roles.
+
+- **Dos cuentas ADMIN** (los dueños, ven y hacen todo) creadas directo contra
+  el log de eventos con `npm run crear-usuario` en `apps/servidor` —
+  **nunca** por una pantalla ni un endpoint HTTP. Es el único paso manual
+  recurrente del sistema.
+- **Hasta 3 cuentas CAJERO**, creadas por un ADMIN desde Ajustes → Usuarios,
+  con usuario y contraseña elegidos ahí mismo. Cajero puede cobrar, operar
+  caja, ver catálogo e inventario con costos, registrar entrada/merma/compra,
+  ver clientes, ver y anular ventas, y ver los adelantos pendientes de los
+  barberos — pero no entra a Reportes ni a Ajustes, no liquida, no da de
+  alta ni edita catálogo o barberos, y no ajusta stock por conteo.
+- **Sesión de 8h de inactividad**, una sola sesión de CAJERO activa en todo
+  el sistema a la vez (un login nuevo cierra la anterior), y una lista de
+  IPs permitidas configurable en Ajustes → Seguridad para restringir el
+  login del mostrador a la red del local.
+- Contraseñas con `scrypt`, rate-limit y bloqueo temporal tras varios
+  intentos fallidos en `/auth/login`, mensaje de error idéntico sin importar
+  la causa del rechazo.
+- Ver la nota de D3 en `ARQUITECTURA.md` §1 para el detalle completo.
+
+**v0.10.0** — alertas, reporte de cierre y recibo de venta por correo (Resend).
+
+- **Alertas técnicas agrupadas**: reloj atrasado, impresora, respaldo externo
+  y líneas en cuarentena ahora llegan en un solo correo al dueño, en vez de
+  solo verse en la franja roja de la app.
+- **Reporte de cierre del día** —ventas, propinas, qué comprar, caja
+  descuadrada— una sola vez por día aunque se cierre caja más de una vez.
+- **Recibo de venta opcional por correo al cliente**, con el logo de la
+  marca, desde la misma pantalla de Cobro.
+- Los tres canales cuentan contra un tope diario compartido (100/día, el
+  plan gratis de Resend) y están apagados hasta que se configure la API key.
 
 **v0.9.0** — caja obligatoria, fotos de producto, compras, egresos con categoría y la sección Barberos.
 
@@ -110,16 +145,14 @@ la fila `1234567890…` entre en una sola línea.
   disco que desaparece con el contenedor. Se detecta el entorno (`RAILWAY_ENVIRONMENT`,
   que Railway pone solo) y si no hay `POS_DATOS` configurado, no arranca — con
   el mensaje exacto de qué falta, no un error genérico.
-- **Candado de acceso opcional.** El sistema no tiene login por diseño (es
-  parte de la arquitectura, pensado para una sola PC en la LAN del local, con
-  Tailscale para el acceso remoto). Publicado en una URL de internet esa
-  premisa no aplica: cualquiera que la encuentre podría cobrar, anular o leer
-  clientes. `CLAVE_DE_ACCESO` activa un candado único (HTTP Basic, una sola
-  clave compartida) **solo si se configura explícitamente** — la instalación
-  de la barbería, que no define esa variable, sigue exactamente igual.
+- **Candado de acceso opcional.** El sistema no tenía login por diseño (parte
+  de la arquitectura de entonces, pensada para una sola PC en la LAN del
+  local). `CLAVE_DE_ACCESO` activaba un candado único (HTTP Basic, una sola
+  clave compartida) **solo si se configuraba explícitamente**.
+  Reemplazado en v0.11.0 por login real con dos roles — ver más abajo.
 - **`railway.json`** con el build, el comando de arranque y el healthcheck
-  (`/api/salud`, exceptuado del candado porque Railway no manda credenciales
-  al revisarlo).
+  (`/api/salud`, siempre público: Railway no manda credenciales al
+  revisarlo).
 
 **v0.6.0** — que la caja cuadre, y que los reportes respondan qué comprar y a
 qué hora.
@@ -287,11 +320,22 @@ npm run dev:pwa
 En desarrollo los datos van a `datos-dev/` (no se versiona). En Windows, a
 `C:\POSCupula\datos`. Se puede forzar con `POS_DATOS=/ruta/que/sea`.
 
+Desde la v0.11.0 el sistema exige login: antes de poder entrar hace falta
+una cuenta, y esa cuenta no se crea por HTTP ni por la UI.
+
+```bash
+npm run crear-usuario --workspace=@cupula/servidor -- --usuario admin --nombre "Admin de prueba" --rol ADMIN
+```
+
+Pide la contraseña de forma interactiva (nunca por argumento). Repetir con
+`--rol CAJERO` si se quiere probar también ese lado. Hasta 3 cuentas CAJERO
+se pueden crear después desde Ajustes → Usuarios, ya logueado como ADMIN.
+
 ### Llenarlo con datos para probar
 
 ```bash
-npm run dev                                    # en otra terminal
-node herramientas/sembrar-demostracion.mjs     # catálogo, ventas, caja y clientes
+npm run dev                                                         # en otra terminal
+node herramientas/sembrar-demostracion.mjs --usuario admin --contrasena <la que pusiste arriba>
 ```
 
 Siembra por el API —las mismas validaciones que una venta hecha a mano— un
@@ -369,10 +413,10 @@ un contenedor en la nube no les llega. Lo que sí sirve corriendo en Railway es
 el mismo API + PWA para catálogo, reportes, caja, clientes — todo salvo
 imprimir desde un cajón físico.
 
-**Antes de generar una URL pública, decidir sobre `CLAVE_DE_ACCESO` (ver
-abajo).** Sin ella, cualquiera que encuentre la URL puede cobrar, anular,
-cambiar precios o leer la ficha de un cliente: hoy esa protección la da la LAN
-del local y Tailscale, y ninguna de las dos existe en una URL de internet.
+**Antes de generar una URL pública, hay que haber creado las dos cuentas
+ADMIN (ver abajo).** Desde la v0.11.0 el sistema exige login real: sin una
+cuenta ADMIN ya creada no hay cómo entrar ni cómo dar de alta a los cajeros
+desde la UI.
 
 1. **railway.app → New Project → Deploy from GitHub repo**, elegir
    `pos-la-cupula`. Railway lee `railway.json` del repo: ya sabe compilar
@@ -384,28 +428,34 @@ del local y Tailscale, y ninguna de las dos existe en una URL de internet.
    es preferible que falle claro a que pierda datos en el primer `git push`.
 3. **Settings → Variables**, agregar:
    - `POS_DATOS` = `/data` (la ruta del Volumen del paso 2)
-   - `CLAVE_DE_ACCESO` = una clave larga, random, que no se use en ningún otro
-     lado — **recomendado antes de exponerlo a internet**. Sin esta variable
-     el POS queda abierto, igual que en la LAN.
    - `PORT` no se toca: Railway la pone sola y el servidor ya la respeta.
-4. **Settings → Networking → Generate Domain** cuando se quiera la URL
+4. **Crear las dos cuentas ADMIN** antes de generar la URL pública: con el
+   servicio **detenido** (para no tener dos escritores sobre el mismo
+   archivo), `railway run npm run crear-usuario --workspace=@cupula/servidor
+   -- --usuario <handle> --nombre "<nombre>" --rol ADMIN` (pide la
+   contraseña de forma interactiva, nunca por argumento). Repetir para la
+   segunda cuenta, y reiniciar el servicio.
+5. **Settings → Networking → Generate Domain** cuando se quiera la URL
    pública. Railway por sí solo (sin este paso) no es alcanzable desde
    internet — así que hasta este punto se puede probar todo sin riesgo.
-5. Cada `git push` a `main` dispara un build y despliegue nuevos solo —
+6. Ya con la URL pública, considerar configurar **Ajustes → Seguridad** (la
+   lista de IPs/redes permitidas para el login de mostrador) desde una
+   cuenta ADMIN — sin eso, cualquier CAJERO puede loguearse desde cualquier
+   lado. El login ADMIN nunca tiene esta restricción.
+7. Cada `git push` a `main` dispara un build y despliegue nuevos solo —
    es el despliegue continuo pedido. El Volumen (los datos) sobrevive a cada
    uno; el resto del contenedor se reconstruye desde cero.
 
-Si entra `CLAVE_DE_ACCESO`, el navegador pide usuario `cupula` y la clave la
-primera vez y la recuerda. Es un candado único para todo el local —no hay
-usuarios ni roles— a propósito: así se mantiene la decisión de "sin login"
-que tiene el sistema para la PC de la barbería (§1, decisión D3 de
-`ARQUITECTURA.md`), sin reescribirla para la nube.
+Las cuentas CAJERO (hasta 3) ya no se crean por este camino: una vez
+logueado como ADMIN, se dan de alta desde Ajustes → Usuarios. Ver la nota de
+D3 en `ARQUITECTURA.md` §1 para el diseño completo de roles y sesiones.
 
 ## Verificar
 
 ```bash
-npm test                                            # las 245 pruebas
+npm test                                            # las 366 pruebas
 npm run verificar-capas                             # que el dominio no toque archivos, red ni reloj
+npm run verificar-actor                             # que toda ruta HTTP que escribe pase quién lo hizo
 node apps/servidor/dist/pos-cupula.mjs verificar    # integridad del log en disco
 ```
 

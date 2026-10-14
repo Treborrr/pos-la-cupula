@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -22,9 +22,12 @@ import {
 
 import { api, ServidorCaido, type EstadoGeneral } from "./lib/api";
 import { hora } from "./lib/formato";
+import { banderaDeSalidaIntencional, ProveedorDeUsuario, type UsuarioDeSesion } from "./lib/sesion";
 import { usarPrimerosPasos } from "./componentes/PrimerosPasos";
 import { BotonLectorDeTicket } from "./componentes/LectorDeTicket";
+import { MenuDeCuenta } from "./componentes/MenuDeCuenta";
 
+import { Login } from "./paginas/Login";
 import { Cobrar } from "./paginas/Cobrar";
 import { Historial } from "./paginas/Historial";
 import { Catalogo } from "./paginas/Catalogo";
@@ -35,7 +38,10 @@ import { Barberos } from "./paginas/Barberos";
 import { Reportes } from "./paginas/Reportes";
 import { Ajustes } from "./paginas/Ajustes";
 
-const GRUPOS: { titulo: string; secciones: { ruta: string; texto: string; icono: LucideIcon; exacta?: boolean }[] }[] = [
+const GRUPOS: {
+  titulo: string;
+  secciones: { ruta: string; texto: string; icono: LucideIcon; exacta?: boolean; soloAdmin?: boolean }[];
+}[] = [
   {
     titulo: "Atender",
     secciones: [
@@ -51,34 +57,90 @@ const GRUPOS: { titulo: string; secciones: { ruta: string; texto: string; icono:
       { ruta: "/inventario", texto: "Inventario", icono: Boxes },
       { ruta: "/clientes", texto: "Clientes", icono: Users },
       { ruta: "/barberos", texto: "Barberos", icono: Scissors },
-      { ruta: "/reportes", texto: "Reportes", icono: BarChart3 },
+      // Reportes es información financiera agregada del negocio: solo dueños.
+      { ruta: "/reportes", texto: "Reportes", icono: BarChart3, soloAdmin: true },
     ],
   },
   {
     titulo: "Sistema",
-    secciones: [{ ruta: "/ajustes", texto: "Ajustes", icono: Settings }],
+    secciones: [{ ruta: "/ajustes", texto: "Ajustes", icono: Settings, soloAdmin: true }],
   },
 ];
 
+/**
+ * La puerta de entrada: nadie ve el shell real sin sesión. El límite de
+ * verdad está del lado del servidor (cada ruta exige su rol) — esto es solo
+ * para no mostrar una pantalla que de todos modos no va a poder usar.
+ */
 export function App() {
+  const yo = useQuery({
+    queryKey: ["auth", "yo"],
+    queryFn: () => api.get<{ usuario: UsuarioDeSesion | null }>("/auth/yo"),
+    // Sigue preguntando con la sesión abierta: es lo que detecta que a un
+    // cajero lo echó otro cajero al loguearse, o que un admin lo desactivó.
+    refetchInterval: 30_000,
+  });
+
+  const eraUsuario = useRef<UsuarioDeSesion | null>(null);
+  const [desconectadoPor, setDesconectadoPor] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ahora = yo.data?.usuario ?? null;
+    if (eraUsuario.current && !ahora) {
+      if (banderaDeSalidaIntencional.valor) {
+        // Un "Salir" a propósito no necesita que le expliquen por qué ya no hay sesión.
+        banderaDeSalidaIntencional.valor = false;
+      } else {
+        setDesconectadoPor(
+          "Se cerró tu sesión — puede ser que otro cajero haya iniciado la suya, o que se te desconectó por seguridad. Vuelve a entrar.",
+        );
+      }
+    }
+    eraUsuario.current = ahora;
+  }, [yo.data?.usuario]);
+
+  // El servidor vive en esta misma máquina. Que no responda no es "se cayó
+  // internet": es que el POS está apagado, y hay que decirlo sin rodeos.
+  if (yo.error instanceof ServidorCaido) return <ServidorApagado />;
+
+  if (yo.isLoading) return null;
+
+  if (!yo.data?.usuario) {
+    return (
+      <Routes>
+        <Route path="/login/admin" element={<Login modoAdmin mensaje={desconectadoPor} />} />
+        <Route path="*" element={<Login mensaje={desconectadoPor} />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <ProveedorDeUsuario value={yo.data.usuario}>
+      <AppAutenticada usuario={yo.data.usuario} />
+    </ProveedorDeUsuario>
+  );
+}
+
+function AppAutenticada({ usuario }: { usuario: UsuarioDeSesion }) {
   const estado = useQuery({
     queryKey: ["estado"],
     queryFn: () => api.get<EstadoGeneral>("/estado"),
     refetchInterval: 15_000,
   });
 
-  // El servidor vive en esta misma máquina. Que no responda no es "se cayó
-  // internet": es que el POS está apagado, y hay que decirlo sin rodeos.
-  if (estado.error instanceof ServidorCaido) return <ServidorApagado />;
+  const grupos = GRUPOS.map((g) => ({
+    ...g,
+    secciones: g.secciones.filter((s) => !s.soloAdmin || usuario.rol === "ADMIN"),
+  })).filter((g) => g.secciones.length > 0);
 
   return (
     <div className="flex h-full flex-col bg-hueso">
       <BarraDeAlertas alertas={estado.data?.alertas} />
 
       <div className="flex min-h-0 flex-1 md:flex-row">
-        <MenuLateral estado={estado.data} />
+        <MenuLateral estado={estado.data} grupos={grupos} usuario={usuario} />
 
-        <MenuMovil />
+        <MenuMovil grupos={grupos} />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <BarraSuperior estado={estado.data} />
@@ -93,8 +155,9 @@ export function App() {
               <Route path="/clientes" element={<Clientes />} />
               <Route path="/clientes/:id" element={<Clientes />} />
               <Route path="/barberos" element={<Barberos />} />
-              <Route path="/reportes" element={<Reportes />} />
-              <Route path="/ajustes" element={<Ajustes />} />
+              {usuario.rol === "ADMIN" ? <Route path="/reportes" element={<Reportes />} /> : null}
+              {usuario.rol === "ADMIN" ? <Route path="/ajustes" element={<Ajustes />} /> : null}
+              <Route path="/login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
@@ -129,10 +192,10 @@ function BarraDeAlertas({ alertas }: { alertas?: { codigo: string; mensaje: stri
 }
 
 /** En el celular el menú lateral no entra: pasa a una barra de íconos. */
-function MenuMovil() {
+function MenuMovil({ grupos }: { grupos: typeof GRUPOS }) {
   return (
     <nav className="scroll-fino flex shrink-0 gap-1 overflow-x-auto bg-tinta px-2 py-2 md:hidden">
-      {GRUPOS.flatMap((g) => g.secciones).map((s) => (
+      {grupos.flatMap((g) => g.secciones).map((s) => (
         <NavLink
           key={s.ruta}
           to={s.ruta}
@@ -151,7 +214,15 @@ function MenuMovil() {
   );
 }
 
-function MenuLateral({ estado }: { estado?: EstadoGeneral }) {
+function MenuLateral({
+  estado,
+  grupos,
+  usuario,
+}: {
+  estado?: EstadoGeneral;
+  grupos: typeof GRUPOS;
+  usuario: UsuarioDeSesion;
+}) {
   const pasos = usarPrimerosPasos();
 
   return (
@@ -161,7 +232,7 @@ function MenuLateral({ estado }: { estado?: EstadoGeneral }) {
       </div>
 
       <nav className="scroll-fino min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-1">
-        {GRUPOS.map((g) => (
+        {grupos.map((g) => (
           <div key={g.titulo}>
             <div className="mb-1.5 hidden px-3 text-xs font-semibold tracking-wider text-hueso/35 uppercase xl:block">
               {g.titulo}
@@ -189,7 +260,7 @@ function MenuLateral({ estado }: { estado?: EstadoGeneral }) {
       </nav>
 
       <div className="shrink-0 space-y-2 p-3">
-        {pasos.listos && pasos.hechos < pasos.total ? (
+        {usuario.rol === "ADMIN" && pasos.listos && pasos.hechos < pasos.total ? (
           <NavLink
             to="/ajustes"
             className="hidden rounded-xl bg-white/[0.06] p-3 transition-colors hover:bg-white/10 xl:block"
@@ -208,6 +279,7 @@ function MenuLateral({ estado }: { estado?: EstadoGeneral }) {
         ) : null}
 
         <EstadoDeCaja estado={estado} />
+        <MenuDeCuenta usuario={usuario} />
       </div>
     </aside>
   );

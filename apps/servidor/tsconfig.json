@@ -23,5 +23,5 @@
       "@cupula/contratos/*": ["../../paquetes/contratos/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "pruebas/**/*.ts", "../../paquetes/contratos/src/**/*.ts"]
+  "include": ["src/**/*.ts", "pruebas/**/*.ts", "herramientas/**/*.mts", "../../paquetes/contratos/src/**/*.ts"]
 }

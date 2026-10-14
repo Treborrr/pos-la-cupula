@@ -14,13 +14,13 @@ import type { Dependencias } from "../app";
 
 export async function rutasSistema(
   app: FastifyInstance,
-  { pos, impresora, respaldos, notificaciones, version }: Dependencias,
+  { pos, impresora, respaldos, notificaciones, version, enNube }: Dependencias,
 ) {
   /**
    * Diagnóstico. Es la PRIMERA pregunta cuando algo falla, y está pensada para
    * poder leerse por teléfono: todo lo que importa en una sola respuesta.
    */
-  app.get("/salud", async () => {
+  app.get("/salud", { config: { rol: "PUBLICO" } }, async () => {
     const integridad = await pos.almacen.verificar();
     const memoria = process.memoryUsage();
 
@@ -53,7 +53,7 @@ export async function rutasSistema(
   });
 
   /** Lo que la PWA necesita al arrancar, en una sola llamada. */
-  app.get("/estado", async () => {
+  app.get("/estado", { config: { rol: "CAJERO" } }, async () => {
     const estadoImpresora = await impresora.estado();
     const modoImpresora = pos.config<string>("impresora.modo");
 
@@ -81,16 +81,18 @@ export async function rutasSistema(
         respaldos: respaldos.estadoCacheado(),
         impresoraConfigurada: Boolean(modoImpresora && modoImpresora !== "vistaPrevia"),
         impresora: estadoImpresora,
+        enNube,
+        redesCajero: pos.config<string>("seguridad.redesCajero"),
       }),
     };
   });
 
-  app.get("/config", async () => pos.configCompleta());
+  app.get("/config", { config: { rol: "ADMIN" } }, async () => pos.configCompleta());
 
-  app.put("/config", async (peticion) => {
+  app.put("/config", { config: { rol: "ADMIN" } }, async (peticion) => {
     const cuerpo = z.record(z.unknown()).parse(peticion.body);
     for (const [clave, valor] of Object.entries(cuerpo)) {
-      await pos.guardarConfig(clave, valor);
+      await pos.guardarConfig(clave, valor, peticion.actor);
     }
 
     // El servicio de respaldos guarda el destino en memoria, así que cambiar la
@@ -112,7 +114,7 @@ export async function rutasSistema(
    * inequívoco (nuestro prefijo, un serial conocido) y al final lo ambiguo
    * (un nombre suelto), nunca al revés.
    */
-  app.get("/escaneo", async (peticion) => {
+  app.get("/escaneo", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { valor } = z.object({ valor: z.string().min(1).max(200) }).parse(peticion.query);
     const texto = valor.trim();
 

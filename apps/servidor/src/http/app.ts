@@ -8,17 +8,24 @@
  */
 
 import Fastify, { type FastifyInstance } from "fastify";
+import fastifyCookie from "@fastify/cookie";
+import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import { ZodError } from "zod";
 import * as path from "node:path";
 import { mkdir } from "node:fs/promises";
 
-import { esErrorDeNegocio } from "../dominio/errores";
+import { esErrorDeAutenticacion, esErrorDeAutorizacion, esErrorDeNegocio } from "../dominio/errores";
 import type { ServicioPos } from "../servicios/Pos";
 import type { Impresora } from "../puertos/Impresora";
 import type { ServicioDeRespaldos } from "../servicios/Respaldos";
 import type { ServicioDeNotificaciones } from "../servicios/Notificaciones";
+import type { ServicioDeSesiones } from "../servicios/Sesiones";
+import type { ServicioDeIntentosDeLogin } from "../servicios/IntentosDeLogin";
 
+import { registrarAutorizacion } from "./autorizacion";
+import { rutasAuth } from "./rutas/auth";
+import { rutasUsuarios } from "./rutas/usuarios";
 import { rutasSistema } from "./rutas/sistema";
 import { rutasCatalogo } from "./rutas/catalogo";
 import { rutasVentas } from "./rutas/ventas";
@@ -33,11 +40,20 @@ export interface Dependencias {
   impresora: Impresora;
   respaldos: ServicioDeRespaldos;
   notificaciones: ServicioDeNotificaciones;
+  sesiones: ServicioDeSesiones;
+  intentosDeLogin: ServicioDeIntentosDeLogin;
   /** Carpeta con la PWA compilada. Si no existe, solo se sirve el API. */
   carpetaPwa?: string;
   /** La carpeta `datos/`. Hoy solo la usan las fotos de catálogo. */
   carpetaDatos: string;
   version: string;
+  /**
+   * `true` bajo Railway (`RAILWAY_ENVIRONMENT`). Apaga el explorador de
+   * carpetas de Ajustes → Respaldos: recorrer/crear carpetas por ruta
+   * arbitraria es la mayor superficie de ataque de toda la app, y en la nube
+   * no sirve para nada —el único disco escribible es el Volumen montado—.
+   */
+  enNube: boolean;
 }
 
 export async function construirApp(deps: Dependencias): Promise<FastifyInstance> {
@@ -47,7 +63,20 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     logger: { level: process.env.NIVEL_LOG ?? (process.env.VITEST ? "silent" : "info") },
     // El cuerpo más grande que puede llegar es un ticket con muchas líneas.
     bodyLimit: 1_000_000,
+    // Necesario para que `request.ip`/`request.protocol` lean `X-Forwarded-*`
+    // detrás del proxy de Railway — sin esto, la lista de redes permitidas
+    // del cajero compararía contra la IP interna del proxy, no la de quien
+    // se conectó de verdad. Confirmar el comportamiento real una vez
+    // desplegado; si Railway resulta ser más de un salto, endurecer esto a
+    // un número exacto en vez de confiar en toda la cadena.
+    trustProxy: true,
   });
+
+  await app.register(fastifyCookie);
+  // `global: false`: el límite de intentos NO se aplica solo porque sí a
+  // cada ruta — se activa a propósito en `/auth/login`, donde de verdad
+  // importa, para no interferir con el ritmo normal de cobrar.
+  await app.register(fastifyRateLimit, { global: false });
 
   // Las fotos de catálogo llegan CRUDAS —ni JSON ni multipart—, con el
   // Content-Type real de la imagen. `'*'` es el comodín que Fastify usa SOLO
@@ -69,6 +98,14 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
    * usuario se le dice que fue del sistema, sin filtrarle un stack trace.
    */
   app.setErrorHandler((error, peticion, respuesta) => {
+    if (esErrorDeAutenticacion(error)) {
+      return respuesta.status(401).send({ error: { codigo: error.codigo, mensaje: error.message } });
+    }
+
+    if (esErrorDeAutorizacion(error)) {
+      return respuesta.status(403).send({ error: { codigo: "ROL_INSUFICIENTE", mensaje: error.message } });
+    }
+
     if (esErrorDeNegocio(error)) {
       return respuesta.status(400).send({
         error: { codigo: error.codigo, mensaje: error.message, sugerencia: error.sugerencia },
@@ -109,6 +146,11 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
 
   await app.register(
     async (api) => {
+      // Antes que cualquier ruta: decide quién puede llegar a cada una.
+      registrarAutorizacion(api, deps);
+
+      await rutasAuth(api, deps);
+      await rutasUsuarios(api, deps);
       await rutasSistema(api, deps);
       await rutasCatalogo(api, deps);
       await rutasVentas(api, deps);

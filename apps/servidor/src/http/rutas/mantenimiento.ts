@@ -19,11 +19,11 @@ import type { Dependencias } from "../app";
 
 export async function rutasMantenimiento(
   app: FastifyInstance,
-  { pos, impresora, respaldos }: Dependencias,
+  { pos, impresora, respaldos, enNube }: Dependencias,
 ) {
   // ── Impresora ─────────────────────────────────────────────────────────────
 
-  app.get("/impresora", async () => ({
+  app.get("/impresora", { config: { rol: "ADMIN" } }, async () => ({
     estado: await impresora.estado(),
     configuracion: {
       modo: pos.config("impresora.modo"),
@@ -54,7 +54,7 @@ export async function rutasMantenimiento(
    * vacía y el motivo, porque dejar la pantalla de Ajustes rota por no poder
    * enumerar impresoras sería peor que mostrarla sin la lista.
    */
-  app.get("/impresora/windows", async () => {
+  app.get("/impresora/windows", { config: { rol: "ADMIN" } }, async () => {
     if (process.platform !== "win32") return { disponible: false, impresoras: [] };
     try {
       return { disponible: true, impresoras: await listarImpresorasWindows() };
@@ -68,7 +68,7 @@ export async function rutasMantenimiento(
    * llegue la ticketera: verifica el transporte, el perfil, la página de
    * códigos (las tildes), el corte, el logo y el QR, sin cobrarle a nadie.
    */
-  app.post("/impresora/prueba", async () => {
+  app.post("/impresora/prueba", { config: { rol: "ADMIN" } }, async () => {
     const resultado = await impresora.imprimirVenta(
       // Con las columnas del perfil elegido: así la regla de números mide
       // exactamente el ancho que el perfil dice tener.
@@ -99,9 +99,9 @@ export async function rutasMantenimiento(
 
   // ── Respaldos ─────────────────────────────────────────────────────────────
 
-  app.get("/respaldos", async () => respaldos.estado());
+  app.get("/respaldos", { config: { rol: "ADMIN" } }, async () => respaldos.estado());
 
-  app.post("/respaldos", async (peticion) => {
+  app.post("/respaldos", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { etiqueta } = z
       .object({ etiqueta: z.string().trim().max(40).optional() })
       .parse(peticion.body ?? {});
@@ -117,11 +117,27 @@ export async function rutasMantenimiento(
    * borra. Que la carpeta "exista" no alcanza — un USB desconectado deja la
    * letra de unidad, y OneDrive puede estar pausado.
    */
-  app.post("/respaldos/verificar-destino", async () => {
+  app.post("/respaldos/verificar-destino", { config: { rol: "ADMIN" } }, async () => {
     const destino = pos.config<string>("respaldos.destinoExterno");
     respaldos.configurarDestino(destino ?? null);
     return respaldos.verificarDestino();
   });
+
+  /**
+   * Explorar y crear carpetas por ruta arbitraria del disco es, de lejos, la
+   * mayor superficie de ataque de toda la app. Tiene sentido en la PC de la
+   * barbería (elegir dónde respaldar); en Railway no sirve para nada —el
+   * único disco escribible es el Volumen montado— así que se apaga entero.
+   */
+  function rechazarEnNube() {
+    if (enNube) {
+      throw new ErrorDeNegocio(
+        "DATO_INVALIDO",
+        "El explorador de carpetas no está disponible en este despliegue.",
+        "La carpeta de respaldos se configura como ruta del Volumen montado, no se navega.",
+      );
+    }
+  }
 
   /**
    * Las carpetas de la máquina, para elegir el destino sin tipear la ruta.
@@ -129,7 +145,8 @@ export async function rutasMantenimiento(
    * No se puede usar el explorador de Windows ni el selector del navegador;
    * el porqué de las dos cosas está en `consultas/carpetas.ts`.
    */
-  app.get("/carpetas", async (peticion) => {
+  app.get("/carpetas", { config: { rol: "ADMIN" } }, async (peticion) => {
+    rechazarEnNube();
     const { ruta } = z.object({ ruta: z.string().max(400).optional() }).parse(peticion.query);
     return listarCarpetas(ruta);
   });
@@ -142,7 +159,8 @@ export async function rutasMantenimiento(
    * crear la carpeta a mano y volver — y cada paso fuera del sistema es un
    * paso donde la configuración se abandona a medias.
    */
-  app.post("/carpetas", async (peticion, respuesta) => {
+  app.post("/carpetas", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
+    rechazarEnNube();
     const { dentroDe, nombre } = z
       .object({
         dentroDe: z.string().min(1).max(400),

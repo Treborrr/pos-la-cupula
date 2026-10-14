@@ -105,7 +105,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
     }
   }
 
-  app.get("/catalogo", async (peticion) => {
+  app.get("/catalogo", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { q, incluirInactivos, tipo, marca, soloSinPrecio } = z
       .object({
         q: z.string().optional(),
@@ -163,7 +163,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
    *
    * Un campo AUSENTE no se toca; `null` lo deja sin valor.
    */
-  app.post("/catalogo/precios", async (peticion) => {
+  app.post("/catalogo/precios", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { precios, motivo } = z
       .object({
         precios: z
@@ -189,13 +189,15 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
     }
 
     const porQue = motivo ?? "Carga de precios pendientes";
-    await pos.escribir(() =>
-      precios.flatMap(({ itemId, precio, costo }) =>
-        actualizarItem(pos.p, itemId, {
-          ...(precio !== undefined ? { precio, motivoPrecio: porQue } : {}),
-          ...(costo !== undefined ? { costo, motivoCosto: porQue } : {}),
-        }),
-      ),
+    await pos.escribir(
+      () =>
+        precios.flatMap(({ itemId, precio, costo }) =>
+          actualizarItem(pos.p, itemId, {
+            ...(precio !== undefined ? { precio, motivoPrecio: porQue } : {}),
+            ...(costo !== undefined ? { costo, motivoCosto: porQue } : {}),
+          }),
+        ),
+      peticion.actor,
     );
 
     return {
@@ -212,7 +214,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
    * encabezados y las instrucciones nunca se despegan de lo que el lector
    * espera de verdad.
    */
-  app.get("/catalogo/plantilla.xlsx", async (_peticion, respuesta) => {
+  app.get("/catalogo/plantilla.xlsx", { config: { rol: "ADMIN" } }, async (_peticion, respuesta) => {
     return respuesta
       .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .header("Content-Disposition", 'attachment; filename="catalogo-la-cupula.xlsx"')
@@ -230,7 +232,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
    * El archivo viaja en base64 dentro del JSON para no sumar un plugin de
    * subida por un .xlsx de veinte kilobytes.
    */
-  app.post("/catalogo/importar", async (peticion) => {
+  app.post("/catalogo/importar", { config: { rol: "ADMIN" } }, async (peticion) => {
     // `modo` y `aplicar` son independientes a propósito: revisar SIEMPRE se
     // hace sobre el modo elegido. Mezclarlos hacía que la vista previa de
     // "reemplazar" se calculara como "agregar" y no mostrara nada de lo que
@@ -274,43 +276,43 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       throw new ErrorDeNegocio("PLANILLA_VACIA", "La planilla no tiene ninguna fila con datos.");
     }
 
-    await pos.escribir(() => importarCatalogo(pos.p, lectura.filas, modo));
+    await pos.escribir(() => importarCatalogo(pos.p, lectura.filas, modo), peticion.actor);
 
     return { aplicado: true, problemas: [], filas: lectura.filas.length, plan };
   });
 
   /** Lo consulta el formulario de alta para mostrar el código que va a tocar. */
-  app.get("/catalogo/siguiente-codigo", async (peticion) => {
+  app.get("/catalogo/siguiente-codigo", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { tipo } = z.object({ tipo: z.enum(["SERVICIO", "PRODUCTO"]) }).parse(peticion.query);
     return { codigo: siguienteCodigo(pos.p, tipo) };
   });
 
-  app.post("/catalogo", async (peticion, respuesta) => {
+  app.post("/catalogo", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const datos = esquemaItemNuevo.parse(peticion.body);
     const itemId = await pos.transaccion(() => {
       const r = crearItem(pos.p, datos);
       return { eventos: r.eventos, resultado: r.itemId };
-    });
+    }, peticion.actor);
     return respuesta.status(201).send({ item: paraPantalla(itemId) });
   });
 
-  app.patch("/catalogo/:id", async (peticion) => {
+  app.patch("/catalogo/:id", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const cambios = esquemaCambios.parse(peticion.body);
-    await pos.escribir(() => actualizarItem(pos.p, id, cambios));
+    await pos.escribir(() => actualizarItem(pos.p, id, cambios), peticion.actor);
     return { item: paraPantalla(id) };
   });
 
-  app.post("/catalogo/:id/desactivar", async (peticion) => {
+  app.post("/catalogo/:id/desactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { motivo } = z.object({ motivo: z.string().trim().max(200).optional() }).parse(peticion.body ?? {});
-    await pos.escribir(() => desactivarItem(pos.p, id, motivo));
+    await pos.escribir(() => desactivarItem(pos.p, id, motivo), peticion.actor);
     return { item: paraPantalla(id) };
   });
 
-  app.post("/catalogo/:id/reactivar", async (peticion) => {
+  app.post("/catalogo/:id/reactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    await pos.escribir(() => reactivarItem(pos.p, id));
+    await pos.escribir(() => reactivarItem(pos.p, id), peticion.actor);
     return { item: paraPantalla(id) };
   });
 
@@ -321,7 +323,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
    */
   app.post(
     "/catalogo/:id/foto",
-    { bodyLimit: MAX_BYTES_FOTO },
+    { bodyLimit: MAX_BYTES_FOTO, config: { rol: "ADMIN" } },
     async (peticion, respuesta) => {
       const { id } = z.object({ id: z.string() }).parse(peticion.params);
       if (!pos.p.items.get(id)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
@@ -338,17 +340,17 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       const archivo = `${id}.${extension}`;
       await writeFile(join(carpetaFotos, archivo), bytes);
 
-      await pos.escribir(() => actualizarFotoDeItem(pos.p, id, archivo));
+      await pos.escribir(() => actualizarFotoDeItem(pos.p, id, archivo), peticion.actor);
       return respuesta.status(201).send({ item: paraPantalla(id) });
     },
   );
 
-  app.post("/catalogo/:id/foto/quitar", async (peticion) => {
+  app.post("/catalogo/:id/foto/quitar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     if (!pos.p.items.get(id)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
 
     await borrarFotoVieja(id);
-    await pos.escribir(() => actualizarFotoDeItem(pos.p, id, null));
+    await pos.escribir(() => actualizarFotoDeItem(pos.p, id, null), peticion.actor);
     return { item: paraPantalla(id) };
   });
 }

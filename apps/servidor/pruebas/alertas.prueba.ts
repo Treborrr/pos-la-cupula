@@ -16,6 +16,8 @@ const BASE = {
   respaldos: null,
   impresoraConfigurada: false,
   impresora: { disponible: false, detalle: "Vista previa" },
+  enNube: false,
+  redesCajero: "",
 };
 
 describe("calcularAlertas", () => {
@@ -75,12 +77,27 @@ describe("calcularAlertas", () => {
 
   it("puede avisar varias cosas a la vez", () => {
     const alertas = calcularAlertas({
-      relojAtrasado: null,
+      ...BASE,
       lineasEnCuarentena: 1,
       respaldos: { ok: false, detalle: "no hay destino" },
       impresoraConfigurada: true,
       impresora: { disponible: false },
     });
     expect(alertas).toHaveLength(3);
+  });
+
+  it("no avisa de la red del cajero fuera de Railway, aunque esté vacía", () => {
+    const alertas = calcularAlertas({ ...BASE, enNube: false, redesCajero: "" });
+    expect(alertas.map((a) => a.codigo)).not.toContain("CAJERO_SIN_RESTRICCION_DE_RED");
+  });
+
+  it("avisa si está en Railway y la red del cajero quedó vacía", () => {
+    const alertas = calcularAlertas({ ...BASE, enNube: true, redesCajero: "" });
+    expect(alertas.map((a) => a.codigo)).toContain("CAJERO_SIN_RESTRICCION_DE_RED");
+  });
+
+  it("no avisa si está en Railway pero ya hay una red configurada", () => {
+    const alertas = calcularAlertas({ ...BASE, enNube: true, redesCajero: "181.64.123.45" });
+    expect(alertas.map((a) => a.codigo)).not.toContain("CAJERO_SIN_RESTRICCION_DE_RED");
   });
 });

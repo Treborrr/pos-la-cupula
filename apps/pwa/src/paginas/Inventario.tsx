@@ -20,6 +20,7 @@ import {
 
 import { api, FalloDeApi, type Item } from "../lib/api";
 import { aCentimos, aTextoConSimbolo, cantidad, fechaYHora, montoOAusente } from "../lib/formato";
+import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
 
@@ -239,14 +240,19 @@ function EstadoDeStock({ producto: p }: { producto: ProductoConStock }) {
   return <Pastilla tono="bien">Disponible</Pastilla>;
 }
 
-const ACCIONES: { id: Accion; titulo: string; detalle: string; icono: LucideIcon }[] = [
+const ACCIONES: { id: Accion; titulo: string; detalle: string; icono: LucideIcon; soloAdmin?: boolean }[] = [
   { id: "entrada", titulo: "Llegó mercadería", detalle: "Suma unidades", icono: PackagePlus },
-  { id: "ajuste", titulo: "Hice un conteo", detalle: "Corrige el stock", icono: ClipboardCheck },
+  // ADMIN, no cajero: un conteo puede absorber en silencio una merma real
+  // (por ejemplo, un robo) bajo "conté y había menos", sin ninguna señal
+  // secundaria para el dueño — misma razón que en el servidor.
+  { id: "ajuste", titulo: "Hice un conteo", detalle: "Corrige el stock", icono: ClipboardCheck, soloAdmin: true },
   { id: "merma", titulo: "Se perdió o dañó", detalle: "Resta unidades", icono: PackageMinus },
 ];
 
 function FichaDeProducto({ producto, alCerrar }: { producto: ProductoConStock; alCerrar: () => void }) {
   const qc = useQueryClient();
+  const usuario = usarUsuario();
+  const acciones = ACCIONES.filter((a) => !a.soloAdmin || usuario.rol === "ADMIN");
   const [accion, setAccion] = useState<Accion | null>(null);
   const [hecho, setHecho] = useState<string | null>(null);
 
@@ -290,7 +296,7 @@ function FichaDeProducto({ producto, alCerrar }: { producto: ProductoConStock; a
           <div>
             <div className="etiqueta mb-2">¿Qué pasó con este producto?</div>
             <div className="grid grid-cols-3 gap-3">
-              {ACCIONES.map((a) => (
+              {acciones.map((a) => (
                 <button
                   key={a.id}
                   onClick={() => {

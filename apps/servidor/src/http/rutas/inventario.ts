@@ -17,7 +17,7 @@ import { kardexDe } from "../../consultas/kardex";
 import type { Dependencias } from "../app";
 
 export async function rutasInventario(app: FastifyInstance, { pos }: Dependencias) {
-  app.get("/inventario", async () => {
+  app.get("/inventario", { config: { rol: "CAJERO" } }, async () => {
     const productos = [...pos.p.items.values()]
       .filter((i) => i.tipo === "PRODUCTO")
       .map((i) => {
@@ -61,7 +61,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
     };
   });
 
-  app.post("/inventario/entrada", async (peticion, respuesta) => {
+  app.post("/inventario/entrada", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         itemId: z.string().min(1),
@@ -72,11 +72,16 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarEntrada(pos.p, datos));
+    await pos.escribir(() => registrarEntrada(pos.p, datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
   });
 
-  app.post("/inventario/ajuste", async (peticion, respuesta) => {
+  /**
+   * ADMIN, no cajero — a diferencia de entrada/merma, un ajuste puede
+   * absorber en silencio una merma real (por ejemplo, un robo) bajo "conté
+   * y había menos", sin ninguna señal secundaria para el dueño.
+   */
+  app.post("/inventario/ajuste", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         itemId: z.string().min(1),
@@ -85,7 +90,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => ajustarStock(pos.p, datos));
+    await pos.escribir(() => ajustarStock(pos.p, datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
   });
 
@@ -94,7 +99,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
    * su costo (actualiza el promedio ponderado) y, si de verdad salió plata
    * del cajón, se registra el egreso solo — no hay que anotarlo dos veces.
    */
-  app.post("/inventario/compra", async (peticion, respuesta) => {
+  app.post("/inventario/compra", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         lineas: z
@@ -115,7 +120,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
     const resultado = await pos.transaccion(() => {
       const r = registrarCompra(pos.p, datos);
       return { eventos: r.eventos, resultado: r };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({
       compraId: resultado.compraId,
@@ -124,7 +129,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
     });
   });
 
-  app.post("/inventario/merma", async (peticion, respuesta) => {
+  app.post("/inventario/merma", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         itemId: z.string().min(1),
@@ -133,11 +138,11 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarMerma(pos.p, datos));
+    await pos.escribir(() => registrarMerma(pos.p, datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
   });
 
-  app.get("/inventario/:itemId/kardex", async (peticion, respuesta) => {
+  app.get("/inventario/:itemId/kardex", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(peticion.params);
     const { limite } = z
       .object({ limite: z.coerce.number().int().min(1).max(1000).default(200) })

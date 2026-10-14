@@ -36,6 +36,7 @@ export async function alertasActivas(deps: {
   pos: ServicioPos;
   respaldos: ServicioDeRespaldos;
   impresora: Impresora;
+  enNube: boolean;
 }): Promise<Alerta[]> {
   const modoImpresora = deps.pos.config<string>("impresora.modo");
   return calcularAlertas({
@@ -43,6 +44,8 @@ export async function alertasActivas(deps: {
     respaldos: deps.respaldos.estadoCacheado(),
     impresoraConfigurada: Boolean(modoImpresora && modoImpresora !== "vistaPrevia"),
     impresora: await deps.impresora.estado(),
+    enNube: deps.enNube,
+    redesCajero: deps.pos.config<string>("seguridad.redesCajero"),
   });
 }
 
@@ -52,6 +55,10 @@ export function calcularAlertas(datos: {
   respaldos: { ok: boolean; detalle: string } | null;
   impresoraConfigurada: boolean;
   impresora: { disponible: boolean; detalle?: string };
+  /** `true` bajo Railway (`RAILWAY_ENVIRONMENT`). */
+  enNube: boolean;
+  /** `seguridad.redesCajero` tal como está en config. Vacío = sin restricción. */
+  redesCajero: string;
 }): Alerta[] {
   const alertas: Alerta[] = [];
 
@@ -88,6 +95,19 @@ export function calcularAlertas(datos: {
     alertas.push({
       codigo: "IMPRESORA_CON_ERROR",
       mensaje: datos.impresora.detalle ?? "La ticketera configurada no está respondiendo.",
+    });
+  }
+
+  // En una PC de la barbería, en su red local, esto no hace falta: el
+  // perímetro es la red. Publicado en Railway, un cajero sin restricción de
+  // red tiene la misma exposición que un admin —todo internet, solo una
+  // contraseña de por medio— con una cuenta que no eligió el dueño.
+  if (datos.enNube && datos.redesCajero.trim() === "") {
+    alertas.push({
+      codigo: "CAJERO_SIN_RESTRICCION_DE_RED",
+      mensaje:
+        "Este sistema está publicado en internet y el login de cajero no tiene ninguna red configurada: " +
+        "cualquiera que adivine la contraseña puede entrar desde cualquier lugar. Configúrala en Ajustes → Seguridad.",
     });
   }
 

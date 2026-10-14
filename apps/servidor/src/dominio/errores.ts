@@ -32,7 +32,15 @@ export type CodigoError =
   | "PLANILLA_ILEGIBLE"
   | "PLANILLA_CON_ERRORES"
   | "PLANILLA_VACIA"
-  | "DATO_INVALIDO";
+  | "DATO_INVALIDO"
+  | "USUARIO_NO_EXISTE"
+  | "USUARIO_REPETIDO"
+  | "LIMITE_CAJEROS_ALCANZADO"
+  | "LIMITE_ADMINS_ALCANZADO"
+  | "CONTRASENA_ACTUAL_INCORRECTA"
+  | "CREDENCIALES_INVALIDAS"
+  | "NO_AUTENTICADO"
+  | "ROL_INSUFICIENTE";
 
 export class ErrorDeNegocio extends Error {
   constructor(
@@ -48,4 +56,36 @@ export class ErrorDeNegocio extends Error {
 
 export function esErrorDeNegocio(e: unknown): e is ErrorDeNegocio {
   return e instanceof ErrorDeNegocio;
+}
+
+/**
+ * No hay sesión válida (sin cookie, cookie vencida, o la invalidó otra
+ * sesión de cajero). Se distingue de `ErrorDeNegocio` porque el código HTTP
+ * es 401, no 400: no es que el pedido esté mal armado, es que no sabemos
+ * quién lo hace.
+ */
+export class ErrorDeAutenticacion extends Error {
+  constructor(
+    readonly codigo: Extract<CodigoError, "NO_AUTENTICADO" | "CREDENCIALES_INVALIDAS">,
+    mensaje: string,
+  ) {
+    super(mensaje);
+    this.name = "ErrorDeAutenticacion";
+  }
+}
+
+export function esErrorDeAutenticacion(e: unknown): e is ErrorDeAutenticacion {
+  return e instanceof ErrorDeAutenticacion;
+}
+
+/** Hay sesión válida, pero el rol de esa cuenta no alcanza para esta ruta. 403, no 401. */
+export class ErrorDeAutorizacion extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = "ErrorDeAutorizacion";
+  }
+}
+
+export function esErrorDeAutorizacion(e: unknown): e is ErrorDeAutorizacion {
+  return e instanceof ErrorDeAutorizacion;
 }

@@ -8,7 +8,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Check, FileSpreadsheet, HardDrive, Printer, Receipt, RefreshCw, Store, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  Check,
+  FileSpreadsheet,
+  HardDrive,
+  Printer,
+  Receipt,
+  RefreshCw,
+  ShieldCheck,
+  Store,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
 import { api } from "../lib/api";
 import { Aviso } from "../componentes/Modal";
@@ -16,6 +28,8 @@ import { TarjetaPrimerosPasos } from "../componentes/PrimerosPasos";
 import { SeccionCatalogo } from "./ajustes/Catalogo";
 import { SeccionImpresora } from "./ajustes/Impresora";
 import { SeccionRespaldos } from "./ajustes/Respaldos";
+import { SeccionUsuarios } from "./ajustes/Usuarios";
+import { SeccionSeguridad } from "./ajustes/Seguridad";
 import { CampoGuardable, Casilla, Dato, EncabezadoPagina, Pagina } from "../componentes/Piezas";
 
 interface Salud {
@@ -39,6 +53,8 @@ const SECCIONES: { id: string; texto: string; icono: LucideIcon }[] = [
   { id: "catalogo", texto: "Catálogo", icono: FileSpreadsheet },
   { id: "ticketera", texto: "Ticketera", icono: Printer },
   { id: "respaldos", texto: "Respaldos", icono: HardDrive },
+  { id: "usuarios", texto: "Usuarios", icono: Users },
+  { id: "seguridad", texto: "Seguridad", icono: ShieldCheck },
   { id: "diagnostico", texto: "Diagnóstico", icono: Activity },
 ];
 
@@ -161,6 +177,22 @@ export function Ajustes() {
               key={String(config.data?.["respaldos.destinoExterno"] ?? "")}
               destinoConfigurado={String(config.data?.["respaldos.destinoExterno"] ?? "")}
             />
+          </Bloque>
+
+          <Bloque
+            id="usuarios"
+            titulo="Usuarios"
+            descripcion="Cuentas de cajero para el mostrador. Hasta 3 a la vez, usuario y contraseña elegidos acá."
+          >
+            <SeccionUsuarios />
+          </Bloque>
+
+          <Bloque
+            id="seguridad"
+            titulo="Seguridad"
+            descripcion="Solo importa si este sistema es accesible desde internet (por ejemplo, alojado en Railway)."
+          >
+            {config.data ? <SeccionSeguridad config={config.data} alGuardar={(c) => guardar.mutate(c)} /> : null}
           </Bloque>
 
           <Bloque id="diagnostico" titulo="Diagnóstico" descripcion="Si algo falla, lee esta sección a quien te ayude.">

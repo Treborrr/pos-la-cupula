@@ -25,6 +25,7 @@ import {
 
 import { api, FalloDeApi, type Barbero } from "../lib/api";
 import { aTextoConSimbolo, diasAtras, fecha, fechaYHora, hoy } from "../lib/formato";
+import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
 import { EncabezadoPagina, Pagina, Pastilla } from "../componentes/Piezas";
 
@@ -65,6 +66,8 @@ interface ReporteDeBarbero {
 
 export function Barberos() {
   const qc = useQueryClient();
+  const usuario = usarUsuario();
+  const esAdmin = usuario.rol === "ADMIN";
   const [nombre, setNombre] = useState("");
   const [editando, setEditando] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState<Barbero | null>(null);
@@ -142,19 +145,23 @@ export function Barberos() {
                         <Receipt className="h-4 w-4" />
                         Reporte
                       </button>
-                      <button className="boton-icono" onClick={() => setEditando(b.id)} aria-label={`Renombrar a ${b.nombre}`} title="Renombrar">
-                        <Pencil className="h-5 w-5" />
-                      </button>
-                      {b.activo ? (
-                        <button className="boton-suave boton-chico" onClick={() => setConfirmando(b)}>
-                          Desactivar
+                      {esAdmin ? (
+                        <button className="boton-icono" onClick={() => setEditando(b.id)} aria-label={`Renombrar a ${b.nombre}`} title="Renombrar">
+                          <Pencil className="h-5 w-5" />
                         </button>
-                      ) : (
-                        <button className="boton-suave boton-chico" onClick={() => cambiarEstado.mutate(b)}>
-                          <RotateCcw className="h-4 w-4" />
-                          Reactivar
-                        </button>
-                      )}
+                      ) : null}
+                      {esAdmin ? (
+                        b.activo ? (
+                          <button className="boton-suave boton-chico" onClick={() => setConfirmando(b)}>
+                            Desactivar
+                          </button>
+                        ) : (
+                          <button className="boton-suave boton-chico" onClick={() => cambiarEstado.mutate(b)}>
+                            <RotateCcw className="h-4 w-4" />
+                            Reactivar
+                          </button>
+                        )
+                      ) : null}
                     </>
                   )}
                 </li>
@@ -164,32 +171,34 @@ export function Barberos() {
         </div>
 
         <div className="space-y-4">
-          <div className="tarjeta p-5">
-            <h2 className="mb-4 text-lg font-semibold">Agregar barbero</h2>
-            <form
-              className="space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (nombre.trim()) crear.mutate();
-              }}
-            >
-              <input
-                className="campo"
-                placeholder="Nombre"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-              />
-              <button type="submit" className="boton-primario w-full" disabled={!nombre.trim() || crear.isPending}>
-                <Plus className="h-5 w-5" />
-                Agregar
-              </button>
-            </form>
-            {crear.error ? (
-              <div className="mt-3">
-                <Aviso tono="mal">{(crear.error as Error).message}</Aviso>
-              </div>
-            ) : null}
-          </div>
+          {esAdmin ? (
+            <div className="tarjeta p-5">
+              <h2 className="mb-4 text-lg font-semibold">Agregar barbero</h2>
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (nombre.trim()) crear.mutate();
+                }}
+              >
+                <input
+                  className="campo"
+                  placeholder="Nombre"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                />
+                <button type="submit" className="boton-primario w-full" disabled={!nombre.trim() || crear.isPending}>
+                  <Plus className="h-5 w-5" />
+                  Agregar
+                </button>
+              </form>
+              {crear.error ? (
+                <div className="mt-3">
+                  <Aviso tono="mal">{(crear.error as Error).message}</Aviso>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <Aviso tono="info">
             Solo se registra quién atendió, como dato para los reportes. <strong>No se calculan comisiones</strong>: en La
             Cúpula los barberos tienen sueldo fijo.
@@ -255,6 +264,7 @@ function RenombrarBarbero({ barbero, alTerminar }: { barbero: Barbero; alTermina
 /** Últimos ~120 días: suficiente historia sin necesitar un selector de período. */
 function ReporteDeBarbero({ barbero, alCerrar }: { barbero: Barbero; alCerrar: () => void }) {
   const qc = useQueryClient();
+  const usuario = usarUsuario();
   const [liquidando, setLiquidando] = useState(false);
   const [notas, setNotas] = useState("");
 
@@ -295,7 +305,7 @@ function ReporteDeBarbero({ barbero, alCerrar }: { barbero: Barbero; alCerrar: (
                   </p>
                 ) : null}
               </div>
-              {r.saldoPendiente > 0 ? (
+              {r.saldoPendiente > 0 && usuario.rol === "ADMIN" ? (
                 <button className="boton-primario" onClick={() => setLiquidando(true)}>
                   <ShieldCheck className="h-5 w-5" />
                   Liquidar

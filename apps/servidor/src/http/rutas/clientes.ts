@@ -14,7 +14,7 @@ import {
 import type { Dependencias } from "../app";
 
 export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias) {
-  app.get("/clientes", async (peticion) => {
+  app.get("/clientes", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { q, limite } = z
       .object({
         q: z.string().optional(),
@@ -34,7 +34,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
     return { clientes };
   });
 
-  app.post("/clientes", async (peticion, respuesta) => {
+  app.post("/clientes", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const datos = z
       .object({
         nombre: z.string().trim().min(1).max(80),
@@ -49,7 +49,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
     const { clienteId, homonimos } = await pos.transaccion(() => {
       const r = registrarCliente(pos.p, datos);
       return { eventos: r.eventos, resultado: { clienteId: r.clienteId, homonimos: r.homonimos } };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({
       cliente: pos.p.clientes.get(clienteId),
@@ -60,7 +60,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
     });
   });
 
-  app.get("/clientes/:id", async (peticion, respuesta) => {
+  app.get("/clientes/:id", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const cliente = pos.p.clientes.get(id);
     if (!cliente) {
@@ -92,7 +92,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
     };
   });
 
-  app.patch("/clientes/:id", async (peticion) => {
+  app.patch("/clientes/:id", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const cambios = z
       .object({
@@ -102,7 +102,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => actualizarCliente(pos.p, id, cambios));
+    await pos.escribir(() => actualizarCliente(pos.p, id, cambios), peticion.actor);
     return { cliente: pos.p.clientes.get(id) };
   });
 
@@ -116,7 +116,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
    * hecho por nombre es una apuesta razonable. Poder distinguirlos después
    * vale la pena.
    */
-  app.post("/clientes/:id/fidelidad", async (peticion) => {
+  app.post("/clientes/:id/fidelidad", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { serial, origen } = z
       .object({
@@ -125,7 +125,7 @@ export async function rutasClientes(app: FastifyInstance, { pos }: Dependencias)
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => vincularFidelidad(pos.p, id, serial, origen));
+    await pos.escribir(() => vincularFidelidad(pos.p, id, serial, origen), peticion.actor);
     return { cliente: pos.p.clientes.get(id) };
   });
 }

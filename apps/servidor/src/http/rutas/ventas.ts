@@ -50,9 +50,9 @@ const esquemaCobro = z.object({
 });
 
 export async function rutasVentas(app: FastifyInstance, { pos, impresora, notificaciones }: Dependencias) {
-  app.post("/ventas", async (peticion, respuesta) => {
+  app.post("/ventas", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const pedido = esquemaCobro.parse(peticion.body);
-    const { venta, advertencias, duplicada } = await pos.cobrar(pedido);
+    const { venta, advertencias, duplicada } = await pos.cobrar(pedido, peticion.actor);
 
     // La impresión va DESPUÉS de que la venta está en disco, y su resultado no
     // afecta al de la venta: que falle la ticketera no puede deshacer un cobro
@@ -81,7 +81,7 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     });
   });
 
-  app.get("/ventas", async (peticion) => {
+  app.get("/ventas", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { dia, desde, hasta, q, limite, incluirAnuladas } = z
       .object({
         dia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -123,7 +123,7 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     return { ventas: ventas.slice(0, limite), cantidadTotal: ventas.length, totales };
   });
 
-  app.get("/ventas/:id", async (peticion, respuesta) => {
+  app.get("/ventas/:id", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     // Acepta el id interno o el correlativo: la pistola devuelve correlativo,
     // la lista de la pantalla tiene el id.
@@ -140,14 +140,14 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     };
   });
 
-  app.post("/ventas/:id/anular", async (peticion) => {
+  app.post("/ventas/:id/anular", { config: { rol: "CAJERO" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { motivo } = z.object({ motivo: z.string().trim().min(3).max(200) }).parse(peticion.body);
     const ventaId = pos.p.ventas.has(id) ? id : (pos.p.ventaPorCorrelativo(id)?.id ?? id);
-    return { venta: await pos.anular(ventaId, motivo) };
+    return { venta: await pos.anular(ventaId, motivo, peticion.actor) };
   });
 
-  app.post("/ventas/:id/reimprimir", async (peticion, respuesta) => {
+  app.post("/ventas/:id/reimprimir", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
     if (!venta) {
@@ -155,7 +155,7 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
         error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
       });
     }
-    await pos.registrarReimpresion(venta.id);
+    await pos.registrarReimpresion(venta.id, peticion.actor);
     return { venta: pos.p.ventas.get(venta.id), impresion: await imprimir(venta, true) };
   });
 
@@ -165,7 +165,7 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
    * `POST /ventas` (campo `propina` de cada línea); esta es la vía para
    * corregirla más tarde, referenciando una venta que ya existe.
    */
-  app.post("/ventas/:id/propina", async (peticion, respuesta) => {
+  app.post("/ventas/:id/propina", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
     if (!venta) {
@@ -185,14 +185,14 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     await pos.transaccion(() => {
       const r = registrarPropina(pos.p, { ventaId: venta.id, lineaIndex, barberoId, monto });
       return { eventos: r.eventos, resultado: r.propinaId };
-    });
+    }, peticion.actor);
 
     return respuesta.status(201).send({ propinas: pos.p.propinasPorVenta.get(venta.id) ?? [] });
   });
 
   // ── Reportes ──────────────────────────────────────────────────────────────
 
-  app.get("/reportes/resumen", async (peticion) => {
+  app.get("/reportes/resumen", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { desde, hasta } = z
       .object({
         desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
