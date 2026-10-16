@@ -19,7 +19,12 @@ import type { Reloj } from "../puertos/Reloj";
 import type { EnviadorDeCorreo } from "../puertos/EnviadorDeCorreo";
 import type { Alerta } from "../consultas/alertas";
 import { construirReporte } from "../consultas/reportes";
-import { plantillaAlertasTecnicas, plantillaReporteDelDia, type TurnoCerradoDelDia } from "../adaptadores/correo/plantillasInternas";
+import {
+  plantillaAlertasTecnicas,
+  plantillaCodigoDeVerificacion,
+  plantillaReporteDelDia,
+  type TurnoCerradoDelDia,
+} from "../adaptadores/correo/plantillasInternas";
 import { construirReciboHtml, type OpcionesDelRecibo } from "../adaptadores/correo/reciboHtml";
 import type { DatosDelNegocio } from "../puertos/Impresora";
 import type { Venta, ResumenCorreosDelDia } from "../proyecciones/tipos";
@@ -79,7 +84,7 @@ export class ServicioDeNotificaciones {
   }
 
   private async registrar(
-    categoria: "alerta_tecnica" | "alerta_dev" | "reporte_dia" | "recibo_venta",
+    categoria: "alerta_tecnica" | "alerta_dev" | "reporte_dia" | "recibo_venta" | "verificacion_cuenta",
     destinatarios: string[],
     asunto: string,
     resultado: { ok: boolean; detalle?: string },
@@ -230,6 +235,34 @@ export class ServicioDeNotificaciones {
     const html = construirReciboHtml(venta, negocio, opciones);
     const resultado = await this.enviador.enviar({ to: [destinatario], subject: asunto, html });
     await this.registrar("recibo_venta", [destinatario], asunto, resultado, { ventaId: venta.id });
+    return resultado;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Código de "Mi cuenta"
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * El código de 6 dígitos que confirma un cambio de nombre/correo/teléfono/
+   * contraseña en "Mi cuenta". Cuenta contra el mismo tope total compartido
+   * que el recibo de venta — nunca contra el sub-tope de alertas, que es
+   * para otra cosa.
+   */
+  async enviarCodigoDeVerificacion(
+    destinatario: string,
+    codigo: string,
+    camposEnTexto: string[],
+  ): Promise<{ ok: boolean; detalle?: string }> {
+    const { usadosHoy, topeTotal } = this.contadorDeHoy();
+    if (usadosHoy >= topeTotal) {
+      const resultado = { ok: false, detalle: `Se alcanzó el tope de ${topeTotal} correos de hoy.` };
+      await this.registrar("verificacion_cuenta", [destinatario], "Código de confirmación", resultado);
+      return resultado;
+    }
+
+    const { asunto, html } = plantillaCodigoDeVerificacion(codigo, camposEnTexto);
+    const resultado = await this.enviador.enviar({ to: [destinatario], subject: asunto, html });
+    await this.registrar("verificacion_cuenta", [destinatario], asunto, resultado);
     return resultado;
   }
 

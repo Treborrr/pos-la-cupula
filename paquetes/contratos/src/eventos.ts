@@ -665,6 +665,25 @@ export const usuarioContrasenaCambiada = definir(
   z.object({ usuarioId: esquemaUlid, hash: z.string().min(1).max(200) }),
 );
 
+/**
+ * Nombre, correo y/o teléfono de la cuenta. Separado de `usuario.creado` por
+ * la misma razón que `item.precio_cambiado` está separado de `item.creado`:
+ * poder responder "¿desde cuándo tiene este correo?" sin escarbar diffs.
+ *
+ * Nunca llega sin pasar antes por el código de confirmación por correo (ver
+ * `ServicioDeVerificacionDeCuenta`) — eso es responsabilidad de la ruta, no
+ * de este evento, que solo registra el hecho ya confirmado.
+ */
+export const usuarioDatosActualizados = definir(
+  "usuario.datos_actualizados",
+  z.object({
+    usuarioId: esquemaUlid,
+    nombre: textoOpcional(80),
+    correo: z.string().trim().toLowerCase().email().max(160).optional(),
+    telefono: textoOpcional(20),
+  }),
+);
+
 /** Nunca se borra una cuenta: el historial (quién vendió, quién anuló) sigue apuntando a su id. */
 export const usuarioDesactivado = definir(
   "usuario.desactivado",
@@ -699,7 +718,13 @@ export const configActualizada = definir(
  * caído, sin API key) no consumió cupo real, así que no debe bloquear el
  * resto del día.
  */
-export const esquemaCategoriaCorreo = z.enum(["alerta_tecnica", "alerta_dev", "reporte_dia", "recibo_venta"]);
+export const esquemaCategoriaCorreo = z.enum([
+  "alerta_tecnica",
+  "alerta_dev",
+  "reporte_dia",
+  "recibo_venta",
+  "verificacion_cuenta",
+]);
 export type CategoriaCorreo = z.infer<typeof esquemaCategoriaCorreo>;
 
 export const correoEnviado = definir(
@@ -749,6 +774,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   barberoLiquidado,
   usuarioCreado,
   usuarioContrasenaCambiada,
+  usuarioDatosActualizados,
   usuarioDesactivado,
   configActualizada,
   correoEnviado,
@@ -814,6 +840,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "barbero.liquidado": 1,
   "usuario.creado": 1,
   "usuario.contrasena_cambiada": 1,
+  "usuario.datos_actualizados": 1,
   "usuario.desactivado": 1,
   "config.actualizada": 1,
   "correo.enviado": 1,

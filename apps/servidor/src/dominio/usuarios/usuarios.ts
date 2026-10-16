@@ -121,3 +121,17 @@ export function cambiarContrasena(p: Proyeccion, usuarioId: string, hash: string
   if (!p.usuarios.has(usuarioId)) throw new ErrorDeNegocio("USUARIO_NO_EXISTE", "Esa cuenta no existe.");
   return [{ tipo: "usuario.contrasena_cambiada", datos: { usuarioId, hash } }];
 }
+
+/**
+ * Nombre, correo y/o teléfono — ya confirmados por correo antes de llegar
+ * acá (ver `ServicioDeVerificacionDeCuenta` y `http/rutas/miCuenta.ts`). Este
+ * punto solo registra el hecho; no sabe nada de códigos ni de correos.
+ */
+export function actualizarDatosDeUsuario(
+  p: Proyeccion,
+  usuarioId: string,
+  datos: { nombre?: string; correo?: string; telefono?: string },
+): EventoNuevo[] {
+  if (!p.usuarios.has(usuarioId)) throw new ErrorDeNegocio("USUARIO_NO_EXISTE", "Esa cuenta no existe.");
+  return [{ tipo: "usuario.datos_actualizados", datos: { usuarioId, ...datos } }];
+}

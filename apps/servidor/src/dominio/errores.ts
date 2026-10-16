@@ -40,7 +40,9 @@ export type CodigoError =
   | "CONTRASENA_ACTUAL_INCORRECTA"
   | "CREDENCIALES_INVALIDAS"
   | "NO_AUTENTICADO"
-  | "ROL_INSUFICIENTE";
+  | "ROL_INSUFICIENTE"
+  | "SIN_CORREO"
+  | "CODIGO_INVALIDO";
 
 export class ErrorDeNegocio extends Error {
   constructor(

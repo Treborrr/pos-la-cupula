@@ -22,10 +22,12 @@ import type { ServicioDeRespaldos } from "../servicios/Respaldos";
 import type { ServicioDeNotificaciones } from "../servicios/Notificaciones";
 import type { ServicioDeSesiones } from "../servicios/Sesiones";
 import type { ServicioDeIntentosDeLogin } from "../servicios/IntentosDeLogin";
+import type { ServicioDeVerificacionDeCuenta } from "../servicios/VerificacionDeCuenta";
 
 import { registrarAutorizacion } from "./autorizacion";
 import { rutasAuth } from "./rutas/auth";
 import { rutasUsuarios } from "./rutas/usuarios";
+import { rutasMiCuenta } from "./rutas/miCuenta";
 import { rutasSistema } from "./rutas/sistema";
 import { rutasCatalogo } from "./rutas/catalogo";
 import { rutasVentas } from "./rutas/ventas";
@@ -42,6 +44,7 @@ export interface Dependencias {
   notificaciones: ServicioDeNotificaciones;
   sesiones: ServicioDeSesiones;
   intentosDeLogin: ServicioDeIntentosDeLogin;
+  verificacionDeCuenta: ServicioDeVerificacionDeCuenta;
   /** Carpeta con la PWA compilada. Si no existe, solo se sirve el API. */
   carpetaPwa?: string;
   /** La carpeta `datos/`. Hoy solo la usan las fotos de catálogo. */
@@ -151,6 +154,7 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
 
       await rutasAuth(api, deps);
       await rutasUsuarios(api, deps);
+      await rutasMiCuenta(api, deps);
       await rutasSistema(api, deps);
       await rutasCatalogo(api, deps);
       await rutasVentas(api, deps);

@@ -19,6 +19,7 @@ import { ServicioDeRespaldos } from "./servicios/Respaldos";
 import { ServicioDeNotificaciones } from "./servicios/Notificaciones";
 import { ServicioDeSesiones } from "./servicios/Sesiones";
 import { ServicioDeIntentosDeLogin } from "./servicios/IntentosDeLogin";
+import { ServicioDeVerificacionDeCuenta } from "./servicios/VerificacionDeCuenta";
 import { EnviadorResend } from "./adaptadores/correo/Resend";
 import { relojDelSistema } from "./puertos/Reloj";
 import { alertasActivas } from "./consultas/alertas";
@@ -188,6 +189,7 @@ async function principal() {
     notificaciones,
     sesiones: new ServicioDeSesiones(relojDelSistema),
     intentosDeLogin: new ServicioDeIntentosDeLogin(relojDelSistema),
+    verificacionDeCuenta: new ServicioDeVerificacionDeCuenta(relojDelSistema),
     carpetaPwa: await carpetaDeLaPwa(),
     carpetaDatos: directorio,
     version: VERSION,

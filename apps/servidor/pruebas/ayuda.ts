@@ -14,13 +14,19 @@ import type { ServicioPos } from "../src/servicios/Pos";
 import { ServicioDeNotificaciones } from "../src/servicios/Notificaciones";
 import { ServicioDeSesiones } from "../src/servicios/Sesiones";
 import { ServicioDeIntentosDeLogin } from "../src/servicios/IntentosDeLogin";
+import { ServicioDeVerificacionDeCuenta } from "../src/servicios/VerificacionDeCuenta";
 import { crearUsuario } from "../src/dominio/usuarios/usuarios";
 import { hashearContrasena } from "../src/seguridad/contrasenas";
 import { NOMBRE_COOKIE_SESION } from "../src/http/autorizacion";
 
 /** Dependencias de seguridad listas para `construirApp`, para no repetirlas en cada prueba. */
 export function dependenciasDeSeguridadDePrueba(reloj: Reloj = relojFijo()) {
-  return { sesiones: new ServicioDeSesiones(reloj), intentosDeLogin: new ServicioDeIntentosDeLogin(reloj), enNube: false };
+  return {
+    sesiones: new ServicioDeSesiones(reloj),
+    intentosDeLogin: new ServicioDeIntentosDeLogin(reloj),
+    verificacionDeCuenta: new ServicioDeVerificacionDeCuenta(reloj),
+    enNube: false,
+  };
 }
 
 const USUARIO_ADMIN_DE_PRUEBA = "admin-prueba";

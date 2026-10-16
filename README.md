@@ -36,8 +36,9 @@ nada.
 | H15 | Caja obligatoria por defecto, fotos de producto, compras multi-línea, egresos con categoría, sección Barberos (reporte semanal y liquidación de adelantos) | ✅ |
 | H16 | Alertas técnicas y reporte de cierre por correo, recibo de venta al cliente (Resend) | ✅ |
 | H17 | Login real, dos roles (ADMIN/CAJERO), sesiones, lista de IPs permitidas para el mostrador | ✅ |
+| H18 | "Mi cuenta": el dueño actualiza nombre/correo/teléfono/contraseña, confirmado por un código al correo | ✅ |
 
-**366 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
+**374 pruebas automatizadas** en verde: almacén de eventos (incluida la de corte
 de luz a mitad de escritura), dominio, API de punta a punta, impresión ESC/POS,
 importación de catálogo, reportes de margen, respaldos, auditoría, autenticación
 y roles, las propinas y los adelantos a barberos.
@@ -54,6 +55,23 @@ La ticketera ya está confirmada: es una **Advance ADV-8010N**, y su perfil
 la fila `1234567890…` entre en una sola línea.
 
 ## Historial de versiones
+
+**v0.12.0** — "Mi cuenta": el dueño actualiza sus propios datos, confirmado por correo.
+
+- Un solo formulario en Ajustes → Mi cuenta (nombre, correo, teléfono,
+  contraseña) — nada se aplica hasta escribir el código de 6 dígitos que
+  llega por correo.
+- El código **siempre** va al correo YA registrado, aunque el pedido quiera
+  cambiarlo por otro — así una sesión robada no puede adueñarse de la cuenta
+  cambiando el correo a uno propio. Solo la primera vez (las cuentas de hoy
+  no traen correo) puede ir al correo nuevo que se está dando de alta.
+- 5 códigos mal escritos agotan el pedido; hay que pedir uno nuevo. Cambiar
+  la contraseña cierra todas las sesiones de esa cuenta, incluida la que
+  pidió el cambio.
+- Cuenta contra el mismo tope diario compartido de correos que ya usan las
+  alertas y el recibo de venta — nunca lo bloquea ni lo consume de más.
+- Solo para ADMIN: las cuentas CAJERO no tienen correo, y no es lo que se
+  pidió.
 
 **v0.11.0** — login real, dos roles.
 

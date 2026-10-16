@@ -149,6 +149,9 @@ export interface Usuario {
   /** Formato auto-descriptivo de `seguridad/contrasenas.ts`. Nunca texto plano. */
   hash: string;
   activo: boolean;
+  /** Solo para ADMIN: a dónde se manda el código de "Mi cuenta". Vacío en las cuentas creadas antes de esta función. */
+  correo?: string;
+  telefono?: string;
 }
 
 /** El dueño le pagó al barbero: los adelantos de antes de esta fecha quedan saldados. */

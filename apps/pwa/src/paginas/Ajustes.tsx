@@ -18,6 +18,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Store,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import { SeccionCatalogo } from "./ajustes/Catalogo";
 import { SeccionImpresora } from "./ajustes/Impresora";
 import { SeccionRespaldos } from "./ajustes/Respaldos";
 import { SeccionUsuarios } from "./ajustes/Usuarios";
+import { SeccionMiCuenta } from "./ajustes/MiCuenta";
 import { SeccionSeguridad } from "./ajustes/Seguridad";
 import { CampoGuardable, Casilla, Dato, EncabezadoPagina, Pagina } from "../componentes/Piezas";
 
@@ -54,6 +56,7 @@ const SECCIONES: { id: string; texto: string; icono: LucideIcon }[] = [
   { id: "ticketera", texto: "Ticketera", icono: Printer },
   { id: "respaldos", texto: "Respaldos", icono: HardDrive },
   { id: "usuarios", texto: "Usuarios", icono: Users },
+  { id: "mi-cuenta", texto: "Mi cuenta", icono: UserCog },
   { id: "seguridad", texto: "Seguridad", icono: ShieldCheck },
   { id: "diagnostico", texto: "Diagnóstico", icono: Activity },
 ];
@@ -185,6 +188,14 @@ export function Ajustes() {
             descripcion="Cuentas de cajero para el mostrador. Hasta 3 a la vez, usuario y contraseña elegidos acá."
           >
             <SeccionUsuarios />
+          </Bloque>
+
+          <Bloque
+            id="mi-cuenta"
+            titulo="Mi cuenta"
+            descripcion="Tu nombre, correo, teléfono y contraseña. Cualquier cambio se confirma con un código que llega a tu correo registrado."
+          >
+            <SeccionMiCuenta />
           </Bloque>
 
           <Bloque

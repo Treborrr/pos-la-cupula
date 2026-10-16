@@ -117,3 +117,27 @@ export function plantillaReporteDelDia(datos: {
 
   return { asunto, html };
 }
+
+/**
+ * El código de 6 dígitos que confirma un cambio en "Mi cuenta" (nombre,
+ * correo, teléfono y/o contraseña — lo que sea que se haya pedido cambiar,
+ * todo junto en un solo correo, no uno por campo).
+ */
+export function plantillaCodigoDeVerificacion(
+  codigo: string,
+  camposEnTexto: string[],
+): { asunto: string; html: string } {
+  const html = envoltorio(
+    "Confirmá el cambio en tu cuenta",
+    `
+    <p>Pediste actualizar: <strong>${camposEnTexto.join(", ")}</strong>.</p>
+    <div style="text-align:center;margin:20px 0;">
+      <span style="display:inline-block;font-size:28px;font-weight:bold;letter-spacing:4px;background:#f5f5f5;padding:12px 20px;border-radius:8px;">${codigo}</span>
+    </div>
+    <p style="color:#555;">Este código vence en 15 minutos. Nada se aplica hasta que lo escribas.</p>
+    <p style="color:#777;font-size:12px;">Si no pediste este cambio, ignorá este correo — no se aplica nada sin el código.</p>
+    `,
+  );
+
+  return { asunto: "Tu código de confirmación", html };
+}

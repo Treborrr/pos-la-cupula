@@ -442,6 +442,15 @@ export class Proyeccion {
         break;
       }
 
+      case "usuario.datos_actualizados": {
+        const u = this.usuarios.get(e.datos.usuarioId);
+        if (!u) break;
+        if (e.datos.nombre !== undefined) u.nombre = e.datos.nombre;
+        if (e.datos.correo !== undefined) u.correo = e.datos.correo;
+        if (e.datos.telefono !== undefined) u.telefono = e.datos.telefono;
+        break;
+      }
+
       case "usuario.desactivado": {
         const u = this.usuarios.get(e.datos.usuarioId);
         if (u) {
