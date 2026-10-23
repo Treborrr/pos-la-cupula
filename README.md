@@ -447,12 +447,27 @@ desde la UI.
 3. **Settings → Variables**, agregar:
    - `POS_DATOS` = `/data` (la ruta del Volumen del paso 2)
    - `PORT` no se toca: Railway la pone sola y el servidor ya la respeta.
-4. **Crear las dos cuentas ADMIN** antes de generar la URL pública: con el
-   servicio **detenido** (para no tener dos escritores sobre el mismo
-   archivo), `railway run npm run crear-usuario --workspace=@cupula/servidor
-   -- --usuario <handle> --nombre "<nombre>" --rol ADMIN` (pide la
-   contraseña de forma interactiva, nunca por argumento). Repetir para la
-   segunda cuenta, y reiniciar el servicio.
+4. **Crear las dos cuentas ADMIN** antes de generar la URL pública. Ojo:
+   `railway run` NO sirve: corre el comando en la máquina local con las
+   variables inyectadas, así que con `POS_DATOS=/data` escribiría en un
+   `/data` local, nunca en el Volumen. Y el script tampoco puede correr
+   junto al servidor (el `.bloqueo` admite un solo escritor). El camino que
+   sí funciona es poner el servicio en mantenimiento un momento:
+   1. En el `package.json` RAÍZ, cambiar el script `start` a
+      `"sleep infinity"` y desplegar con
+      `railway up --service pos-la-cupula --ci`: el contenedor queda vivo,
+      con el Volumen montado y sin servidor que tenga el bloqueo. No
+      sirve tocar `railway.json`: el builder actual de Railway lo ignora
+      por deprecado (se comprobó en vivo) y lo que ejecuta es
+      `npm run start`.
+   2. `railway ssh --service pos-la-cupula` y, adentro,
+      `npm run crear-usuario --workspace=@cupula/servidor -- --usuario
+      <handle> --nombre "<nombre>" --rol ADMIN` (pide la contraseña de
+      forma interactiva, nunca por argumento; por eso hace falta el ssh,
+      el único camino con teclado hasta el contenedor). Repetir para la
+      segunda cuenta.
+   3. Revertir el `package.json` y volver a desplegar con `railway up` (o
+      con un push, que dispara el despliegue continuo).
 5. **Settings → Networking → Generate Domain** cuando se quiera la URL
    pública. Railway por sí solo (sin este paso) no es alcanzable desde
    internet — así que hasta este punto se puede probar todo sin riesgo.
