@@ -42,9 +42,16 @@ apps/servidor/pwa/
 #   python3 herramientas/extraer-catalogo-excel.py
 datos-ejemplo/catalogo-del-excel.json
 
-# Íconos derivados del logo. Se regeneran con:
+# Los íconos de `apps/pwa/public/iconos/` SÍ van versionados, aunque sean
+# derivados de `marca/logo-cupula-negro.png`. Estuvieron ignorados y el
+# despliegue salía sin logo, sin favicon y sin íconos de instalación: el build
+# de la nube es Node y nadie corre `herramientas/generar-iconos.py` (que
+# necesita Python y Pillow), así que en un clon limpio la carpeta simplemente
+# no existía y todo `/iconos/*` daba 404.
+#
+# Son 7 archivos de ~860 KB en total y cambian solo si cambia el logo. Si eso
+# pasa, se regeneran a mano y se comitea el resultado:
 #   python3 herramientas/generar-iconos.py
-apps/pwa/public/iconos/
 
 .DS_Store
 *.log
