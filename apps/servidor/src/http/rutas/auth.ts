@@ -77,6 +77,9 @@ export async function rutasAuth(app: FastifyInstance, { pos, sesiones, intentosD
         usuario: u.usuario,
         nombre: u.nombre,
         rol: u.rol,
+        // La sucursal de su CUENTA. El límite de "un cajero a la vez" se
+        // aplica por local, así que la sesión tiene que saber en cuál está.
+        sedeId: u.sedeId,
         ip: peticion.ip,
       });
 

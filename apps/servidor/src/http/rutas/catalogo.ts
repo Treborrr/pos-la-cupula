@@ -9,9 +9,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { coincide, normalizar } from "@cupula/contratos";
+
+import { claveStock } from "../../proyecciones/Proyeccion";
 import {
   actualizarFotoDeItem,
   actualizarItem,
+  cambiarPrecioDeSede,
   crearItem,
   desactivarItem,
   reactivarItem,
@@ -163,6 +166,44 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
    *
    * Un campo AUSENTE no se toca; `null` lo deja sin valor.
    */
+  /**
+   * El precio que UNA sucursal le pone a un ítem, apartándose del de la cadena.
+   *
+   * `precio: null` significa VOLVER A HEREDAR el general, no "sin precio": es
+   * la forma de deshacer un precio local sin tener que ir a mirar y recopiar
+   * cuál era el de la cadena.
+   */
+  app.put("/catalogo/:id/precio-sede", { config: { rol: "ADMIN" } }, async (peticion) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(peticion.params);
+    const { sedeId, precio, motivo } = z
+      .object({
+        sedeId: z.string().min(1),
+        precio: z.number().int().min(0).nullable(),
+        motivo: z.string().trim().max(200).optional(),
+      })
+      .parse(peticion.body);
+
+    await pos.escribir(() => cambiarPrecioDeSede(pos.p, id, sedeId, precio, motivo), peticion.actor);
+    return { item: paraPantalla(id, sedeId) };
+  });
+
+  /** El precio de un ítem en cada sucursal, para la pantalla de precios. */
+  app.get("/catalogo/:id/precios-sede", { config: { rol: "ADMIN" } }, async (peticion) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(peticion.params);
+    const item = pos.p.items.get(id);
+    if (!item) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
+
+    return {
+      precioCadena: item.precio,
+      porSede: pos.p.sedesActivas().map((s) => ({
+        sedeId: s.id,
+        nombre: s.nombre,
+        precio: pos.p.precioEn(s.id, id),
+        propio: pos.p.precioEn(s.id, id) !== item.precio || pos.p.preciosPorSede.has(claveStock(s.id, id)),
+      })),
+    };
+  });
+
   app.post("/catalogo/precios", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { precios, motivo } = z
       .object({

@@ -24,6 +24,8 @@ export interface Sesion {
   usuario: string;
   nombre: string;
   rol: RolUsuario;
+  /** En qué local trabaja. Es lo que acota el límite de "un cajero a la vez". */
+  sedeId: string;
   ip: string;
   creadaEn: number;
   ultimoUso: number;
@@ -31,24 +33,40 @@ export interface Sesion {
 
 export class ServicioDeSesiones {
   private readonly sesiones = new Map<string, Sesion>();
-  /** Token de la única sesión de CAJERO activa, si hay alguna. ADMIN no tiene este límite. */
-  private cajeroActivo: string | null = null;
+  /**
+   * sucursal → token del cajero logueado en ESE local. ADMIN no tiene límite.
+   *
+   * Era un único token global: "una persona de mostrador a la vez" valía
+   * cuando había un solo mostrador. Con varias sucursales, un límite global
+   * significa que la cajera del segundo local, al entrar, echa al cajero del
+   * primero y le corta una venta a la mitad. El mostrador que hay que
+   * mantener en uno es el de cada local.
+   */
+  private readonly cajeroActivoPorSede = new Map<string, string>();
 
   constructor(private readonly reloj: Reloj) {}
 
   /**
-   * Si `rol` es CAJERO, cierra cualquier otra sesión de cajero que hubiera
-   * quedado activa — solo una persona de mostrador a la vez, sin importar
-   * cuál de las cuentas use.
+   * Si `rol` es CAJERO, cierra cualquier otra sesión de cajero abierta EN SU
+   * MISMA SUCURSAL: una persona de mostrador a la vez por local, sin importar
+   * cuál de las cuentas use. Los cajeros de los otros locales no se tocan.
    */
-  crear(datos: { usuarioId: string; usuario: string; nombre: string; rol: RolUsuario; ip: string }): string {
+  crear(datos: {
+    usuarioId: string;
+    usuario: string;
+    nombre: string;
+    rol: RolUsuario;
+    sedeId: string;
+    ip: string;
+  }): string {
     const token = randomBytes(32).toString("base64url");
     const ahora = this.reloj.ms();
     this.sesiones.set(token, { token, ...datos, creadaEn: ahora, ultimoUso: ahora });
 
     if (datos.rol === "CAJERO") {
-      if (this.cajeroActivo && this.cajeroActivo !== token) this.sesiones.delete(this.cajeroActivo);
-      this.cajeroActivo = token;
+      const anterior = this.cajeroActivoPorSede.get(datos.sedeId);
+      if (anterior && anterior !== token) this.sesiones.delete(anterior);
+      this.cajeroActivoPorSede.set(datos.sedeId, token);
     }
 
     return token;
@@ -73,8 +91,11 @@ export class ServicioDeSesiones {
   }
 
   destruir(token: string): void {
+    const sesion = this.sesiones.get(token);
     this.sesiones.delete(token);
-    if (this.cajeroActivo === token) this.cajeroActivo = null;
+    if (sesion && this.cajeroActivoPorSede.get(sesion.sedeId) === token) {
+      this.cajeroActivoPorSede.delete(sesion.sedeId);
+    }
   }
 
   /**

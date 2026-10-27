@@ -1,16 +1,18 @@
 /**
- * Sesiones en memoria: la ventana de 8h de inactividad y la regla de "solo
- * un cajero a la vez" son las dos cosas que no se pueden verificar mirando
- * el código, hay que hacerlas pasar de verdad.
+ * Sesiones en memoria: la ventana de 8h de inactividad y la regla de "solo un
+ * cajero a la vez POR SUCURSAL" son las dos cosas que no se pueden verificar
+ * mirando el código, hay que hacerlas pasar de verdad.
  */
 
 import { describe, expect, it } from "vitest";
 
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
+
 import { ServicioDeSesiones } from "../src/servicios/Sesiones";
 import { relojFijo } from "./ayuda";
 
-function datos(usuarioId: string, rol: "ADMIN" | "CAJERO" = "CAJERO") {
-  return { usuarioId, usuario: usuarioId, nombre: usuarioId, rol, ip: "127.0.0.1" };
+function datos(usuarioId: string, rol: "ADMIN" | "CAJERO" = "CAJERO", sedeId = SEDE_PRINCIPAL) {
+  return { usuarioId, usuario: usuarioId, nombre: usuarioId, rol, sedeId, ip: "127.0.0.1" };
 }
 
 describe("ServicioDeSesiones", () => {
@@ -46,7 +48,7 @@ describe("ServicioDeSesiones", () => {
     expect(s.obtener(token)).not.toBeNull();
   });
 
-  it("un login nuevo de CAJERO cierra cualquier otra sesión de cajero activa", () => {
+  it("un login nuevo de CAJERO cierra el de la MISMA sucursal", () => {
     const s = new ServicioDeSesiones(relojFijo());
     const primero = s.crear(datos("cajero1"));
     expect(s.obtener(primero)).not.toBeNull();
@@ -54,6 +56,31 @@ describe("ServicioDeSesiones", () => {
     const segundo = s.crear(datos("cajero2"));
     expect(s.obtener(primero)).toBeNull();
     expect(s.obtener(segundo)).not.toBeNull();
+  });
+
+  /**
+   * El límite es por mostrador, no global. Cuando era global, la cajera del
+   * segundo local al entrar echaba al cajero del primero y le cortaba la venta
+   * a la mitad. Con varias sucursales eso es inaceptable.
+   */
+  it("dos cajeros de sucursales DISTINTAS conviven sin echarse", () => {
+    const s = new ServicioDeSesiones(relojFijo());
+    const enPrincipal = s.crear(datos("kevin", "CAJERO", SEDE_PRINCIPAL));
+    const enCentro = s.crear(datos("ana", "CAJERO", "centro"));
+
+    expect(s.obtener(enPrincipal)).not.toBeNull();
+    expect(s.obtener(enCentro)).not.toBeNull();
+  });
+
+  it("el relevo en una sucursal no toca al cajero de la otra", () => {
+    const s = new ServicioDeSesiones(relojFijo());
+    const enCentro = s.crear(datos("ana", "CAJERO", "centro"));
+    const turnoMananero = s.crear(datos("kevin", "CAJERO", SEDE_PRINCIPAL));
+    const turnoTarde = s.crear(datos("luis", "CAJERO", SEDE_PRINCIPAL));
+
+    expect(s.obtener(turnoMananero)).toBeNull(); // relevado en su local
+    expect(s.obtener(turnoTarde)).not.toBeNull();
+    expect(s.obtener(enCentro)).not.toBeNull(); // el otro local, intacto
   });
 
   it("dos ADMIN pueden estar logueados a la vez", () => {

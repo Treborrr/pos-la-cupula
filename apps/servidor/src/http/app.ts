@@ -29,6 +29,7 @@ import { rutasAuth } from "./rutas/auth";
 import { rutasUsuarios } from "./rutas/usuarios";
 import { rutasMiCuenta } from "./rutas/miCuenta";
 import { rutasSistema } from "./rutas/sistema";
+import { rutasSedes } from "./rutas/sedes";
 import { rutasCatalogo } from "./rutas/catalogo";
 import { rutasVentas } from "./rutas/ventas";
 import { rutasInventario } from "./rutas/inventario";
@@ -156,6 +157,7 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
       await rutasUsuarios(api, deps);
       await rutasMiCuenta(api, deps);
       await rutasSistema(api, deps);
+      await rutasSedes(api, deps);
       await rutasCatalogo(api, deps);
       await rutasVentas(api, deps);
       await rutasInventario(api, deps);

@@ -9,7 +9,7 @@
  * saltar por un camino distinto.
  */
 
-import type { EventoNuevo, RolUsuario } from "@cupula/contratos";
+import { SEDE_PRINCIPAL, type EventoNuevo, type RolUsuario } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
@@ -24,6 +24,12 @@ export interface UsuarioNuevo {
   rol: RolUsuario;
   /** Ya calculado — ver `seguridad/contrasenas.ts`. El dominio nunca hashea ni verifica. */
   hash: string;
+  /**
+   * En qué sucursal trabaja. Solo tiene efecto en un CAJERO: el ADMIN ve toda
+   * la cadena. Ausente = la principal, que es lo correcto en una instalación
+   * de un solo local.
+   */
+  sedeId?: string;
 }
 
 function activosDeRol(p: Proyeccion, rol: RolUsuario): number {
@@ -56,13 +62,23 @@ export function crearUsuario(p: Proyeccion, nuevo: UsuarioNuevo): { eventos: Eve
 
   verificarCupo(p, nuevo.rol);
 
+  /**
+   * La sucursal del cajero tiene que existir: una cuenta apuntando a un local
+   * que no está no podría cobrar en ningún lado, y el error aparecería recién
+   * en el mostrador.
+   */
+  const sedeId = nuevo.sedeId ?? SEDE_PRINCIPAL;
+  if (!p.sedes.has(sedeId)) {
+    throw new ErrorDeNegocio("SEDE_NO_EXISTE", "Esa sucursal no existe.");
+  }
+
   const usuarioId = ulid();
   return {
     usuarioId,
     eventos: [
       {
         tipo: "usuario.creado",
-        datos: { usuarioId, usuario: nuevo.usuario, nombre, rol: nuevo.rol, hash: nuevo.hash },
+        datos: { usuarioId, usuario: nuevo.usuario, nombre, rol: nuevo.rol, hash: nuevo.hash, sedeId },
       },
     ],
   };
@@ -134,4 +150,30 @@ export function actualizarDatosDeUsuario(
 ): EventoNuevo[] {
   if (!p.usuarios.has(usuarioId)) throw new ErrorDeNegocio("USUARIO_NO_EXISTE", "Esa cuenta no existe.");
   return [{ tipo: "usuario.datos_actualizados", datos: { usuarioId, ...datos } }];
+}
+
+/**
+ * Mueve una cuenta de cajero a otro local.
+ *
+ * Solo CAJERO: un ADMIN no "pertenece" a una sucursal, las ve todas, así que
+ * moverlo no significaría nada. Las ventas que el cajero ya cobró NO se mueven:
+ * quedan en el local donde de verdad ocurrieron.
+ */
+export function cambiarSedeDeUsuario(p: Proyeccion, usuarioId: string, sedeId: string): EventoNuevo[] {
+  const u = p.usuarios.get(usuarioId);
+  if (!u) throw new ErrorDeNegocio("USUARIO_NO_EXISTE", "Esa cuenta no existe.");
+  if (u.rol === "ADMIN") {
+    throw new ErrorDeNegocio(
+      "DATO_INVALIDO",
+      "Un administrador ve todas las sucursales y no pertenece a ninguna.",
+    );
+  }
+  const sede = p.sedes.get(sedeId);
+  if (!sede) throw new ErrorDeNegocio("SEDE_NO_EXISTE", "Esa sucursal no existe.");
+  if (!sede.activa) {
+    throw new ErrorDeNegocio("SEDE_INACTIVA", `"${sede.nombre}" está desactivada.`);
+  }
+  if (u.sedeId === sedeId) return [];
+
+  return [{ tipo: "usuario.sede_cambiada", datos: { usuarioId, sedeId } }];
 }
