@@ -356,7 +356,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
   app.post("/catalogo", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const datos = esquemaItemNuevo.parse(peticion.body);
     const itemId = await pos.transaccion(() => {
-      const r = crearItem(pos.p, datos);
+      const r = crearItem(pos.p, datos, sedeParaEscribir(peticion));
       return { eventos: r.eventos, resultado: r.itemId };
     }, peticion.actor);
     return respuesta.status(201).send({ item: paraPantalla(itemId, peticion.sede) });

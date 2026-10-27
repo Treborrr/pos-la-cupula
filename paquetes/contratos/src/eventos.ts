@@ -311,6 +311,17 @@ export const itemCreado = definir(
     costo: esquemaCentimosPositivo.nullable().optional(),
     /** Solo tiene sentido en PRODUCTO. En SERVICIO se ignora. */
     stockMinimo: z.number().min(0).max(100_000).optional(),
+    /**
+     * En qué sucursal se dio de alta. El ítem es de la CADENA —existe en todos
+     * los locales—, pero el local que lo creó queda registrado como que lo
+     * maneja, aunque arranque en cero.
+     *
+     * Sin esto, con el catálogo compartido, cada producto con stock mínimo
+     * aparecía como "bajo mínimo" en los veintidós locales a la vez, incluso
+     * en los que nunca lo vendieron. Ausente = `SEDE_PRINCIPAL`, que es
+     * exactamente lo que pasaba cuando había un solo local.
+     */
+    sedeId: esquemaSedeId.optional(),
     /** Posición en la grilla de la pantalla de cobro. */
     orden: z.number().int().min(0).max(9999).optional(),
   }),

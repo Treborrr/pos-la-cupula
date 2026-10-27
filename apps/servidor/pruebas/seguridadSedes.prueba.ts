@@ -63,7 +63,7 @@ async function escenario() {
   const corte = (
     await app.inject({
       method: "POST",
-      url: "/api/catalogo",
+      url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`,
       payload: { codigo: "COR", nombre: "CORTE", tipo: "SERVICIO", categoria: "Barbería", precio: 2000 },
     })
   ).json().item.id as string;
@@ -84,7 +84,7 @@ async function escenario() {
   // Cajera de Centro.
   await app.inject({
     method: "POST",
-    url: "/api/usuarios",
+    url: `/api/usuarios?sede=${SEDE_PRINCIPAL}`,
     payload: { usuario: "ana", nombre: "Ana", contrasena: "contrasena-larga", sedeId: centro },
   });
   const login = await app.inject({

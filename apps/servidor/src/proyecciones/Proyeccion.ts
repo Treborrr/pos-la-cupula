@@ -234,6 +234,13 @@ export class Proyeccion {
         this.items.set(item.id, item);
         this.porCodigo.set(item.codigo, item.id);
         this.indexarMarca(item.marca, item.id);
+
+        // El local que lo dio de alta queda registrado como que lo maneja,
+        // aunque empiece en cero. Ver `manejaProducto`.
+        if (item.tipo === "PRODUCTO") {
+          const clave = claveStock(sedeDe(d), item.id);
+          if (!this.stock.has(clave)) this.stock.set(clave, 0);
+        }
         break;
       }
 
@@ -768,6 +775,23 @@ export class Proyeccion {
   /** Unidades de un producto EN UNA SUCURSAL. */
   stockDe(sedeId: string, itemId: string): number {
     return this.stock.get(claveStock(sedeId, itemId)) ?? 0;
+  }
+
+  /**
+   * ¿Esta sucursal maneja este producto?
+   *
+   * Hay entrada en el mapa de stock solo si alguna vez hubo un movimiento en
+   * ESE local: una compra, un conteo, una merma, un traslado o una venta. Un
+   * producto que el local nunca tocó no tiene entrada, y eso es distinto de
+   * tener cero: cero es "se acabó", y sin entrada es "acá no se vende".
+   *
+   * La diferencia importa desde que el catálogo es de la cadena. Sin esto,
+   * cada producto con stock mínimo aparecía como "bajo mínimo" en los veintidós
+   * locales a la vez, incluso en los que nunca lo vendieron, y la alerta pasaba
+   * de señalar lo que hay que reponer a ser un número que nadie mira.
+   */
+  manejaProducto(sedeId: string, itemId: string): boolean {
+    return this.stock.has(claveStock(sedeId, itemId));
   }
 
   /** Unidades de un producto sumando TODAS las sucursales. Para el consolidado. */

@@ -63,7 +63,7 @@ async function apiDePrueba() {
 async function cajeroDe(app: FastifyInstance, sedeId: string, usuario: string) {
   const alta = await app.inject({
     method: "POST",
-    url: "/api/usuarios",
+    url: `/api/usuarios?sede=${SEDE_PRINCIPAL}`,
     payload: { usuario, nombre: `Cajero ${usuario}`, contrasena: "contrasena-larga", sedeId },
   });
   expect(alta.statusCode).toBe(201);
@@ -93,7 +93,7 @@ async function crearSedeHttp(app: FastifyInstance, nombre: string, prefijo: stri
 async function crearServicio(app: FastifyInstance, codigo: string, nombre: string, precio: number) {
   const r = await app.inject({
     method: "POST",
-    url: "/api/catalogo",
+    url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`,
     payload: { codigo, nombre, tipo: "SERVICIO", categoria: "Barbería", precio },
   });
   expect(r.statusCode).toBe(201);
@@ -164,7 +164,7 @@ describe("la sucursal del cajero la decide el servidor", () => {
 
     const cera = await app.inject({
       method: "POST",
-      url: "/api/catalogo",
+      url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`,
       payload: { codigo: "CERA", nombre: "CERA", tipo: "PRODUCTO", categoria: "Productos", precio: 1500 },
     });
     const itemId = cera.json().item.id as string;
@@ -251,7 +251,7 @@ describe("traslados por HTTP", () => {
 
     const cera = await app.inject({
       method: "POST",
-      url: "/api/catalogo",
+      url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`,
       payload: { codigo: "CERA", nombre: "CERA", tipo: "PRODUCTO", categoria: "Productos", precio: 1500 },
     });
     const itemId = cera.json().item.id as string;
@@ -279,7 +279,7 @@ describe("traslados por HTTP", () => {
 
     const cera = await app.inject({
       method: "POST",
-      url: "/api/catalogo",
+      url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`,
       payload: { codigo: "CERA", nombre: "CERA", tipo: "PRODUCTO", categoria: "Productos", precio: 1500 },
     });
     const itemId = cera.json().item.id as string;
@@ -343,7 +343,7 @@ describe("precios por sucursal por HTTP", () => {
     });
 
     const { cookie } = await cajeroDe(app, centro, "ana");
-    const r = await app.inject({ method: "GET", url: "/api/catalogo", headers: { cookie } });
+    const r = await app.inject({ method: "GET", url: `/api/catalogo?sede=${SEDE_PRINCIPAL}`, headers: { cookie } });
     const item = r.json().items.find((i: { id: string }) => i.id === corte);
 
     // `precio` es el EFECTIVO de su local: así la grilla de cobro cobra lo que
@@ -351,5 +351,73 @@ describe("precios por sucursal por HTTP", () => {
     expect(item.precio).toBe(2500);
     expect(item.precioCadena).toBe(2000);
     expect(item.precioPropio).toBe(true);
+  });
+});
+
+/**
+ * Con varios locales, un ADMIN que no eligió sucursal está mirando LA CADENA.
+ *
+ * Leer así es lo natural: el dueño abre el sistema para ver cómo va el negocio.
+ * Escribir, no: no existe una respuesta correcta a "¿en cuál de los 22?", y
+ * dejar que el servidor elija uno de reserva haría que una venta o una entrada
+ * de stock caigan en un local donde nadie las hizo, sin ninguna señal hasta
+ * que una caja no cuadre.
+ */
+describe("un ADMIN sin sucursal elegida", () => {
+  it("LEE la cadena entera", async () => {
+    const { app } = await apiDePrueba();
+    await crearSedeHttp(app, "Centro", "SC");
+
+    const r = await app.inject({ method: "GET", url: "/api/estado" });
+    // `sede: null` es la señal de "estás mirando todo", y la pantalla la usa
+    // para dejar el selector en «Todas».
+    expect(r.json().sede).toBeNull();
+    expect(r.json().siguienteCorrelativo).toBeNull();
+  });
+
+  it("NO puede cobrar hasta elegir una", async () => {
+    const { app } = await apiDePrueba();
+    await crearSedeHttp(app, "Centro", "SC");
+    const corte = await crearServicio(app, "COR", "CORTE", 2000);
+
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId: corte, cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: "01K5B7M3QW8ZX2VDNPQR4T6Y9D",
+      },
+    });
+
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error.codigo).toBe("SEDE_NO_ELEGIDA");
+    expect(r.json().error.sugerencia).toMatch(/selector/i);
+  });
+
+  it("tampoco abrir la caja ni mover stock", async () => {
+    const { app } = await apiDePrueba();
+    await crearSedeHttp(app, "Centro", "SC");
+
+    for (const url of ["/api/caja/abrir", "/api/inventario/entrada"]) {
+      const r = await app.inject({ method: "POST", url, payload: { montoInicial: 0, itemId: "x", cantidad: 1, motivo: "x" } });
+      expect(r.json().error.codigo, url).toBe("SEDE_NO_ELEGIDA");
+    }
+  });
+
+  it("con UNA sola sucursal no pregunta nada: ahí la cadena y el local son lo mismo", async () => {
+    const { app } = await apiDePrueba();
+    const corte = await crearServicio(app, "COR", "CORTE", 2000);
+
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/ventas",
+      payload: {
+        lineas: [{ itemId: corte, cantidad: 1 }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 }],
+        claveIdempotencia: "01K5B7M3QW8ZX2VDNPQR4T6Y9E",
+      },
+    });
+    expect(r.statusCode).toBe(201);
   });
 });

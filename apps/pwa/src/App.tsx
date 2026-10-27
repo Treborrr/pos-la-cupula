@@ -6,6 +6,7 @@ import {
   BarChart3,
   Boxes,
   ChevronRight,
+  LayoutDashboard,
   LayoutGrid,
   Lock,
   LockOpen,
@@ -35,6 +36,7 @@ import { MenuDeCuenta } from "./componentes/MenuDeCuenta";
 
 import { Login } from "./paginas/Login";
 import { Cobrar } from "./paginas/Cobrar";
+import { Inicio } from "./paginas/Inicio";
 import { Historial } from "./paginas/Historial";
 import { Catalogo } from "./paginas/Catalogo";
 import { Inventario } from "./paginas/Inventario";
@@ -46,12 +48,29 @@ import { Ajustes } from "./paginas/Ajustes";
 
 const GRUPOS: {
   titulo: string;
-  secciones: { ruta: string; texto: string; icono: LucideIcon; exacta?: boolean; soloAdmin?: boolean }[];
+  secciones: {
+    ruta: string;
+    texto: string;
+    icono: LucideIcon;
+    exacta?: boolean;
+    soloAdmin?: boolean;
+    /** El ADMIN igual puede cobrar; lo que cambia es dónde ARRANCA. */
+    soloCajero?: boolean;
+  }[];
 }[] = [
   {
     titulo: "Atender",
     secciones: [
-      { ruta: "/", texto: "Cobrar", icono: ShoppingCart, exacta: true },
+      /**
+       * El dueño aterriza en Inicio y el cajero en Cobrar.
+       *
+       * Antes los dos entraban a Cobrar, que es la pantalla del mostrador:
+       * buscar producto, agregar al carrito, cobrar. Un dueño abre el sistema
+       * para ver cómo va el negocio, y con varios locales no va a cobrar en
+       * ninguno. Cada rol arranca donde de verdad trabaja.
+       */
+      { ruta: "/", texto: "Inicio", icono: LayoutDashboard, exacta: true, soloAdmin: true },
+      { ruta: "/cobrar", texto: "Cobrar", icono: ShoppingCart, soloCajero: true },
       { ruta: "/historial", texto: "Ventas", icono: Receipt },
       { ruta: "/caja", texto: "Caja", icono: Wallet },
     ],
@@ -136,7 +155,13 @@ function AppAutenticada({ usuario }: { usuario: UsuarioDeSesion }) {
 
   const grupos = GRUPOS.map((g) => ({
     ...g,
-    secciones: g.secciones.filter((s) => !s.soloAdmin || usuario.rol === "ADMIN"),
+    secciones: g.secciones.filter(
+      (s) =>
+        (!s.soloAdmin || usuario.rol === "ADMIN") &&
+        // Para el cajero, "Cobrar" ES su inicio y vive en "/": una segunda
+        // entrada de menú al mismo sitio solo confunde.
+        (!s.soloCajero || usuario.rol !== "ADMIN"),
+    ),
   })).filter((g) => g.secciones.length > 0);
 
   return (
@@ -152,7 +177,10 @@ function AppAutenticada({ usuario }: { usuario: UsuarioDeSesion }) {
           <BarraSuperior estado={estado.data} />
           <main className="min-h-0 flex-1 overflow-hidden">
             <Routes>
-              <Route path="/" element={<Cobrar />} />
+              {/* La raíz depende del rol: el dueño ve el panel, el cajero la
+                  pantalla de cobro. El ADMIN llega a cobrar por /cobrar. */}
+              <Route path="/" element={usuario.rol === "ADMIN" ? <Inicio /> : <Cobrar />} />
+              <Route path="/cobrar" element={<Cobrar />} />
               <Route path="/historial" element={<Historial />} />
               <Route path="/historial/:id" element={<Historial />} />
               <Route path="/caja" element={<Caja />} />
@@ -293,6 +321,15 @@ function MenuLateral({
 
 function EstadoDeCaja({ estado }: { estado?: EstadoGeneral }) {
   if (!estado) return null;
+
+  /**
+   * La caja es de UN local. Mirando toda la cadena, "Caja cerrada" no se
+   * refiere a nada: hay siete, unas abiertas y otras no. Se esconde, y el
+   * recuento de cajas abiertas lo da la pantalla de Inicio, que sí sabe
+   * contarlas.
+   */
+  if (!estado.sede) return null;
+
   const abierta = Boolean(estado.turnoAbierto);
 
   return (
@@ -374,7 +411,7 @@ function SelectorDeSucursal({ estado }: { estado?: EstadoGeneral }) {
     <label className="flex items-center gap-2 text-sm">
       <Store className="h-4 w-4 shrink-0 text-tinta/50" />
       <select
-        className="max-w-48 rounded-lg bg-hueso px-2.5 py-1.5 font-semibold text-tinta"
+        className="max-w-56 min-w-0 rounded-lg bg-hueso px-2.5 py-1.5 font-semibold text-tinta"
         value={valor}
         onChange={(e) => {
           elegirSede(e.target.value);
@@ -387,7 +424,7 @@ function SelectorDeSucursal({ estado }: { estado?: EstadoGeneral }) {
       >
         {/* "Todas" primero: es el punto de partida natural del dueño de una
             cadena, que mira el conjunto y recién después baja a un local. */}
-        <option value={TODAS_LAS_SEDES}>Todas las sucursales ({sedes.length})</option>
+        <option value={TODAS_LAS_SEDES}>Todas ({sedes.length} sucursales)</option>
         {sedes.map((s) => (
           <option key={s.id} value={s.id}>
             {s.nombre}

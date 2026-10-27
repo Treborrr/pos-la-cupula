@@ -7,7 +7,7 @@
  * había dado cuenta. Aquí el alta lo rechaza de entrada.
  */
 
-import { normalizar, type Centimos, type EventoNuevo, type TipoItem } from "@cupula/contratos";
+import { normalizar, SEDE_PRINCIPAL, type Centimos, type EventoNuevo, type TipoItem } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
@@ -104,7 +104,16 @@ export interface ItemNuevo {
   stockInicial?: number;
 }
 
-export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNuevo[]; itemId: string } {
+/**
+ * `sedeId` es el local que da de alta el ítem. El ítem es de la CADENA, pero
+ * ese local queda registrado como que lo maneja aunque arranque en cero: así
+ * el aviso de stock mínimo le llega a quien lo vende y no a los veintidós.
+ */
+export function crearItem(
+  p: Proyeccion,
+  nuevo: ItemNuevo,
+  sedeId: string = SEDE_PRINCIPAL,
+): { eventos: EventoNuevo[]; itemId: string } {
   const codigo = nuevo.codigo?.trim() ? nuevo.codigo.trim().toUpperCase() : siguienteCodigo(p, nuevo.tipo);
 
   const existente = p.porCodigo.get(codigo);
@@ -132,6 +141,7 @@ export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNue
         costo: nuevo.tipo === "PRODUCTO" ? (nuevo.costo ?? null) : null,
         stockMinimo: nuevo.tipo === "PRODUCTO" ? (nuevo.stockMinimo ?? 0) : undefined,
         orden: nuevo.orden,
+        sedeId,
       },
     },
   ];
@@ -141,6 +151,9 @@ export function crearItem(p: Proyeccion, nuevo: ItemNuevo): { eventos: EventoNue
       tipo: "stock.entrada",
       datos: {
         itemId,
+        // En la MISMA sucursal que lo dio de alta: el stock inicial son
+        // unidades en un estante concreto, el de quien lo está cargando.
+        sedeId,
         cantidad: nuevo.stockInicial,
         costoUnitario: nuevo.costo ?? undefined,
         motivo: "Stock inicial al crear el producto",

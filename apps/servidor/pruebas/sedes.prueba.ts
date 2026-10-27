@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ulid } from "ulid";
 
 import { ServicioPos } from "../src/servicios/Pos";
-import { crearItem, cambiarPrecioDeSede } from "../src/dominio/catalogo/catalogo";
+import { cambiarPrecioDeSede, crearItem } from "../src/dominio/catalogo/catalogo";
 import {
   actualizarSede,
   crearSede,
@@ -20,7 +20,7 @@ import {
   prefijoSugerido,
   slugDeSede,
 } from "../src/dominio/sedes/sedes";
-import { registrarEntrada, ajustarStock } from "../src/dominio/inventario/inventario";
+import { ajustarStock, registrarEntrada, stockBajo } from "../src/dominio/inventario/inventario";
 import { trasladarStock } from "../src/dominio/inventario/traslados";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
 import { compararSedes, construirReporte } from "../src/consultas/reportes";
@@ -618,6 +618,76 @@ describe("abrir muchas sucursales sin trabajo manual", () => {
         return { eventos: r.eventos, resultado: null };
       }),
     ).rejects.toThrow(/empieza con una letra/);
+    await pos.cerrar();
+  });
+});
+
+/**
+ * El catálogo es de la cadena, pero el STOCK de un producto nuevo es del local
+ * que lo carga. Y el aviso de "bajo mínimo" tiene que llegarle a ese local, no
+ * a los veintidós: con el catálogo compartido, cada producto con mínimo
+ * aparecía como faltante en todos lados y la alerta dejaba de señalar nada.
+ */
+describe("dar de alta un producto en un local", () => {
+  it("el stock inicial queda en la sucursal que lo creó", async () => {
+    const { pos } = await posDePrueba();
+    const centro = await conSede(pos, "Centro", "SC");
+
+    const itemId = await pos.transaccion(() => {
+      const r = crearItem(
+        pos.p,
+        { codigo: "POM", nombre: "POMADA", tipo: "PRODUCTO", categoria: "P", precio: 1200, stockInicial: 6 },
+        centro,
+      );
+      return { eventos: r.eventos, resultado: r.itemId };
+    });
+
+    expect(pos.p.stockDe(centro, itemId)).toBe(6);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, itemId)).toBe(0);
+    await pos.cerrar();
+  });
+
+  it("solo avisa de bajo mínimo en los locales que manejan el producto", async () => {
+    const { pos } = await posDePrueba();
+    const centro = await conSede(pos, "Centro", "SC");
+
+    await pos.transaccion(() => {
+      const r = crearItem(
+        pos.p,
+        { codigo: "POM", nombre: "POMADA", tipo: "PRODUCTO", categoria: "P", precio: 1200, stockMinimo: 5, stockInicial: 1 },
+        centro,
+      );
+      return { eventos: r.eventos, resultado: null };
+    });
+
+    // En Centro falta: tiene 1 y su mínimo es 5.
+    expect(stockBajo(pos.p, centro)).toHaveLength(1);
+    // En la principal NO aparece: ese local no maneja ese producto.
+    expect(stockBajo(pos.p, SEDE_PRINCIPAL)).toHaveLength(0);
+    await pos.cerrar();
+  });
+
+  it("un local empieza a manejarlo en cuanto recibe un traslado", async () => {
+    const { pos, ids } = await posDePrueba();
+    const centro = await conSede(pos, "Centro", "SC");
+
+    await pos.escribir(() =>
+      registrarEntrada(pos.p, SEDE_PRINCIPAL, { itemId: ids["CERA"]!, cantidad: 10, motivo: "Compra" }),
+    );
+    expect(pos.p.manejaProducto(centro, ids["CERA"]!)).toBe(false);
+
+    await pos.transaccion(() => {
+      const r = trasladarStock(pos.p, {
+        itemId: ids["CERA"]!,
+        desdeSedeId: SEDE_PRINCIPAL,
+        haciaSedeId: centro,
+        cantidad: 3,
+        motivo: "Reposición",
+      });
+      return { eventos: r.eventos, resultado: null };
+    });
+
+    expect(pos.p.manejaProducto(centro, ids["CERA"]!)).toBe(true);
     await pos.cerrar();
   });
 });

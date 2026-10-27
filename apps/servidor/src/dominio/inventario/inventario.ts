@@ -147,6 +147,8 @@ export function stockBajo(
   const salida = [];
   for (const item of p.items.values()) {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
+    // Solo lo que este local de verdad maneja. Ver `manejaProducto`.
+    if (!p.manejaProducto(sedeId, item.id)) continue;
     const stock = p.stockDe(sedeId, item.id);
     if (bajoMinimo(stock, item.stockMinimo)) {
       salida.push({ itemId: item.id, nombre: p.nombreCompleto(item), stock, minimo: item.stockMinimo });

@@ -101,7 +101,7 @@ export function registrarAutorizacion(api: FastifyInstance, { pos, sesiones }: D
     peticion.sesion = sesion;
     peticion.actor = { tipo: "operador", id: sesion.usuarioId };
     peticion.sede = resolverSede(pos, peticion, sesion);
-    peticion.sedeFiltro = resolverFiltro(peticion, sesion);
+    peticion.sedeFiltro = resolverFiltro(pos, peticion, sesion);
   });
 }
 
@@ -138,10 +138,26 @@ export function sedeParaEscribir(peticion: FastifyRequest): string {
   return peticion.sede;
 }
 
-function resolverFiltro(peticion: FastifyRequest, sesion: Sesion): string | null {
+function resolverFiltro(pos: Dependencias["pos"], peticion: FastifyRequest, sesion: Sesion): string | null {
+  if (sesion.rol !== "ADMIN") return peticion.sede;
+
   const pedida = (peticion.query as { sede?: string } | undefined)?.sede;
-  if (sesion.rol === "ADMIN" && pedida === TODAS_LAS_SEDES) return null;
-  return peticion.sede;
+  if (pedida === TODAS_LAS_SEDES) return null;
+  if (pedida && pos.p.sedes.has(pedida)) return pedida;
+
+  /**
+   * Un ADMIN que no eligió nada está mirando LA CADENA, no un local al azar.
+   *
+   * Antes caía en la sucursal de su cuenta, y entonces el encabezado decía
+   * "Principal" mientras la pantalla de inicio mostraba los siete locales:
+   * dos contextos distintos a la vez, que es la forma más rápida de que
+   * alguien lea un número creyendo que es de otra cosa.
+   *
+   * Con una sola sucursal esto no cambia nada: ahí "la cadena" y "el local"
+   * son lo mismo, y conviene que sea concreta para poder cobrar sin elegir.
+   */
+  const activas = pos.p.sedesActivas();
+  return activas.length > 1 ? null : peticion.sede;
 }
 
 function resolverSede(pos: Dependencias["pos"], peticion: FastifyRequest, sesion: Sesion): string {

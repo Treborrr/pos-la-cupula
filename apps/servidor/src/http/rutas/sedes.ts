@@ -18,6 +18,9 @@ import {
   reactivarSede,
 } from "../../dominio/sedes/sedes";
 import { trasladarStock } from "../../dominio/inventario/traslados";
+import { stockBajo } from "../../dominio/inventario/inventario";
+import { compararSedes } from "../../consultas/reportes";
+import { relojDelSistema } from "../../puertos/Reloj";
 import type { Dependencias } from "../app";
 
 export async function rutasSedes(app: FastifyInstance, { pos }: Dependencias) {
@@ -35,6 +38,49 @@ export async function rutasSedes(app: FastifyInstance, { pos }: Dependencias) {
         cajaAbierta: pos.p.turnoAbiertoDe(s.id) !== null,
       }));
     return { sedes };
+  });
+
+  /**
+   * El panel de inicio del dueño: cómo va HOY la cadena entera.
+   *
+   * Existe como una sola ruta y no como cuatro llamadas desde la pantalla
+   * porque la pregunta es una sola —"¿cómo va el negocio?"— y partirla en
+   * cuatro consultas haría que la pantalla se arme a pedazos delante de quien
+   * la mira. Todo sale de la proyección en memoria: son microsegundos.
+   */
+  app.get("/panel", { config: { rol: "ADMIN" } }, async () => {
+    const hoy = relojDelSistema.ahora().slice(0, 10);
+    const porSede = compararSedes(pos.p, hoy, hoy);
+
+    const totales = porSede.reduce(
+      (a, s) => ({ vendido: a.vendido + s.total, ventas: a.ventas + s.cantidad }),
+      { vendido: 0, ventas: 0 },
+    );
+
+    return {
+      fecha: hoy,
+      cadena: {
+        ...totales,
+        ticketPromedio: totales.ventas > 0 ? Math.round(totales.vendido / totales.ventas) : 0,
+        sucursales: porSede.length,
+        cajasAbiertas: porSede.filter((s) => s.cajaAbierta).length,
+      },
+      /**
+       * Una fila por local, con lo que el dueño mira de un vistazo: cuánto
+       * lleva vendido, si la caja está abierta y cuántos productos tiene bajo
+       * mínimo. El stock bajo va acá y no en una pantalla aparte porque es la
+       * alerta que SIEMPRE es de un local concreto: "faltan 3 productos" no
+       * significa nada sin saber dónde faltan.
+       */
+      sedes: porSede.map((s) => {
+        const turno = pos.p.turnoAbiertoDe(s.sedeId);
+        return {
+          ...s,
+          cajaDesde: turno?.abiertoEn ?? null,
+          alertasDeStock: stockBajo(pos.p, s.sedeId).length,
+        };
+      }),
+    };
   });
 
   /**

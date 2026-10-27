@@ -110,7 +110,16 @@ export async function rutasSistema(
           ),
       turnoAbierto: mirandoTodas ? null : pos.p.turnoAbiertoDe(peticion.sede),
       exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
-      alertasDeStock: stockBajo(pos.p, peticion.sede).length,
+      /**
+       * Mirando toda la cadena se suman los locales. Si contara solo el de
+       * reserva, la barra de arriba diría "1 con stock bajo" mientras la
+       * pantalla de Inicio dice 3: dos números distintos para la misma
+       * pregunta, en la misma pantalla, que es exactamente lo que hace que el
+       * dueño deje de creerle a los dos.
+       */
+      alertasDeStock: mirandoTodas
+        ? pos.p.sedesActivas().reduce((a, s) => a + stockBajo(pos.p, s.id).length, 0)
+        : stockBajo(pos.p, peticion.sede).length,
       correos: notificaciones.contadorDeHoy(),
       impresora: estadoImpresora,
       // Barato a propósito: nada de lo que entra acá vuelve a tocar el disco
