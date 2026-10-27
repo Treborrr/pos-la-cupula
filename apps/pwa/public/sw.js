@@ -15,7 +15,17 @@
  * Lo único que cachea es el armazón de la interfaz, para que abra al instante.
  */
 
-const VERSION = "v1";
+/**
+ * Subir este número BORRA el caché viejo de todos los navegadores: `activate`
+ * elimina cualquier caché cuyo nombre no sea el actual.
+ *
+ * Se sube a v2 a propósito. Mientras los íconos faltaban en el despliegue, el
+ * servidor respondía el `index.html` para esas rutas (200, no 404), así que el
+ * caché guardó una página HTML bajo la URL del logo y la servía para siempre.
+ * Sin cambiar el nombre, esa entrada envenenada sobreviviría en el navegador
+ * de cada persona aunque el servidor ya responda bien.
+ */
+const VERSION = "v2";
 const CACHE = `cupula-${VERSION}`;
 
 // Lo mínimo para que la aplicación pinte algo. Los bundles con hash se cachean
@@ -28,9 +38,44 @@ const ARMAZON = [
   "/iconos/emblema-blanco.png",
 ];
 
+/**
+ * Las rutas que NO se pueden cachear para siempre.
+ *
+ * El caché permanente es correcto para los bundles de Vite porque llevan un
+ * hash en el nombre: contenido nuevo, nombre nuevo. Las fotos de catálogo no:
+ * se llaman `<id-del-ítem>.jpg` y ese nombre no cambia nunca. Al cambiarle la
+ * foto a un producto, el servidor la pisa pero la URL sigue igual, así que el
+ * caché seguía devolviendo la anterior para siempre. Subir la primera foto
+ * funcionaba; cambiarla parecía roto.
+ */
+function llevaHashEnElNombre(url) {
+  return !url.pathname.startsWith("/fotos/");
+}
+
 self.addEventListener("install", (evento) => {
   evento.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(ARMAZON)).then(() => self.skipWaiting()),
+    caches
+      .open(CACHE)
+      .then((c) =>
+        /**
+         * Uno por uno, y sin que un fallo tumbe la instalación entera.
+         *
+         * Era `addAll`, que es todo-o-nada: mientras `emblema-blanco.png`
+         * faltaba en el despliegue, la instalación del service worker fallaba
+         * ENTERA y la aplicación se quedaba sin caché de arranque, en silencio
+         * y por un archivo que no es crítico. Lo único que de verdad hace falta
+         * es `/`, y si eso falla no hay nada que cachear igual.
+         */
+        Promise.all(
+          ARMAZON.map((ruta) =>
+            c.add(ruta).catch((e) => {
+              if (ruta === "/") throw e;
+              return undefined;
+            }),
+          ),
+        ),
+      )
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -66,6 +111,27 @@ self.addEventListener("fetch", (evento) => {
           return respuesta;
         })
         .catch(() => caches.match("/").then((r) => r ?? Response.error())),
+    );
+    return;
+  }
+
+  /**
+   * Lo que no lleva hash en el nombre va a la RED primero, con el caché solo
+   * como red de contención si el servidor no responde. Es la misma regla que
+   * ya se aplica a la navegación, y por el mismo motivo: servir una versión
+   * vieja de algo que cambió es peor que no servir nada.
+   */
+  if (!llevaHashEnElNombre(url)) {
+    evento.respondWith(
+      fetch(peticion)
+        .then((respuesta) => {
+          if (respuesta.ok && respuesta.type === "basic") {
+            const copia = respuesta.clone();
+            caches.open(CACHE).then((c) => c.put(peticion, copia));
+          }
+          return respuesta;
+        })
+        .catch(() => caches.match(peticion).then((r) => r ?? Response.error())),
     );
     return;
   }
