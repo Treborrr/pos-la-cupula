@@ -24,7 +24,22 @@
 import { aTexto, esDeTipo, type Evento } from "@cupula/contratos";
 
 import type { AlmacenDeEventos } from "../puertos/AlmacenDeEventos";
-import { Proyeccion } from "../proyecciones/Proyeccion";
+import { Proyeccion, sedeDe } from "../proyecciones/Proyeccion";
+
+/**
+ * El turno de caja al que pertenece un evento, mientras se reproduce el log.
+ *
+ * Con varias sucursales ya no hay "el turno abierto": hay uno por local. La
+ * sucursal sale del propio evento si la trae, y si no (anulación, reimpresión)
+ * de la venta a la que se refiere, que es donde de verdad está.
+ */
+function turnoDelEvento(p: Proyeccion, e: Evento): string | null {
+  const datos = e.datos as { sedeId?: string; ventaId?: string };
+  const sedeId = datos.ventaId
+    ? (p.ventas.get(datos.ventaId)?.sedeId ?? sedeDe(datos))
+    : sedeDe(datos);
+  return p.turnoAbiertoDe(sedeId)?.id ?? null;
+}
 
 export interface Movimiento {
   seq: number;
@@ -223,7 +238,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "ANULACIÓN",
         detalle: `${e.datos.correlativo} · motivo: ${e.datos.motivo}` + (venta ? ` · era de ${aTexto(venta.total)}` : ""),
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         monto: venta ? aTexto(venta.total) : undefined,
         ...(señales.length ? { señales } : {}),
       });
@@ -240,7 +255,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "reimpresión",
         detalle: `${e.datos.correlativo} · van ${veces}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         ...(señales.length ? { señales } : {}),
       });
       continue;
@@ -267,7 +282,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "cambio de precio",
         detalle: `${nombre}: ${transicion}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · sin motivo"}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         ...(señales.length ? { señales } : {}),
       });
       continue;
@@ -280,7 +295,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "cambio de costo",
         detalle: `${nombre}: ${precioLegible(e.datos.costoAnterior)} → ${precioLegible(e.datos.costoNuevo)}${e.datos.motivo ? ` · ${e.datos.motivo}` : " · sin motivo"}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
       });
       continue;
     }
@@ -297,7 +312,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "ajuste de stock",
         detalle: `${nombre}: sistema ${e.datos.cantidadSistema} → contado ${e.datos.cantidadContada} · ${e.datos.motivo}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         ...(señales.length ? { señales } : {}),
       });
       continue;
@@ -311,7 +326,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "merma",
         detalle: `${nombre}: ${e.datos.cantidad} · ${e.datos.motivo}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         señales: ["salida de mercadería sin venta"],
       });
       continue;
@@ -324,7 +339,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "entrada de stock",
         detalle: `${nombre}: +${e.datos.cantidad} · ${e.datos.motivo}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
       });
       continue;
     }
@@ -399,7 +414,7 @@ export async function construirAuditoria(
         ...base,
         tipo: "configuración",
         detalle: `${e.datos.clave} = ${JSON.stringify(e.datos.valor)}`,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
         ...(sensible ? { señales: ["cambia una regla de negocio"] } : {}),
       });
       continue;
@@ -413,7 +428,7 @@ export async function construirAuditoria(
       movimientos.push({
         ...base,
         detalle,
-        turno: etiquetaTurno(p.turnoAbierto?.id ?? null),
+        turno: etiquetaTurno(turnoDelEvento(p, e)),
       });
     }
   }

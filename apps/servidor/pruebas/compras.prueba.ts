@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Compras: varios productos en una sola acción, con su costo, y el egreso
  * que sale solo cuando de verdad salió plata del cajón.
@@ -60,7 +61,7 @@ describe("registrar una compra", () => {
     const { pos, ceraId, shampooId } = await posConDosProductos();
 
     await pos.transaccion(() => {
-      const r = registrarCompra(pos.p, {
+      const r = registrarCompra(pos.p, SEDE_PRINCIPAL, {
         lineas: [
           { itemId: ceraId, cantidad: 10, costoUnitario: 2000 },
           { itemId: shampooId, cantidad: 5, costoUnitario: 1500 },
@@ -70,8 +71,8 @@ describe("registrar una compra", () => {
       return { eventos: r.eventos, resultado: r };
     });
 
-    expect(pos.p.stockDe(ceraId)).toBe(10);
-    expect(pos.p.stockDe(shampooId)).toBe(5);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, ceraId)).toBe(10);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, shampooId)).toBe(5);
     expect(pos.p.items.get(ceraId)!.costo).toBe(2000);
     expect(pos.p.items.get(shampooId)!.costo).toBe(1500);
     await pos.cerrar();
@@ -79,10 +80,10 @@ describe("registrar una compra", () => {
 
   it("por defecto genera el egreso por el total, descontando el efectivo esperado", async () => {
     const { pos, ceraId } = await posConDosProductos();
-    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 50000 }).eventos);
+    await pos.escribir(() => abrirTurno(pos.p, SEDE_PRINCIPAL, { montoInicial: 50000 }).eventos);
 
     await pos.transaccion(() => {
-      const r = registrarCompra(pos.p, {
+      const r = registrarCompra(pos.p, SEDE_PRINCIPAL, {
         lineas: [{ itemId: ceraId, cantidad: 10, costoUnitario: 2000 }],
       });
       return { eventos: r.eventos, resultado: r };
@@ -92,17 +93,17 @@ describe("registrar una compra", () => {
     expect(egreso.categoria).toBe("COMPRA");
     expect(egreso.monto).toBe(20000); // 10 × 2000
 
-    const arqueo = arquear(pos.p);
+    const arqueo = arquear(pos.p, SEDE_PRINCIPAL);
     expect(arqueo.efectivoEnCajon).toBe(30000); // 50000 - 20000
     await pos.cerrar();
   });
 
   it("con salioDeLaCaja: false no genera ningún egreso", async () => {
     const { pos, ceraId } = await posConDosProductos();
-    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 50000 }).eventos);
+    await pos.escribir(() => abrirTurno(pos.p, SEDE_PRINCIPAL, { montoInicial: 50000 }).eventos);
 
     await pos.transaccion(() => {
-      const r = registrarCompra(pos.p, {
+      const r = registrarCompra(pos.p, SEDE_PRINCIPAL, {
         lineas: [{ itemId: ceraId, cantidad: 10, costoUnitario: 2000 }],
         salioDeLaCaja: false,
       });
@@ -110,21 +111,21 @@ describe("registrar una compra", () => {
     });
 
     expect(pos.p.egresos.size).toBe(0);
-    expect(pos.p.stockDe(ceraId)).toBe(10); // el inventario igual se actualiza
-    expect(arquear(pos.p).efectivoEnCajon).toBe(50000); // intacto
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, ceraId)).toBe(10); // el inventario igual se actualiza
+    expect(arquear(pos.p, SEDE_PRINCIPAL).efectivoEnCajon).toBe(50000); // intacto
     await pos.cerrar();
   });
 
   it("rechaza una compra sin líneas", async () => {
     const { pos } = await posConDosProductos();
-    expect(() => registrarCompra(pos.p, { lineas: [] })).toThrow(/no hay nada que registrar/i);
+    expect(() => registrarCompra(pos.p, SEDE_PRINCIPAL, { lineas: [] })).toThrow(/no hay nada que registrar/i);
     await pos.cerrar();
   });
 
   it("rechaza un costo negativo", async () => {
     const { pos, ceraId } = await posConDosProductos();
     expect(() =>
-      registrarCompra(pos.p, { lineas: [{ itemId: ceraId, cantidad: 10, costoUnitario: -100 }] }),
+      registrarCompra(pos.p, SEDE_PRINCIPAL, { lineas: [{ itemId: ceraId, cantidad: 10, costoUnitario: -100 }] }),
     ).toThrow(/costo/i);
     await pos.cerrar();
   });
@@ -132,7 +133,7 @@ describe("registrar una compra", () => {
   it("rechaza una línea de un servicio: no es producto", async () => {
     const { pos, corteId } = await posConDosProductos();
     expect(() =>
-      registrarCompra(pos.p, { lineas: [{ itemId: corteId, cantidad: 1, costoUnitario: 500 }] }),
+      registrarCompra(pos.p, SEDE_PRINCIPAL, { lineas: [{ itemId: corteId, cantidad: 1, costoUnitario: 500 }] }),
     ).toThrow();
     await pos.cerrar();
   });

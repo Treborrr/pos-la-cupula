@@ -42,7 +42,23 @@ export type CodigoError =
   | "NO_AUTENTICADO"
   | "ROL_INSUFICIENTE"
   | "SIN_CORREO"
-  | "CODIGO_INVALIDO";
+  | "CODIGO_INVALIDO"
+  // ── Sucursales ──
+  | "SEDE_NO_EXISTE"
+  | "SEDE_INACTIVA"
+  | "SEDE_DUPLICADA"
+  /** Otra sucursal ya emite tickets con ese prefijo: dos ventas tendrían el mismo número. */
+  | "PREFIJO_DUPLICADO"
+  /** La sucursal ya emitió tickets: cambiarle el prefijo partiría su numeración. */
+  | "PREFIJO_CONGELADO"
+  /** No se puede desactivar la única sucursal activa: no quedaría dónde cobrar. */
+  | "ULTIMA_SEDE"
+  | "TURNO_ABIERTO"
+  /**
+   * Solo en TRASLADOS entre sucursales. La venta, a propósito, NO lo usa: ahí
+   * hay un cliente esperando y se cobra igual, avisando. Ver `trasladarStock`.
+   */
+  | "STOCK_INSUFICIENTE";
 
 export class ErrorDeNegocio extends Error {
   constructor(

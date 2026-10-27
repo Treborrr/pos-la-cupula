@@ -21,14 +21,20 @@ import { ErrorDeNegocio } from "../errores";
 import { mediosEnCero } from "../../proyecciones/tipos";
 import type { Proyeccion } from "../../proyecciones/Proyeccion";
 
+/**
+ * La caja es de la sucursal: dos locales pueden tener turno abierto a la vez.
+ * Lo que sigue siendo imposible es que UNO tenga dos.
+ */
 export function abrirTurno(
   p: Proyeccion,
+  sedeId: string,
   datos: { montoInicial: Centimos; notas?: string },
 ): { eventos: EventoNuevo[]; turnoId: string } {
-  if (p.turnoAbierto) {
+  const abierto = p.turnoAbiertoDe(sedeId);
+  if (abierto) {
     throw new ErrorDeNegocio(
       "TURNO_YA_ABIERTO",
-      `Ya hay un turno abierto desde ${horaDe(p.turnoAbierto.abiertoEn)}.`,
+      `Ya hay un turno abierto desde ${horaDe(abierto.abiertoEn)}.`,
       "Ciérralo antes de abrir uno nuevo.",
     );
   }
@@ -40,7 +46,10 @@ export function abrirTurno(
   return {
     turnoId,
     eventos: [
-      { tipo: "caja.turno_abierto", datos: { turnoId, montoInicial: datos.montoInicial, notas: datos.notas } },
+      {
+        tipo: "caja.turno_abierto",
+        datos: { turnoId, sedeId, montoInicial: datos.montoInicial, notas: datos.notas },
+      },
     ],
   };
 }
@@ -56,6 +65,7 @@ export function abrirTurno(
  */
 export function registrarEgreso(
   p: Proyeccion,
+  sedeId: string,
   datos: {
     monto: Centimos;
     motivo: string;
@@ -104,7 +114,8 @@ export function registrarEgreso(
         tipo: "caja.egreso_registrado",
         datos: {
           egresoId,
-          turnoId: p.turnoAbierto?.id ?? null,
+          sedeId,
+          turnoId: p.turnoAbiertoDe(sedeId)?.id ?? null,
           monto: datos.monto,
           motivo: datos.motivo.trim(),
           comprobante: datos.comprobante?.trim() || undefined,
@@ -150,8 +161,8 @@ export interface ArqueoDelTurno {
  * Calcula el arqueo del turno abierto sin cerrarlo. Es lo que la pantalla de
  * caja muestra en vivo durante el día.
  */
-export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
-  const turno = turnoId ? p.turnos.get(turnoId) : p.turnoAbierto;
+export function arquear(p: Proyeccion, sedeId: string, turnoId?: string): ArqueoDelTurno {
+  const turno = turnoId ? p.turnos.get(turnoId) : p.turnoAbiertoDe(sedeId);
   if (!turno) {
     throw new ErrorDeNegocio(
       "TURNO_NO_ABIERTO",
@@ -183,12 +194,19 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
    */
   let desdeFuera = `${turno.abiertoEn.slice(0, 10)}T00:00:00`;
   for (const otro of p.turnos.values()) {
+    // Solo los turnos de ESTA sucursal: el cierre del otro local no tiene nada
+    // que decir sobre desde cuándo cuenta la plata de este cajón.
+    if (otro.sedeId !== turno.sedeId) continue;
     if (otro.id !== turno.id && otro.cerradoEn && otro.cerradoEn <= turno.abiertoEn && otro.cerradoEn > desdeFuera) {
       desdeFuera = otro.cerradoEn;
     }
   }
 
   for (const venta of p.ventas.values()) {
+    // Las ventas de otra sucursal no son de este cajón. Sin este filtro, una
+    // venta cobrada en otro local con su caja cerrada aparecería acá como
+    // "cobrada fuera de turno" y el arqueo esperaría plata que está a 200 km.
+    if (venta.sedeId !== turno.sedeId) continue;
     if (turno.cerradoEn && venta.ts > turno.cerradoEn) continue;
 
     if (venta.turnoId === null) {
@@ -224,6 +242,7 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
   // cerrada se reportan aparte en el turno siguiente. Tratarlos distinto haría
   // que la plata que salió antes de abrir la caja no la esperara nadie.
   for (const egreso of p.egresos.values()) {
+    if (egreso.sedeId !== turno.sedeId) continue;
     if (turno.cerradoEn && egreso.ts > turno.cerradoEn) continue;
 
     if (egreso.turnoId === null) {
@@ -260,9 +279,10 @@ export function arquear(p: Proyeccion, turnoId?: string): ArqueoDelTurno {
 
 export function cerrarTurno(
   p: Proyeccion,
+  sedeId: string,
   datos: { contadoEfectivo: Centimos; notas?: string },
 ): { eventos: EventoNuevo[]; arqueo: ArqueoDelTurno; diferencia: Centimos } {
-  const arqueo = arquear(p);
+  const arqueo = arquear(p, sedeId);
   if (datos.contadoEfectivo < 0) {
     throw new ErrorDeNegocio("DATO_INVALIDO", "Lo contado no puede ser negativo.");
   }
@@ -278,6 +298,7 @@ export function cerrarTurno(
         tipo: "caja.turno_cerrado",
         datos: {
           turnoId: arqueo.turnoId,
+          sedeId,
           esperado: {
             montoInicial: arqueo.montoInicial,
             efectivo: arqueo.medios.EFECTIVO,

@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Pruebas de los reportes de utilidad, margen y rotación.
  *
@@ -100,7 +101,7 @@ const hoy = () => new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(
 
 async function cobrar(pos: ServicioPos, lineas: { itemId: string; cantidad: number; precioUnitario?: number }[]) {
   const total = lineas.reduce((a, l) => a + (l.precioUnitario ?? 0) * l.cantidad, 0);
-  return pos.cobrar({
+  return pos.cobrar(SEDE_PRINCIPAL, {
     lineas,
     pagos: [{ medio: "EFECTIVO", monto: total }],
     claveIdempotencia: ulid(),
@@ -455,7 +456,7 @@ describe("propinas en el reporte", () => {
       return { eventos: r.eventos, resultado: r.barberoId };
     });
 
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: ids["CORTE"], cantidad: 1, barberoId, precioUnitario: 2000, propina: 500 }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
@@ -473,7 +474,7 @@ describe("propinas en el reporte", () => {
       return { eventos: r.eventos, resultado: r.barberoId };
     });
 
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: ids["CORTE"], cantidad: 1, barberoId, precioUnitario: 2000, propina: 500 }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
@@ -502,7 +503,7 @@ describe("propinas en el reporte", () => {
     });
 
     // La venta ocurre el 15.
-    const { venta } = await pos.cobrar({
+    const { venta } = await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1, barberoId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),

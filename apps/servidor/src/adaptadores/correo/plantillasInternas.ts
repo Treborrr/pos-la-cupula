@@ -128,14 +128,14 @@ export function plantillaCodigoDeVerificacion(
   camposEnTexto: string[],
 ): { asunto: string; html: string } {
   const html = envoltorio(
-    "Confirmá el cambio en tu cuenta",
+    "Confirma el cambio en tu cuenta",
     `
     <p>Pediste actualizar: <strong>${camposEnTexto.join(", ")}</strong>.</p>
     <div style="text-align:center;margin:20px 0;">
       <span style="display:inline-block;font-size:28px;font-weight:bold;letter-spacing:4px;background:#f5f5f5;padding:12px 20px;border-radius:8px;">${codigo}</span>
     </div>
     <p style="color:#555;">Este código vence en 15 minutos. Nada se aplica hasta que lo escribas.</p>
-    <p style="color:#777;font-size:12px;">Si no pediste este cambio, ignorá este correo — no se aplica nada sin el código.</p>
+    <p style="color:#777;font-size:12px;">Si no pediste este cambio, ignora este correo: no se aplica nada sin el código.</p>
     `,
   );
 

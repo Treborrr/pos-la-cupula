@@ -790,10 +790,11 @@ describe("salud", () => {
     const r = await app.inject({ method: "GET", url: "/api/salud" });
     const cuerpo = r.json();
     expect(cuerpo.log.integro).toBe(true);
-    // Cuatro: el `usuario.creado` del admin de prueba, los dos
-    // `config.actualizada` que escribe `apiDePrueba` al apagar la exigencia
-    // de cliente y de caja abierta, y el `item.creado` de arriba.
-    expect(cuerpo.log.eventos).toBe(4);
+    // Cinco: el `sede.creada` que siembra la sucursal principal al arrancar,
+    // el `usuario.creado` del admin de prueba, los dos `config.actualizada`
+    // que escribe `apiDePrueba` al apagar la exigencia de cliente y de caja
+    // abierta, y el `item.creado` de arriba.
+    expect(cuerpo.log.eventos).toBe(5);
     expect(cuerpo.impresora.disponible).toBe(false);
     expect(cuerpo.memoria.usadaMB).toBeGreaterThan(0);
   });

@@ -64,7 +64,11 @@ export function registrarPropina(
           monto: pedido.monto,
           // Null si se agrega con la caja cerrada — como con los egresos, es
           // mejor registrarla sin turno que perderla.
-          turnoId: p.turnoAbierto?.id ?? null,
+          //
+          // El turno es el de la caja de LA SUCURSAL DE LA VENTA, no el de
+          // quien registra la propina: una propina corregida al día siguiente
+          // pertenece al local donde se cobró el servicio.
+          turnoId: p.turnoAbiertoDe(venta.sedeId)?.id ?? null,
         },
       },
     ],

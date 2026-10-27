@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Pruebas de la importación de catálogo desde Excel.
  *
@@ -274,7 +275,7 @@ describe("un catálogo de verdad, como el que mandó el cliente", () => {
     const pos = await posVacio();
     const { filas } = leerPlantilla(archivo());
 
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "reemplazar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "reemplazar"));
 
     expect(pos.p.items.size).toBe(137);
     expect(pos.p.sinPrecio()).toHaveLength(119);
@@ -296,8 +297,8 @@ describe("un catálogo de verdad, como el que mandó el cliente", () => {
     const pos = await posVacio();
     const { filas } = leerPlantilla(archivo());
 
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "reemplazar"));
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "reemplazar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "reemplazar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "reemplazar"));
 
     expect(pos.p.items.size).toBe(137);
     expect([...pos.p.items.values()].every((i) => i.activo)).toBe(true);
@@ -315,13 +316,13 @@ describe("importar", () => {
       ]),
     );
 
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
 
     expect(pos.p.items.size).toBe(2);
     const cera = pos.p.itemPorCodigo("P0001")!;
     expect(cera.nombre).toBe("CERA");
     expect(cera.marca).toBe("NIVEL TRES");
-    expect(pos.p.stockDe(cera.id)).toBe(12);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, cera.id)).toBe(12);
     await pos.cerrar();
   });
 
@@ -329,8 +330,8 @@ describe("importar", () => {
     const pos = await posVacio();
     const filas = filasDe(planilla([["", "CORTE", "SERVICIO", "Barbería", "20", "", "", ""]]));
 
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
 
     expect(pos.p.items.size).toBe(1);
     await pos.cerrar();
@@ -345,8 +346,8 @@ describe("importar", () => {
       ]),
     );
 
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
 
     // Sin la marca en la clave de identidad, la segunda fila pisaría a la
     // primera y uno de los dos talcos desaparecería del catálogo.
@@ -357,11 +358,11 @@ describe("importar", () => {
   it("le completa la marca a un ítem que se había cargado sin ella", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "CERA", "PRODUCTO", "B", "25", "", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "CERA", "PRODUCTO", "B", "25", "", "2", ""]])), "agregar"),
     );
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "25", "", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "25", "", "2", ""]])), "agregar"),
     );
 
     expect(pos.p.items.size).toBe(1);
@@ -374,20 +375,20 @@ describe("importar", () => {
     // duplicaría el inventario en cada reimportación.
     const pos = await posVacio();
     const fila = planilla([["", "CERA", "PRODUCTO", "P", "25", "", "10", ""]]);
-    await pos.escribir(() => importarCatalogo(pos.p, filasDe(fila), "agregar"));
-    await pos.escribir(() => importarCatalogo(pos.p, filasDe(fila), "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(fila), "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(fila), "agregar"));
 
-    expect(pos.p.stockDe(pos.p.itemPorCodigo("P0001")!.id)).toBe(10);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, pos.p.itemPorCodigo("P0001")!.id)).toBe(10);
     await pos.cerrar();
   });
 
   it("el cambio de precio queda registrado con el anterior al lado", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
     );
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "25", "", "", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "25", "", "", ""]])), "agregar"),
     );
 
     const tipos: string[] = [];
@@ -401,12 +402,12 @@ describe("importar", () => {
   it("ponerle precio a un ítem que no tenía también queda en la historia", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "", "", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "", "", "2", ""]])), "agregar"),
     );
     expect(pos.p.itemPorCodigo("P0001")!.precio).toBeNull();
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "35", "", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "35", "", "2", ""]])), "agregar"),
     );
 
     const cambios: unknown[] = [];
@@ -428,7 +429,7 @@ describe("importar", () => {
     const pos = await posVacio();
     const sinPrecio = planilla([["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
 
-    await pos.escribir(() => importarCatalogo(pos.p, filasDe(sinPrecio), "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(sinPrecio), "agregar"));
     const id = pos.p.itemPorCodigo("P0001")!.id;
     expect(pos.p.items.get(id)!.precio).toBeNull();
 
@@ -437,7 +438,7 @@ describe("importar", () => {
     expect(pos.p.items.get(id)!.precio).toBe(3500);
 
     // Y se vuelve a subir la misma planilla, con la celda todavía vacía.
-    await pos.escribir(() => importarCatalogo(pos.p, filasDe(sinPrecio), "reemplazar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(sinPrecio), "reemplazar"));
 
     expect(pos.p.items.get(id)!.precio).toBe(3500);
     expect(pos.p.sinPrecio()).toHaveLength(0);
@@ -447,11 +448,11 @@ describe("importar", () => {
   it("el plan no anuncia un cambio de precio que no va a hacer", async () => {
     const pos = await posVacio();
     const sinPrecio = planilla([["FORAJIDO", "PASTA ROJA", "PRODUCTO", "Barbería", "", "", "2", ""]]);
-    await pos.escribir(() => importarCatalogo(pos.p, filasDe(sinPrecio), "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(sinPrecio), "agregar"));
     const id = pos.p.itemPorCodigo("P0001")!.id;
     await pos.escribir(() => actualizarItem(pos.p, id, { precio: 3500 }));
 
-    const plan = planificarImportacion(pos.p, filasDe(sinPrecio), "agregar");
+    const plan = planificarImportacion(pos.p, SEDE_PRINCIPAL, filasDe(sinPrecio), "agregar");
 
     expect(plan.cambios[0].accion).toBe("sin cambios");
     expect(plan.cambios[0].detalle).toEqual([]);
@@ -465,12 +466,12 @@ describe("importar", () => {
     // un producto que sí estaba bien cargado.
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "2", ""]])), "agregar"),
     );
     expect(pos.p.itemPorCodigo("P0001")!.costo).toBe(2800);
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "", "2", ""]])), "agregar"),
     );
     expect(pos.p.itemPorCodigo("P0001")!.costo).toBe(2800);
     await pos.cerrar();
@@ -484,7 +485,7 @@ describe("importar", () => {
     });
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
     );
 
     expect(pos.p.itemPorCodigo("VIEJO")!.activo).toBe(true);
@@ -500,7 +501,7 @@ describe("importar", () => {
     const idViejo = pos.p.itemPorCodigo("VIEJO")!.id;
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]])), "reemplazar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]])), "reemplazar"),
     );
 
     // Desactivado, no eliminado: un ticket viejo tiene que poder seguir
@@ -513,15 +514,15 @@ describe("importar", () => {
   it("volver a cargar un ítem dado de baja lo reactiva con su mismo id", async () => {
     const pos = await posVacio();
     const p1 = filasDe(planilla([["", "CORTE", "SERVICIO", "B", "20", "", "", ""]]));
-    await pos.escribir(() => importarCatalogo(pos.p, p1, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, p1, "agregar"));
     const id = pos.p.itemPorCodigo("S0001")!.id;
 
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "OTRO", "SERVICIO", "B", "20", "", "", ""]])), "reemplazar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "OTRO", "SERVICIO", "B", "20", "", "", ""]])), "reemplazar"),
     );
     expect(pos.p.items.get(id)!.activo).toBe(false);
 
-    await pos.escribir(() => importarCatalogo(pos.p, p1, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, p1, "agregar"));
     expect(pos.p.items.get(id)!.activo).toBe(true);
     await pos.cerrar();
   });
@@ -531,7 +532,7 @@ describe("costo promedio ponderado", () => {
   it("el PRECIO COMPRA de la planilla siembra el costo del producto", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
     );
 
     expect(pos.p.itemPorCodigo("P0001")!.costo).toBe(2800);
@@ -542,7 +543,7 @@ describe("costo promedio ponderado", () => {
     // Había 6 a 28 y entran 4 a 34 → (6×28 + 4×34) / 10 = 30.40.
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
     );
     const id = pos.p.itemPorCodigo("P0001")!.id;
 
@@ -551,7 +552,7 @@ describe("costo promedio ponderado", () => {
     ]);
 
     expect(pos.p.itemPorCodigo("P0001")!.costo).toBe(3040);
-    expect(pos.p.stockDe(id)).toBe(10);
+    expect(pos.p.stockDe(SEDE_PRINCIPAL, id)).toBe(10);
     await pos.cerrar();
   });
 
@@ -560,7 +561,7 @@ describe("costo promedio ponderado", () => {
     // abarataría el promedio y el reporte mostraría una ganancia que no existe.
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
     );
     const id = pos.p.itemPorCodigo("P0001")!.id;
 
@@ -576,7 +577,7 @@ describe("costo promedio ponderado", () => {
     // Un ajuste dice cuántas hay, no a cuánto se compraron.
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "6", ""]])), "agregar"),
     );
     const id = pos.p.itemPorCodigo("P0001")!.id;
 
@@ -593,7 +594,7 @@ describe("costo promedio ponderado", () => {
     // dato real. Ponderar contra cero o contra un negativo daría un absurdo.
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "0", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "0", ""]])), "agregar"),
     );
     const id = pos.p.itemPorCodigo("P0001")!.id;
 
@@ -616,7 +617,7 @@ describe("plan de importación", () => {
     });
 
     const filas = filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]]));
-    const plan = planificarImportacion(pos.p, filas, "reemplazar");
+    const plan = planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "reemplazar");
 
     expect(plan.aDesactivar).toEqual([{ codigo: "VIEJO", nombre: "VIEJO" }]);
     expect(plan.resumen).toMatchObject({ crear: 1, desactivar: 1 });
@@ -633,18 +634,18 @@ describe("plan de importación", () => {
     });
 
     const filas = filasDe(planilla([["", "NUEVO", "SERVICIO", "B", "20", "", "", ""]]));
-    expect(planificarImportacion(pos.p, filas, "agregar").aDesactivar).toHaveLength(0);
+    expect(planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "agregar").aDesactivar).toHaveLength(0);
     await pos.cerrar();
   });
 
   it("explica qué cambia en cada ítem, no solo que cambia", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["", "CORTE", "SERVICIO", "B", "20", "", "", ""]])), "agregar"),
     );
 
     const filas = filasDe(planilla([["", "CORTE", "SERVICIO", "B", "25", "", "", ""]]));
-    const plan = planificarImportacion(pos.p, filas, "agregar");
+    const plan = planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "agregar");
 
     expect(plan.cambios[0].accion).toBe("actualizar");
     expect(plan.cambios[0].detalle.join(" ")).toMatch(/precio: S\/ 20\.00 → S\/ 25\.00/);
@@ -663,7 +664,7 @@ describe("plan de importación", () => {
       ]),
     );
 
-    expect(planificarImportacion(pos.p, filas, "agregar").resumen).toMatchObject({ crear: 3, sinPrecio: 2 });
+    expect(planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "agregar").resumen).toMatchObject({ crear: 3, sinPrecio: 2 });
     await pos.cerrar();
   });
 
@@ -681,11 +682,11 @@ describe("plan de importación", () => {
       ]),
     );
 
-    expect(planificarImportacion(pos.p, filas, "agregar").resumen).toMatchObject({ crear: 3, sinCategoria: 2 });
+    expect(planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "agregar").resumen).toMatchObject({ crear: 3, sinCategoria: 2 });
 
     // Y al aplicar, caen en una categoría de verdad: una pestaña sin nombre
     // sería peor que una genérica.
-    await pos.escribir(() => importarCatalogo(pos.p, filas, "agregar"));
+    await pos.escribir(() => importarCatalogo(pos.p, SEDE_PRINCIPAL, filas, "agregar"));
     const categorias = [...pos.p.items.values()].map((i) => i.categoria).sort();
     expect(categorias).toEqual(["Barbería", "Productos", "Productos"]);
     await pos.cerrar();
@@ -694,11 +695,11 @@ describe("plan de importación", () => {
   it("muestra el cambio de marca y de costo en el detalle", async () => {
     const pos = await posVacio();
     await pos.escribir(() =>
-      importarCatalogo(pos.p, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "2", ""]])), "agregar"),
+      importarCatalogo(pos.p, SEDE_PRINCIPAL, filasDe(planilla([["NIVEL TRES", "CERA", "PRODUCTO", "B", "45", "28", "2", ""]])), "agregar"),
     );
 
     const filas = filasDe(planilla([["FORAJIDO", "CERA", "PRODUCTO", "B", "45", "30", "2", ""]]));
-    const plan = planificarImportacion(pos.p, filas, "agregar");
+    const plan = planificarImportacion(pos.p, SEDE_PRINCIPAL, filas, "agregar");
     const detalle = plan.cambios[0].detalle.join(" ");
 
     // Cambió la marca, así que para el sistema es un producto NUEVO: la marca

@@ -17,14 +17,14 @@ import { kardexDe } from "../../consultas/kardex";
 import type { Dependencias } from "../app";
 
 export async function rutasInventario(app: FastifyInstance, { pos }: Dependencias) {
-  app.get("/inventario", { config: { rol: "CAJERO" } }, async () => {
+  app.get("/inventario", { config: { rol: "CAJERO" } }, async (peticion) => {
     const productos = [...pos.p.items.values()]
       .filter((i) => i.tipo === "PRODUCTO")
       .map((i) => {
-        const stock = pos.p.stockDe(i.id);
+        const stock = pos.p.stockDe(peticion.sede, i.id);
         const positivo = Math.max(0, stock);
         return {
-          ...pos.p.itemParaPantalla(i),
+          ...pos.p.itemParaPantalla(i, peticion.sede),
           stock,
           // La MISMA definición que usa la alerta del encabezado. Cuando cada
           // uno la calculaba por su lado, la tabla marcaba 28 productos y el
@@ -48,7 +48,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
 
     return {
       productos,
-      alertas: stockBajo(pos.p),
+      alertas: stockBajo(pos.p, peticion.sede),
       valorTotalCosto: sumar("valorizadoCosto"),
       valorTotalVenta: sumar("valorizadoVenta"),
       /**
@@ -72,8 +72,8 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarEntrada(pos.p, datos), peticion.actor);
-    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
+    await pos.escribir(() => registrarEntrada(pos.p, peticion.sede, datos), peticion.actor);
+    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 
   /**
@@ -90,8 +90,8 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => ajustarStock(pos.p, datos), peticion.actor);
-    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
+    await pos.escribir(() => ajustarStock(pos.p, peticion.sede, datos), peticion.actor);
+    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 
   /**
@@ -118,14 +118,14 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       .parse(peticion.body);
 
     const resultado = await pos.transaccion(() => {
-      const r = registrarCompra(pos.p, datos);
+      const r = registrarCompra(pos.p, peticion.sede, datos);
       return { eventos: r.eventos, resultado: r };
     }, peticion.actor);
 
     return respuesta.status(201).send({
       compraId: resultado.compraId,
       total: resultado.total,
-      productos: datos.lineas.map((l) => ({ itemId: l.itemId, stock: pos.p.stockDe(l.itemId) })),
+      productos: datos.lineas.map((l) => ({ itemId: l.itemId, stock: pos.p.stockDe(peticion.sede, l.itemId) })),
     });
   });
 
@@ -138,8 +138,8 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarMerma(pos.p, datos), peticion.actor);
-    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(datos.itemId) });
+    await pos.escribir(() => registrarMerma(pos.p, peticion.sede, datos), peticion.actor);
+    return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 
   app.get("/inventario/:itemId/kardex", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
@@ -155,6 +155,6 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       });
     }
 
-    return { item, stock: pos.p.stockDe(itemId), movimientos: await kardexDe(pos.almacen, itemId, limite) };
+    return { item, stock: pos.p.stockDe(peticion.sede, itemId), movimientos: await kardexDe(pos.almacen, itemId, limite) };
   });
 }

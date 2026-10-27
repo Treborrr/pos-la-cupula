@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ulid } from "ulid";
 
-import type { EventoNuevo } from "@cupula/contratos";
+import { SEDE_PRINCIPAL, type EventoNuevo } from "@cupula/contratos";
 import { ServicioPos } from "../src/servicios/Pos";
 import { abrirTurno, cerrarTurno } from "../src/dominio/caja/caja";
 import type { Alerta } from "../src/consultas/alertas";
@@ -65,7 +65,7 @@ async function posDePrueba(reloj: ReturnType<typeof relojFijo>) {
 }
 
 async function cobrarVenta(pos: ServicioPos, itemId: string, monto: number) {
-  const { venta } = await pos.cobrar({
+  const { venta } = await pos.cobrar(SEDE_PRINCIPAL, {
     lineas: [{ itemId, cantidad: 1, precioUnitario: monto }],
     pagos: [{ medio: "EFECTIVO", monto }],
     claveIdempotencia: ulid(),
@@ -74,9 +74,9 @@ async function cobrarVenta(pos: ServicioPos, itemId: string, monto: number) {
 }
 
 async function cerrarTurnoDePrueba(pos: ServicioPos, montoInicial: number, contadoEfectivo: number) {
-  await pos.escribir(() => abrirTurno(pos.p, { montoInicial }).eventos);
+  await pos.escribir(() => abrirTurno(pos.p, SEDE_PRINCIPAL, { montoInicial }).eventos);
   return pos.transaccion(() => {
-    const r = cerrarTurno(pos.p, { contadoEfectivo });
+    const r = cerrarTurno(pos.p, SEDE_PRINCIPAL, { contadoEfectivo });
     return { eventos: r.eventos, resultado: r };
   });
 }

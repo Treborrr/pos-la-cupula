@@ -316,7 +316,7 @@ function valorizarInventario(p: Proyeccion): Inventario {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
     productos += 1;
 
-    const stock = p.stockDe(item.id);
+    const stock = p.stockTotalDe(item.id);
     const positivo = Math.max(0, stock);
     if (stock <= 0) agotados += 1;
     if (stock < 0) enNegativo += 1;
@@ -372,7 +372,7 @@ function productosSinRotar(p: Proyeccion, hasta: string, ventas: Venta[]): Produ
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
     if (vendidoEnPeriodo.has(item.id)) continue;
 
-    const stock = p.stockDe(item.id);
+    const stock = p.stockTotalDe(item.id);
     if (stock <= 0) continue;
 
     const ultima = ultimaVenta.get(item.id) ?? null;
@@ -449,7 +449,7 @@ function productosParaReponer(p: Proyeccion, ventas: Venta[]): ParaReponer[] {
   for (const item of p.items.values()) {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
 
-    const stock = p.stockDe(item.id);
+    const stock = p.stockTotalDe(item.id);
     const seVendio = vendidas.get(item.id) ?? 0;
     const bajo = estaBajoMinimo(stock, item.stockMinimo);
 

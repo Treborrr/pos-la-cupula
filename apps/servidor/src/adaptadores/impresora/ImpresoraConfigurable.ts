@@ -13,6 +13,8 @@
  * conexión en el momento de imprimir y la cierran enseguida.
  */
 
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
+
 import type {
   DatosDelCierre,
   DatosDelNegocio,
@@ -121,6 +123,7 @@ export function ventaDePrueba(columnas = 48): Venta {
   return {
     id: "01PRUEBA0000000000000000AA",
     correlativo: "NV000000",
+    sedeId: SEDE_PRINCIPAL,
     // Del reloj del sistema, con el offset de Lima ya puesto: el ticket de
     // prueba también sirve para ver si la PC tiene la hora bien.
     ts: relojDelSistema.ahora(),

@@ -37,8 +37,15 @@ export interface CompraPedida {
   salioDeLaCaja?: boolean;
 }
 
+/**
+ * La compra entra mercadería en UNA sucursal y, si salió de la caja, paga desde
+ * el cajón de ESA sucursal. Las dos cosas son del mismo local: no se puede
+ * comprar para un local y pagarlo con la caja del otro sin que ninguno de los
+ * dos arqueos cierre.
+ */
 export function registrarCompra(
   p: Proyeccion,
+  sedeId: string,
   pedido: CompraPedida,
 ): { eventos: EventoNuevo[]; compraId: string; total: Centimos } {
   if (!pedido.lineas || pedido.lineas.length === 0) {
@@ -61,7 +68,7 @@ export function registrarCompra(
     // cantidad sea mayor a cero — reusarla es lo que evita que una compra y
     // una entrada suelta puedan quedar validadas distinto.
     eventos.push(
-      ...registrarEntrada(p, {
+      ...registrarEntrada(p, sedeId, {
         itemId: linea.itemId,
         cantidad: linea.cantidad,
         costoUnitario: linea.costoUnitario,
@@ -72,7 +79,7 @@ export function registrarCompra(
   }
 
   if (pedido.salioDeLaCaja !== false && total > 0) {
-    const egreso = registrarEgreso(p, {
+    const egreso = registrarEgreso(p, sedeId, {
       monto: total,
       motivo,
       comprobante: pedido.comprobante,

@@ -25,12 +25,17 @@ function egresosDelTurno(pos: Dependencias["pos"], turnoId: string) {
 }
 
 export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresora, notificaciones }: Dependencias) {
-  app.get("/caja", { config: { rol: "CAJERO" } }, async () => {
-    if (!pos.p.turnoAbierto) {
-      const ultimo = [...pos.p.turnos.values()].sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
+  app.get("/caja", { config: { rol: "CAJERO" } }, async (peticion) => {
+    const sede = peticion.sede;
+    if (!pos.p.turnoAbiertoDe(sede)) {
+      // El último turno de ESTA sucursal: el de otro local no dice nada sobre
+      // con cuánto conviene abrir este cajón.
+      const ultimo = [...pos.p.turnos.values()]
+        .filter((t) => t.sedeId === sede)
+        .sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))[0];
       return { abierto: false, ultimoTurno: ultimo ?? null };
     }
-    const arqueo = arquear(pos.p);
+    const arqueo = arquear(pos.p, sede);
     return { abierto: true, arqueo, egresos: egresosDelTurno(pos, arqueo.turnoId) };
   });
 
@@ -53,13 +58,13 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const egresoId = await pos.transaccion(() => {
-      const r = registrarEgreso(pos.p, datos);
+      const r = registrarEgreso(pos.p, peticion.sede, datos);
       return { eventos: r.eventos, resultado: r.egresoId };
     }, peticion.actor);
 
     return respuesta.status(201).send({
       egreso: pos.p.egresos.get(egresoId),
-      arqueo: pos.p.turnoAbierto ? arquear(pos.p) : null,
+      arqueo: pos.p.turnoAbiertoDe(peticion.sede) ? arquear(pos.p, peticion.sede) : null,
     });
   });
 
@@ -72,7 +77,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const turnoId = await pos.transaccion(() => {
-      const r = abrirTurno(pos.p, { montoInicial, notas });
+      const r = abrirTurno(pos.p, peticion.sede, { montoInicial, notas });
       return { eventos: r.eventos, resultado: r.turnoId };
     }, peticion.actor);
 
@@ -88,7 +93,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const cierre = await pos.transaccion(() => {
-      const r = cerrarTurno(pos.p, { contadoEfectivo, notas });
+      const r = cerrarTurno(pos.p, peticion.sede, { contadoEfectivo, notas });
       return { eventos: r.eventos, resultado: r };
     }, peticion.actor);
 
@@ -132,6 +137,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.query);
 
     const turnos = [...pos.p.turnos.values()]
+      .filter((t) => t.sedeId === peticion.sede)
       .sort((a, b) => b.abiertoEn.localeCompare(a.abiertoEn))
       .slice(0, limite);
     return { turnos };
@@ -153,7 +159,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       );
     }
 
-    const arqueo = arquear(pos.p, turnoId);
+    const arqueo = arquear(pos.p, turno.sedeId, turnoId);
     const datos: DatosDelCierre = {
       turnoId: turno.id,
       abiertoEn: turno.abiertoEn,

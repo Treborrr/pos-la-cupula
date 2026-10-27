@@ -7,7 +7,7 @@
  * la razón por la que el dominio no importa `fs`.
  */
 
-import { multiplicar, type Centimos, type EventoNuevo, type LineaVenta, type Pago } from "@cupula/contratos";
+import { multiplicar, SEDE_PRINCIPAL, type Centimos, type EventoNuevo, type LineaVenta, type Pago } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
@@ -54,17 +54,33 @@ export interface VentaPreparada {
   advertencias: string[];
 }
 
-/** "NV" + 6 dígitos. El formato que el cliente ya conoce del Excel. */
-export function formatearCorrelativo(numero: number): string {
-  return `NV${String(numero).padStart(6, "0")}`;
+/**
+ * Prefijo de la sucursal + 6 dígitos. `NV000030` es el formato que el cliente
+ * ya conoce del Excel, y la sucursal principal lo conserva.
+ */
+export function formatearCorrelativo(prefijo: string, numero: number): string {
+  return `${prefijo}${String(numero).padStart(6, "0")}`;
 }
 
-export function siguienteCorrelativo(p: Proyeccion, inicial: number): string {
-  return formatearCorrelativo(Math.max(p.ultimoCorrelativo + 1, inicial));
+/**
+ * El próximo número de ESA sucursal. Cada local lleva su serie aparte: ver la
+ * nota de `ultimoCorrelativoPorSede` en la proyección.
+ *
+ * `inicial` solo aplica a la sucursal principal, que arranca en NV000030 para
+ * continuar la numeración del Excel. Una sucursal nueva empieza en 1: no tiene
+ * ningún histórico que continuar.
+ */
+export function siguienteCorrelativo(p: Proyeccion, sedeId: string, inicial: number): string {
+  const sede = p.sede(sedeId);
+  const prefijo = sede?.prefijoTicket ?? "NV";
+  const ultimo = p.ultimoCorrelativoPorSede.get(sedeId) ?? 0;
+  const piso = sedeId === SEDE_PRINCIPAL ? inicial : 1;
+  return formatearCorrelativo(prefijo, Math.max(ultimo + 1, piso));
 }
 
 export function registrarVenta(
   p: Proyeccion,
+  sedeId: string,
   pedido: PedidoDeVenta,
   opciones: { correlativoInicial: number },
 ): VentaPreparada {
@@ -120,7 +136,10 @@ export function registrarVenta(
      * margen del reporte no significaría nada. El precio se pone una vez desde
      * Catálogo y de ahí en más sale solo.
      */
-    if (item.precio === null) {
+    // El precio de LISTA es el de esta sucursal: el suyo si lo fijó, y si no,
+    // el de la cadena. Ver `item.precio_sede_cambiado`.
+    const precioDeLista = p.precioEn(sedeId, item.id);
+    if (precioDeLista === null) {
       throw new ErrorDeNegocio(
         "ITEM_SIN_PRECIO",
         `"${p.nombreCompleto(item)}" todavía no tiene precio y no se puede vender.`,
@@ -130,7 +149,7 @@ export function registrarVenta(
 
     // Ajustar el precio de una línea SÍ se puede: es la cortesía puntual, y
     // queda registrada contra el precio de lista para poder reportarla.
-    const precioUnitario = pedida.precioUnitario ?? item.precio;
+    const precioUnitario = pedida.precioUnitario ?? precioDeLista;
     if (precioUnitario < 0) {
       throw new ErrorDeNegocio("DATO_INVALIDO", `El precio de "${item.nombre}" no puede ser negativo.`);
     }
@@ -143,7 +162,7 @@ export function registrarVenta(
       tipo: item.tipo,
       cantidad: pedida.cantidad,
       precioUnitario,
-      precioLista: item.precio,
+      precioLista: precioDeLista,
       // El costo se CONGELA acá: es el promedio ponderado que el producto tenía
       // al momento de vender. Si mañana sube el costo, la utilidad de esta
       // venta —y del mes al que pertenece— no se mueve.
@@ -174,7 +193,7 @@ export function registrarVenta(
   // sistema cree que no hay stock, con el cliente y el billete delante, es
   // peor problema que un inventario desfasado.
   for (const [itemId, saliendo] of salidaPorProducto) {
-    const disponible = p.stockDe(itemId);
+    const disponible = p.stockDe(sedeId, itemId);
     if (disponible < saliendo) {
       const item = p.items.get(itemId)!;
       advertencias.push(
@@ -200,8 +219,8 @@ export function registrarVenta(
   }
 
   const ventaId = ulid();
-  const correlativo = siguienteCorrelativo(p, opciones.correlativoInicial);
-  const turnoId = p.turnoAbierto?.id ?? null;
+  const correlativo = siguienteCorrelativo(p, sedeId, opciones.correlativoInicial);
+  const turnoId = p.turnoAbiertoDe(sedeId)?.id ?? null;
 
   // Las propinas viajan en el MISMO lote que la venta: o se registran las
   // dos cosas, o ninguna. Entrarlas por separado dejaría, ante un corte de
@@ -230,6 +249,7 @@ export function registrarVenta(
         datos: {
           ventaId,
           correlativo,
+          sedeId,
           lineas,
           subtotal,
           descuento,

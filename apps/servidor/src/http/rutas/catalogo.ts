@@ -84,10 +84,14 @@ const esquemaCambios = z.object({
 });
 
 export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }: Dependencias) {
-  /** Un ítem por su id, con `nombreCompleto` y `stock` resueltos. */
-  const paraPantalla = (id: string) => {
+  /**
+   * Un ítem por su id, con `nombreCompleto`, `stock` y precio resueltos PARA
+   * UNA SUCURSAL: el stock es el de ese local y el precio, el que ese local
+   * cobra (el suyo si lo fijó, el de la cadena si no).
+   */
+  const paraPantalla = (id: string, sedeId: string) => {
     const item = pos.p.items.get(id);
-    return item ? pos.p.itemParaPantalla(item) : undefined;
+    return item ? pos.p.itemParaPantalla(item, sedeId) : undefined;
   };
 
   const carpetaFotos = join(carpetaDatos, "fotos");
@@ -130,11 +134,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
     items.sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es"));
 
     return {
-      items: items.map((i) => ({
-        ...i,
-        nombreCompleto: pos.p.nombreCompleto(i),
-        stock: i.tipo === "PRODUCTO" ? pos.p.stockDe(i.id) : null,
-      })),
+      items: items.map((i) => pos.p.itemParaPantalla(i, peticion.sede)),
       categorias: [...new Set(items.map((i) => i.categoria))].sort((a, b) => a.localeCompare(b, "es")),
       // Las marcas salen del catálogo COMPLETO y no de `items`: si salieran del
       // resultado filtrado, al elegir una marca el desplegable se quedaría con
@@ -256,7 +256,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       );
     }
 
-    const plan = planificarImportacion(pos.p, lectura.filas, modo);
+    const plan = planificarImportacion(pos.p, peticion.sede, lectura.filas, modo);
 
     if (!aplicar) {
       return { aplicado: false, problemas: lectura.problemas, filas: lectura.filas.length, plan };
@@ -276,7 +276,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       throw new ErrorDeNegocio("PLANILLA_VACIA", "La planilla no tiene ninguna fila con datos.");
     }
 
-    await pos.escribir(() => importarCatalogo(pos.p, lectura.filas, modo), peticion.actor);
+    await pos.escribir(() => importarCatalogo(pos.p, peticion.sede, lectura.filas, modo), peticion.actor);
 
     return { aplicado: true, problemas: [], filas: lectura.filas.length, plan };
   });
@@ -293,27 +293,27 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       const r = crearItem(pos.p, datos);
       return { eventos: r.eventos, resultado: r.itemId };
     }, peticion.actor);
-    return respuesta.status(201).send({ item: paraPantalla(itemId) });
+    return respuesta.status(201).send({ item: paraPantalla(itemId, peticion.sede) });
   });
 
   app.patch("/catalogo/:id", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const cambios = esquemaCambios.parse(peticion.body);
     await pos.escribir(() => actualizarItem(pos.p, id, cambios), peticion.actor);
-    return { item: paraPantalla(id) };
+    return { item: paraPantalla(id, peticion.sede) };
   });
 
   app.post("/catalogo/:id/desactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { motivo } = z.object({ motivo: z.string().trim().max(200).optional() }).parse(peticion.body ?? {});
     await pos.escribir(() => desactivarItem(pos.p, id, motivo), peticion.actor);
-    return { item: paraPantalla(id) };
+    return { item: paraPantalla(id, peticion.sede) };
   });
 
   app.post("/catalogo/:id/reactivar", { config: { rol: "ADMIN" } }, async (peticion) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     await pos.escribir(() => reactivarItem(pos.p, id), peticion.actor);
-    return { item: paraPantalla(id) };
+    return { item: paraPantalla(id, peticion.sede) };
   });
 
   /**
@@ -341,7 +341,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       await writeFile(join(carpetaFotos, archivo), bytes);
 
       await pos.escribir(() => actualizarFotoDeItem(pos.p, id, archivo), peticion.actor);
-      return respuesta.status(201).send({ item: paraPantalla(id) });
+      return respuesta.status(201).send({ item: paraPantalla(id, peticion.sede) });
     },
   );
 
@@ -351,6 +351,6 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
 
     await borrarFotoVieja(id);
     await pos.escribir(() => actualizarFotoDeItem(pos.p, id, null), peticion.actor);
-    return { item: paraPantalla(id) };
+    return { item: paraPantalla(id, peticion.sede) };
   });
 }

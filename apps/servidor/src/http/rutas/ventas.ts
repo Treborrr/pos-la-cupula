@@ -52,7 +52,7 @@ const esquemaCobro = z.object({
 export async function rutasVentas(app: FastifyInstance, { pos, impresora, notificaciones }: Dependencias) {
   app.post("/ventas", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const pedido = esquemaCobro.parse(peticion.body);
-    const { venta, advertencias, duplicada } = await pos.cobrar(pedido, peticion.actor);
+    const { venta, advertencias, duplicada } = await pos.cobrar(peticion.sede, pedido, peticion.actor);
 
     // La impresión va DESPUÉS de que la venta está en disco, y su resultado no
     // afecta al de la venta: que falle la ticketera no puede deshacer un cobro

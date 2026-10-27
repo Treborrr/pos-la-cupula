@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Adelantos, liquidación y el reporte de producción por barbero.
  *
@@ -62,7 +63,7 @@ describe("saldo pendiente de adelantos", () => {
   it("suma un adelanto en efectivo", async () => {
     const { pos, barberoId } = await posConBarberoYServicio();
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
     );
 
     expect(saldoPendienteDeBarbero(pos.p, barberoId)).toBe(5000);
@@ -71,7 +72,7 @@ describe("saldo pendiente de adelantos", () => {
 
   it("suma una venta pagada por adelanto", async () => {
     const { pos, itemId, barberoId } = await posConBarberoYServicio();
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1 }],
       pagos: [{ medio: "ADELANTO", monto: 2000, barberoId }],
       claveIdempotencia: ulid(),
@@ -84,9 +85,9 @@ describe("saldo pendiente de adelantos", () => {
   it("suma los dos orígenes juntos", async () => {
     const { pos, itemId, barberoId } = await posConBarberoYServicio();
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
     );
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1 }],
       pagos: [{ medio: "ADELANTO", monto: 2000, barberoId }],
       claveIdempotencia: ulid(),
@@ -98,7 +99,7 @@ describe("saldo pendiente de adelantos", () => {
 
   it("una venta anulada pagada por adelanto no cuenta", async () => {
     const { pos, itemId, barberoId } = await posConBarberoYServicio();
-    const { venta } = await pos.cobrar({
+    const { venta } = await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1 }],
       pagos: [{ medio: "ADELANTO", monto: 2000, barberoId }],
       claveIdempotencia: ulid(),
@@ -116,7 +117,7 @@ describe("saldo pendiente de adelantos", () => {
       return { eventos: r.eventos, resultado: r.barberoId };
     });
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 1000, motivo: "Taxi", categoria: "ADELANTO", barberoId: otroId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 1000, motivo: "Taxi", categoria: "ADELANTO", barberoId: otroId }).eventos,
     );
 
     expect(saldoPendienteDeBarbero(pos.p, barberoId)).toBe(0);
@@ -129,7 +130,7 @@ describe("liquidar", () => {
   it("deja el saldo en cero y lo que se liquidó queda en el historial", async () => {
     const { pos, barberoId } = await posConBarberoYServicio();
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
     );
 
     const liquidacionId = await pos.transaccion(() => {
@@ -145,7 +146,7 @@ describe("liquidar", () => {
   it("un adelanto nuevo después de liquidar sí queda pendiente, el viejo no", async () => {
     const { pos, barberoId, reloj } = await posConBarberoYServicio();
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 5000, motivo: "Almuerzo", categoria: "ADELANTO", barberoId }).eventos,
     );
     await pos.transaccion(() => {
       const r = liquidarBarbero(pos.p, barberoId);
@@ -154,7 +155,7 @@ describe("liquidar", () => {
 
     reloj.avanzar(60 * 60 * 1000);
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 1500, motivo: "Taxi", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 1500, motivo: "Taxi", categoria: "ADELANTO", barberoId }).eventos,
     );
 
     expect(saldoPendienteDeBarbero(pos.p, barberoId)).toBe(1500);
@@ -183,7 +184,7 @@ describe("reporte de producción por barbero", () => {
     const { pos, itemId, ceraId, barberoId, reloj } = await posConBarberoYServicio("2026-09-15T10:00:00.000-05:00");
 
     // Un corte normal.
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1, barberoId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
@@ -191,7 +192,7 @@ describe("reporte de producción por barbero", () => {
 
     // Un corte de cortesía, combinado con una cera pagada (si no, el total
     // daría S/0 y el sistema no deja registrar la venta).
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [
         { itemId, cantidad: 1, barberoId, precioUnitario: 0 },
         { itemId: ceraId, cantidad: 1 },
@@ -202,7 +203,7 @@ describe("reporte de producción por barbero", () => {
 
     // Un corte la semana siguiente.
     reloj.avanzar(8 * 24 * 60 * 60 * 1000); // +8 días: 2026-09-23, miércoles
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1, barberoId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
@@ -234,12 +235,12 @@ describe("reporte de producción por barbero", () => {
       return { eventos: r.eventos, resultado: r.barberoId };
     });
 
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1, barberoId: otroId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
     });
-    const { venta } = await pos.cobrar({
+    const { venta } = await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId, cantidad: 1, barberoId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       claveIdempotencia: ulid(),
@@ -254,7 +255,7 @@ describe("reporte de producción por barbero", () => {
   it("trae los adelantos pendientes y la última liquidación", async () => {
     const { pos, barberoId } = await posConBarberoYServicio();
     await pos.escribir(
-      () => registrarEgreso(pos.p, { monto: 3000, motivo: "Taxi", categoria: "ADELANTO", barberoId }).eventos,
+      () => registrarEgreso(pos.p, SEDE_PRINCIPAL, { monto: 3000, motivo: "Taxi", categoria: "ADELANTO", barberoId }).eventos,
     );
 
     let r = reporteDeBarbero(pos.p, barberoId, "2026-09-01", "2026-09-30");

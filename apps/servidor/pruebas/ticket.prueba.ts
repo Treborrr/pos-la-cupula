@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Pruebas del renderizador ESC/POS.
  *
@@ -40,6 +41,7 @@ function ventaDePrueba(cambios: Partial<Venta> = {}): Venta {
   return {
     id: "01K5B7M3QW8ZX2VDNPQR4T6Y9A",
     correlativo: "NV000030",
+    sedeId: SEDE_PRINCIPAL,
     ts: "2026-09-16T19:42:11.204-05:00",
     lineas: [
       {

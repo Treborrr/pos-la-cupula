@@ -119,6 +119,59 @@ export const esquemaUsuarioHandle = z
   .regex(/^[A-Za-z0-9._-]+$/, "el usuario admite letras, números, punto, guion y guion bajo")
   .transform((s) => s.toLowerCase());
 
+/**
+ * Identificador de sucursal. Es un SLUG legible ("principal", "bagua-centro"),
+ * no un ULID, y es la única entidad del sistema que se aparta de esa regla.
+ *
+ * La razón es el log: la sucursal es la dimensión por la que más se va a filtrar
+ * cuando alguien audite el archivo a mano, y `"sedeId":"bagua-centro"` se lee,
+ * mientras que un ULID obliga a cruzar contra otra tabla para saber de qué local
+ * se está hablando. El log auditable es el argumento central de este sistema;
+ * que una de sus columnas sea ilegible le quita valor.
+ *
+ * Que sea un slug estable también es lo que permite que `principal` sea una
+ * CONSTANTE del código. Eso importa: los eventos escritos antes de que
+ * existieran las sucursales no traen `sedeId`, y se leen como `principal` sin
+ * depender de que exista un evento de siembra con un id generado al azar.
+ */
+export const esquemaSedeId = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, "el id de sucursal admite minúsculas, números y guion");
+
+/**
+ * La sucursal de los eventos escritos antes de que el sistema fuera
+ * multisucursal. Ver `esquemaSedeId`.
+ */
+export const SEDE_PRINCIPAL = "principal";
+
+/**
+ * Prefijo de la serie de tickets de una sucursal: `NV` → `NV000030`.
+ *
+ * Cada sucursal lleva su PROPIA numeración. Compartir una sola serie entre
+ * locales obligaría a coordinarlos para no repetir número, y además haría
+ * ilegible la secuencia de cada uno (saltos permanentes por las ventas del otro
+ * local). La principal conserva `NV`, que es la serie que el cliente viene
+ * usando desde el Excel y que no se puede romper.
+ */
+export const esquemaPrefijoTicket = z
+  .string()
+  .trim()
+  .min(2)
+  .max(4)
+  .regex(/^[A-Z]+$/, "el prefijo del ticket va en mayúsculas, de 2 a 4 letras");
+
+/**
+ * Correlativo de venta: prefijo de la sucursal + 6 dígitos.
+ *
+ * Era `/^NV\d{6}$/` cuando había un solo local. Se ensanchó, no se cambió:
+ * `NV000030` sigue validando igual, así que ningún evento ya escrito queda
+ * fuera del esquema (regla 4).
+ */
+export const esquemaCorrelativo = z.string().regex(/^[A-Z]{2,4}\d{6}$/);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sobre del evento
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,6 +203,66 @@ function definir<T extends string, D extends z.ZodTypeAny>(tipo: T, datos: D) {
     datos,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sucursales
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un local. Lo que distingue a una sucursal de otra es poco y concreto: su
+ * stock, su caja, sus precios, sus barberos y la dirección que sale impresa en
+ * el ticket.
+ *
+ * Lo que NO es de la sucursal: el catálogo (qué productos existen es de la
+ * cadena), los clientes y su fidelidad (quien se atiende en dos locales es una
+ * sola persona), los usuarios y el RUC. En Perú una empresa tiene UN RUC y
+ * varios establecimientos anexos, así que el RUC sigue viviendo en la
+ * configuración del negocio y lo que cambia por local es la dirección.
+ */
+export const sedeCreada = definir(
+  "sede.creada",
+  z.object({
+    sedeId: esquemaSedeId,
+    nombre: texto(80),
+    direccion: textoOpcional(120),
+    ciudad: textoOpcional(60),
+    /** Pie del ticket. Si falta, hereda el del negocio. */
+    pie: textoOpcional(120),
+    prefijoTicket: esquemaPrefijoTicket,
+  }),
+);
+
+export const sedeActualizada = definir(
+  "sede.actualizada",
+  z.object({
+    sedeId: esquemaSedeId,
+    nombre: textoOpcional(80),
+    direccion: textoOpcional(120),
+    ciudad: textoOpcional(60),
+    pie: textoOpcional(120),
+    /**
+     * El prefijo se puede corregir mientras la sucursal no haya vendido nada.
+     * Después no: cambiarlo partiría su numeración en dos series, que es
+     * justo lo que un contador no puede explicar. Lo verifica el dominio.
+     */
+    prefijoTicket: esquemaPrefijoTicket.optional(),
+  }),
+);
+
+/**
+ * Nunca se borra una sucursal: las ventas, los turnos y el stock histórico
+ * siguen apuntando a su id. Desactivada deja de poder vender y de aparecer en
+ * los selectores, pero sus reportes se siguen consultando.
+ */
+export const sedeDesactivada = definir(
+  "sede.desactivada",
+  z.object({ sedeId: esquemaSedeId, motivo: textoOpcional(200) }),
+);
+
+export const sedeReactivada = definir(
+  "sede.reactivada",
+  z.object({ sedeId: esquemaSedeId }),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Catálogo
@@ -234,6 +347,32 @@ export const itemPrecioCambiado = definir(
 );
 
 /**
+ * El precio de UNA sucursal para un ítem, que se aparta del precio de la cadena.
+ *
+ * El precio de `item.precio_cambiado` es el de la cadena y funciona como valor
+ * POR DEFECTO: una sucursal que nunca fijó el suyo lo hereda. Se eligió heredar
+ * en vez de obligar a cargar el precio local en cada sucursal porque el catálogo
+ * real tiene cientos de productos, y cargarlos N veces garantiza olvidos; un
+ * producto sin precio no se puede vender desde la grilla, así que el olvido se
+ * paga en el mostrador con el cliente esperando.
+ *
+ * `precio: null` NO significa "gratis" ni "sin precio": significa **volver a
+ * heredar** el de la cadena. Es la forma de deshacer un precio local sin tener
+ * que adivinar y recopiar el general.
+ */
+export const itemPrecioSedeCambiado = definir(
+  "item.precio_sede_cambiado",
+  z.object({
+    itemId: esquemaUlid,
+    sedeId: esquemaSedeId,
+    precioAnterior: esquemaCentimosPositivo.nullable(),
+    /** `null` = esta sucursal vuelve a usar el precio de la cadena. */
+    precioNuevo: esquemaCentimosPositivo.nullable(),
+    motivo: textoOpcional(200),
+  }),
+);
+
+/**
  * El costo cambió por una decisión humana, no por una compra.
  *
  * Normalmente el costo lo mueve `stock.entrada` con su `costoUnitario`, y el
@@ -298,10 +437,47 @@ export const stockEntrada = definir(
   "stock.entrada",
   z.object({
     itemId: esquemaUlid,
+    /**
+     * En qué local entró. Opcional por la regla 4: los eventos escritos antes
+     * de que existieran las sucursales no lo traen y se leen como
+     * `SEDE_PRINCIPAL`. De aquí en adelante el dominio siempre lo escribe.
+     *
+     * Ojo con el COSTO: el promedio ponderado es de la cadena, no del local.
+     * Una compra en cualquier sucursal mueve el costo de todas. Es deliberado:
+     * el costo mide a cuánto compra la empresa, y partirlo por local haría que
+     * el mismo producto tuviera márgenes distintos según dónde se vendió, que
+     * no es una pregunta de negocio sino un artefacto de la contabilidad.
+     */
+    sedeId: esquemaSedeId.optional(),
     cantidad: esquemaCantidad,
     costoUnitario: esquemaCentimosPositivo.optional(),
     motivo: texto(200),
     referencia: textoOpcional(80),
+  }),
+);
+
+/**
+ * Mercadería que se va de un local a otro.
+ *
+ * Es UN SOLO evento que mueve los dos lados, y no una merma en el origen más
+ * una entrada en el destino. Con dos eventos existe el estado intermedio en que
+ * la mercadería ya salió de un local y todavía no entró en el otro: si el
+ * proceso se cae en el medio, o alguien registra la mitad, el stock de la cadena
+ * miente y nadie sabe dónde está el producto. Con uno, el traslado existe
+ * entero o no existe.
+ *
+ * NO toca el costo promedio: la mercadería no cambió de precio por mudarse de
+ * estante.
+ */
+export const stockTraslado = definir(
+  "stock.traslado",
+  z.object({
+    trasladoId: esquemaUlid,
+    itemId: esquemaUlid,
+    desdeSedeId: esquemaSedeId,
+    haciaSedeId: esquemaSedeId,
+    cantidad: esquemaCantidad,
+    motivo: texto(200),
   }),
 );
 
@@ -314,6 +490,8 @@ export const stockAjustado = definir(
   "stock.ajustado",
   z.object({
     itemId: esquemaUlid,
+    /** Qué local se contó. Ver la nota de `sedeId` en `stock.entrada`. */
+    sedeId: esquemaSedeId.optional(),
     cantidadContada: z.number().min(0).max(1_000_000),
     cantidadSistema: z.number().min(-1_000_000).max(1_000_000),
     motivo: texto(200),
@@ -324,6 +502,8 @@ export const stockMerma = definir(
   "stock.merma",
   z.object({
     itemId: esquemaUlid,
+    /** De qué local salió. Ver la nota de `sedeId` en `stock.entrada`. */
+    sedeId: esquemaSedeId.optional(),
     cantidad: esquemaCantidad,
     motivo: texto(200),
   }),
@@ -393,8 +573,17 @@ export const ventaRegistrada = definir(
   "venta.registrada",
   z.object({
     ventaId: esquemaUlid,
-    /** `NV000030`. Asignado por el servidor dentro de la sección crítica. */
-    correlativo: z.string().regex(/^NV\d{6}$/),
+    /**
+     * `NV000030`. Asignado por el servidor dentro de la sección crítica.
+     * El prefijo es el de la sucursal: cada local lleva su propia serie.
+     */
+    correlativo: esquemaCorrelativo,
+    /**
+     * En qué local se cobró. Opcional por la regla 4: las ventas escritas antes
+     * de que existieran las sucursales no lo traen y se leen como
+     * `SEDE_PRINCIPAL`.
+     */
+    sedeId: esquemaSedeId.optional(),
     lineas: z.array(esquemaLineaVenta).min(1, "una venta sin líneas no existe"),
     subtotal: esquemaCentimosPositivo,
     /** Descuento a nivel de venta, aparte del ajuste línea por línea. */
@@ -423,14 +612,14 @@ export const ventaAnulada = definir(
   "venta.anulada",
   z.object({
     ventaId: esquemaUlid,
-    correlativo: z.string().regex(/^NV\d{6}$/),
+    correlativo: esquemaCorrelativo,
     motivo: texto(200),
   }),
 );
 
 export const ventaReimpresa = definir(
   "venta.reimpresa",
-  z.object({ ventaId: esquemaUlid, correlativo: z.string().regex(/^NV\d{6}$/) }),
+  z.object({ ventaId: esquemaUlid, correlativo: esquemaCorrelativo }),
 );
 
 /**
@@ -462,10 +651,18 @@ export const ventaPropinaRegistrada = definir(
 // Caja
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * La caja es de la sucursal, no del negocio: cada local abre y cierra la suya.
+ * Dos sucursales pueden tener turno abierto a la vez, cosa imposible cuando
+ * había un solo local. Lo que sigue siendo imposible es que UNA sucursal tenga
+ * dos turnos abiertos al mismo tiempo.
+ */
 export const cajaTurnoAbierto = definir(
   "caja.turno_abierto",
   z.object({
     turnoId: esquemaUlid,
+    /** Qué caja se abrió. Ausente = `SEDE_PRINCIPAL` (regla 4). */
+    sedeId: esquemaSedeId.optional(),
     montoInicial: esquemaCentimosPositivo,
     notas: textoOpcional(500),
   }),
@@ -503,6 +700,8 @@ export const cajaEgresoRegistrado = definir(
   "caja.egreso_registrado",
   z.object({
     egresoId: esquemaUlid,
+    /** De qué caja salió la plata. Ausente = `SEDE_PRINCIPAL` (regla 4). */
+    sedeId: esquemaSedeId.optional(),
     /**
      * El turno del que sale la plata. Puede ser null si la caja estaba
      * cerrada: igual que con las ventas, negarse a registrarlo haría que el
@@ -527,6 +726,8 @@ export const cajaTurnoCerrado = definir(
   "caja.turno_cerrado",
   z.object({
     turnoId: esquemaUlid,
+    /** Qué caja se cerró. Ausente = `SEDE_PRINCIPAL` (regla 4). */
+    sedeId: esquemaSedeId.optional(),
     /** Lo que el sistema calculó que debería haber. */
     esperado: z.object({
       montoInicial: esquemaCentimosPositivo,
@@ -596,12 +797,22 @@ export const clienteVinculadoFidelidad = definir(
 
 export const barberoCreado = definir(
   "barbero.creado",
-  z.object({ barberoId: esquemaUlid, nombre: texto(80) }),
+  z.object({
+    barberoId: esquemaUlid,
+    nombre: texto(80),
+    /** En qué local trabaja. Ausente = `SEDE_PRINCIPAL` (regla 4). */
+    sedeId: esquemaSedeId.optional(),
+  }),
 );
 
 export const barberoActualizado = definir(
   "barbero.actualizado",
-  z.object({ barberoId: esquemaUlid, nombre: textoOpcional(80) }),
+  z.object({
+    barberoId: esquemaUlid,
+    nombre: textoOpcional(80),
+    /** Un barbero puede pasarse a otro local. Sus ventas viejas no se mueven. */
+    sedeId: esquemaSedeId.optional(),
+  }),
 );
 
 export const barberoDesactivado = definir(
@@ -657,7 +868,22 @@ export const usuarioCreado = definir(
     nombre: texto(80),
     rol: esquemaRolUsuario,
     hash: z.string().min(1).max(200),
+    /**
+     * La sucursal del CAJERO: solo ve y opera la suya. Ausente = `SEDE_PRINCIPAL`.
+     *
+     * En un ADMIN se ignora, porque el ADMIN ve toda la cadena. Que la sucursal
+     * del cajero viva en su CUENTA y no en algo que elige al entrar es lo que
+     * hace imposible cobrar en el local equivocado: el servidor la resuelve
+     * desde la sesión y nunca desde lo que manda el navegador.
+     */
+    sedeId: esquemaSedeId.optional(),
   }),
+);
+
+/** Mover una cuenta de cajero a otro local. */
+export const usuarioSedeCambiada = definir(
+  "usuario.sede_cambiada",
+  z.object({ usuarioId: esquemaUlid, sedeId: esquemaSedeId }),
 );
 
 export const usuarioContrasenaCambiada = definir(
@@ -748,9 +974,14 @@ export const correoEnviado = definir(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const esquemaEvento = z.discriminatedUnion("tipo", [
+  sedeCreada,
+  sedeActualizada,
+  sedeDesactivada,
+  sedeReactivada,
   itemCreado,
   itemActualizado,
   itemPrecioCambiado,
+  itemPrecioSedeCambiado,
   itemCostoCambiado,
   itemDesactivado,
   itemReactivado,
@@ -758,6 +989,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   stockEntrada,
   stockAjustado,
   stockMerma,
+  stockTraslado,
   ventaRegistrada,
   ventaAnulada,
   ventaReimpresa,
@@ -776,6 +1008,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   usuarioContrasenaCambiada,
   usuarioDatosActualizados,
   usuarioDesactivado,
+  usuarioSedeCambiada,
   configActualizada,
   correoEnviado,
 ]);
@@ -812,11 +1045,25 @@ export function esDeTipo<T extends TipoEvento>(
  * hay nada que un upcaster pudiera hacer: un ítem creado en agosto no tenía
  * marca, y ponerle una sería inventarla. Lo que cambió es qué se puede
  * expresar de hoy en adelante, no qué significa lo ya escrito (regla 4).
+ *
+ * POR QUÉ MULTISUCURSAL TAMPOCO SUBIÓ NINGÚN NÚMERO. `sedeId` entró como campo
+ * OPCIONAL en ventas, caja, stock, barberos y usuarios, y un evento sin él se
+ * lee como `SEDE_PRINCIPAL`. Eso es exactamente lo que un upcaster haría, pero
+ * sin tener que reescribir nada al leer: el valor por defecto ES el significado
+ * correcto, porque cuando esos eventos se escribieron había un solo local y era
+ * ese. El mismo camino que ya había usado `categoria` en
+ * `caja.egreso_registrado`. El correlativo se ENSANCHÓ (`NV` pasó a ser un
+ * prefijo de 2 a 4 letras) y ensanchar nunca invalida lo ya escrito.
  */
 export const VERSION_ACTUAL: Record<TipoEvento, number> = {
+  "sede.creada": 1,
+  "sede.actualizada": 1,
+  "sede.desactivada": 1,
+  "sede.reactivada": 1,
   "item.creado": 1,
   "item.actualizado": 1,
   "item.precio_cambiado": 1,
+  "item.precio_sede_cambiado": 1,
   "item.costo_cambiado": 1,
   "item.desactivado": 1,
   "item.reactivado": 1,
@@ -824,6 +1071,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "stock.entrada": 1,
   "stock.ajustado": 1,
   "stock.merma": 1,
+  "stock.traslado": 1,
   "venta.registrada": 1,
   "venta.anulada": 1,
   "venta.reimpresa": 1,
@@ -842,6 +1090,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "usuario.contrasena_cambiada": 1,
   "usuario.datos_actualizados": 1,
   "usuario.desactivado": 1,
+  "usuario.sede_cambiada": 1,
   "config.actualizada": 1,
   "correo.enviado": 1,
 };

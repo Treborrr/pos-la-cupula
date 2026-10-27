@@ -13,9 +13,9 @@
  * CSS, `index.html`— y nadie podría ver ni siquiera la pantalla de login.
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
-import { ACTOR_SISTEMA, type Actor } from "@cupula/contratos";
+import { ACTOR_SISTEMA, SEDE_PRINCIPAL, type Actor } from "@cupula/contratos";
 
 import { ErrorDeAutenticacion, ErrorDeAutorizacion } from "../dominio/errores";
 import { estaPermitida } from "../seguridad/redIp";
@@ -35,6 +35,18 @@ declare module "fastify" {
     sesion: Sesion | null;
     /** Quién queda como autor de los eventos que esta petición escriba. */
     actor: Actor;
+    /**
+     * En qué sucursal opera esta petición.
+     *
+     * Para un CAJERO sale de SU CUENTA y nada puede cambiarla: ni un parámetro,
+     * ni una cabecera. Es lo que hace imposible cobrar en el local equivocado
+     * —por error o a propósito— desde el mostrador.
+     *
+     * Para un ADMIN sale de `?sede=`, porque administra toda la cadena. Si no
+     * la manda y hay una sola sucursal, es esa: así el cliente de un solo local
+     * sigue funcionando sin enterarse de que esto existe.
+     */
+    sede: string;
   }
 }
 
@@ -51,6 +63,7 @@ export function registrarAutorizacion(api: FastifyInstance, { pos, sesiones }: D
       // pública (no hay ninguna hoy, pero por si acaso) queda bien atribuida.
       peticion.sesion = sesion;
       peticion.actor = sesion ? { tipo: "operador", id: sesion.usuarioId } : ACTOR_SISTEMA;
+      peticion.sede = sesion ? resolverSede(pos, peticion, sesion) : SEDE_PRINCIPAL;
       return;
     }
 
@@ -75,5 +88,32 @@ export function registrarAutorizacion(api: FastifyInstance, { pos, sesiones }: D
 
     peticion.sesion = sesion;
     peticion.actor = { tipo: "operador", id: sesion.usuarioId };
+    peticion.sede = resolverSede(pos, peticion, sesion);
   });
+}
+
+/**
+ * En qué sucursal opera esta petición. Ver la nota de `sede` arriba.
+ *
+ * La asimetría entre CAJERO y ADMIN es el punto entero de esta función: para el
+ * cajero la sucursal es un hecho de su cuenta, para el administrador es una
+ * elección. Si el cajero pudiera elegirla, "cada cajero ve solo su local"
+ * dejaría de ser una regla y pasaría a ser una costumbre que se salta con un
+ * parámetro en la URL.
+ */
+function resolverSede(pos: Dependencias["pos"], peticion: FastifyRequest, sesion: Sesion): string {
+  const usuario = pos.p.usuarios.get(sesion.usuarioId);
+
+  if (sesion.rol !== "ADMIN") {
+    return usuario?.sedeId ?? SEDE_PRINCIPAL;
+  }
+
+  const pedida = (peticion.query as { sede?: string } | undefined)?.sede;
+  if (pedida && pos.p.sedes.has(pedida)) return pedida;
+
+  // Sin elegir: si hay una sola sucursal es esa, y el POS de un solo local
+  // nunca tiene que mandar nada. Si hay varias, la del propio ADMIN.
+  const activas = pos.p.sedesActivas();
+  if (activas.length === 1) return activas[0]!.id;
+  return usuario?.sedeId ?? SEDE_PRINCIPAL;
 }

@@ -11,7 +11,7 @@ import { normalizar, type Centimos, type EventoNuevo, type TipoItem } from "@cup
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
-import type { Proyeccion } from "../../proyecciones/Proyeccion";
+import { claveStock, type Proyeccion } from "../../proyecciones/Proyeccion";
 
 /**
  * Código automático: P0001, P0002… para productos y S0001… para servicios.
@@ -241,6 +241,39 @@ export function actualizarItem(p: Proyeccion, itemId: string, cambios: CambiosDe
   }
 
   return eventos;
+}
+
+/**
+ * Fija (o quita) el precio que UNA sucursal le pone a un ítem.
+ *
+ * `precio: null` significa VOLVER A HEREDAR el de la cadena, no "sin precio".
+ * Ver la nota larga en `item.precio_sede_cambiado` (contratos/eventos.ts).
+ */
+export function cambiarPrecioDeSede(
+  p: Proyeccion,
+  itemId: string,
+  sedeId: string,
+  precio: Centimos | null,
+  motivo?: string,
+): EventoNuevo[] {
+  const item = p.items.get(itemId);
+  if (!item) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
+  if (!p.sedes.has(sedeId)) throw new ErrorDeNegocio("SEDE_NO_EXISTE", "Esa sucursal no existe.");
+  if (precio !== null && precio < 0) {
+    throw new ErrorDeNegocio("DATO_INVALIDO", "El precio no puede ser negativo.");
+  }
+
+  const anterior = p.preciosPorSede.get(claveStock(sedeId, itemId)) ?? null;
+  // Nada que escribir si no cambia: un evento que no cambia nada solo ensucia
+  // la historia de precios que este evento existe para poder leer.
+  if (anterior === precio) return [];
+
+  return [
+    {
+      tipo: "item.precio_sede_cambiado",
+      datos: { itemId, sedeId, precioAnterior: anterior, precioNuevo: precio, motivo },
+    },
+  ];
 }
 
 export function desactivarItem(p: Proyeccion, itemId: string, motivo?: string): EventoNuevo[] {

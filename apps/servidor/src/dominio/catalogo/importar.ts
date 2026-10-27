@@ -119,6 +119,7 @@ export interface PlanDeImportacion {
  */
 export function planificarImportacion(
   p: Proyeccion,
+  sedeId: string,
   filas: FilaDeCatalogo[],
   modo: ModoDeImportacion,
 ): PlanDeImportacion {
@@ -163,7 +164,7 @@ export function planificarImportacion(
       detalle.push(`stock mínimo: ${existente.stockMinimo} → ${fila.stockMinimo}`);
     }
     if (fila.stock !== null) {
-      const actual = p.stockDe(existente.id);
+      const actual = p.stockDe(sedeId, existente.id);
       if (actual !== fila.stock) detalle.push(`stock: ${actual} → ${fila.stock}`);
     }
 
@@ -207,8 +208,15 @@ export function planificarImportacion(
  * Una importación a medias —la mitad de los precios nuevos y la otra mitad
  * viejos— sería peor que no haber importado.
  */
+/**
+ * El catálogo (qué productos existen, su precio de cadena y su costo) es de la
+ * CADENA, pero la columna STOCK de la planilla es de una sucursal concreta: son
+ * unidades en un estante. Por eso la importación necesita saber a qué local le
+ * está cargando el inventario.
+ */
 export function importarCatalogo(
   p: Proyeccion,
+  sedeId: string,
   filas: FilaDeCatalogo[],
   modo: ModoDeImportacion,
 ): EventoNuevo[] {
@@ -254,6 +262,7 @@ export function importarCatalogo(
           tipo: "stock.entrada",
           datos: {
             itemId,
+            sedeId,
             cantidad: fila.stock,
             // El costo viaja también en la entrada para que el kardex diga a
             // cuánto entraron esas unidades, no solo cuántas.
@@ -324,12 +333,13 @@ export function importarCatalogo(
     // El stock se AJUSTA, no se suma: la columna dice cuántas unidades hay,
     // no cuántas entraron. Sumarlas duplicaría el inventario al reimportar.
     if (fila.tipo === "PRODUCTO" && fila.stock !== null) {
-      const actual = p.stockDe(existente.id);
+      const actual = p.stockDe(sedeId, existente.id);
       if (actual !== fila.stock) {
         eventos.push({
           tipo: "stock.ajustado",
           datos: {
             itemId: existente.id,
+            sedeId,
             cantidadContada: fila.stock,
             cantidadSistema: actual,
             motivo: MOTIVO,

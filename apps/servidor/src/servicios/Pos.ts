@@ -20,6 +20,7 @@ import { Proyeccion } from "../proyecciones/Proyeccion";
 import { ErrorDeNegocio } from "../dominio/errores";
 import { registrarVenta, type PedidoDeVenta } from "../dominio/venta/registrar";
 import { anularVenta, marcarReimpresion } from "../dominio/venta/anular";
+import { sembrarSedePrincipal } from "../dominio/sedes/sedes";
 import type { Venta } from "../proyecciones/tipos";
 
 /** Cada cuántos eventos se toma una instantánea, para acotar el arranque. */
@@ -177,7 +178,31 @@ export class ServicioPos {
       proyeccion.aplicar(evento);
     }
 
-    return new ServicioPos(almacen, proyeccion);
+    const servicio = new ServicioPos(almacen, proyeccion);
+
+    /**
+     * Si el log no trae ninguna sucursal, es una instalación anterior a
+     * multisucursal (o una recién nacida): se siembra la principal con los
+     * datos de `negocio.*`, que es exactamente lo que describían cuando había
+     * un solo local.
+     *
+     * Va acá y no en una migración aparte porque tiene que pasar UNA vez y
+     * antes de que nadie pueda cobrar: una venta sin sucursal a la que
+     * pertenecer no se puede registrar. Al quedar escrito como evento, la
+     * segunda vez que arranque ya la encuentra y no hace nada.
+     */
+    if (proyeccion.sedes.size === 0) {
+      await servicio.escribir(() => [
+        sembrarSedePrincipal({
+          nombre: servicio.config<string>("negocio.nombre"),
+          direccion: servicio.config<string>("negocio.direccion"),
+          ciudad: servicio.config<string>("negocio.ciudad"),
+          pie: servicio.config<string>("negocio.pie"),
+        }),
+      ]);
+    }
+
+    return servicio;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -263,7 +288,7 @@ export class ServicioPos {
   // Cobrar
   // ───────────────────────────────────────────────────────────────────────────
 
-  async cobrar(pedido: PedidoDeVenta, actor?: Actor): Promise<ResultadoCobro> {
+  async cobrar(sedeId: string, pedido: PedidoDeVenta, actor?: Actor): Promise<ResultadoCobro> {
     const { ventaId, advertencias, duplicada } = await this.transaccion(() => {
       // La idempotencia se revisa DENTRO de la sección crítica. Si se revisara
       // fuera, dos envíos simultáneos del mismo pedido pasarían los dos el
@@ -276,7 +301,7 @@ export class ServicioPos {
         };
       }
 
-      if (this.config<boolean>("ventas.exigirTurnoAbierto") && !this.p.turnoAbierto) {
+      if (this.config<boolean>("ventas.exigirTurnoAbierto") && !this.p.turnoAbiertoDe(sedeId)) {
         throw new ErrorDeNegocio(
           "TURNO_NO_ABIERTO",
           "La caja está cerrada.",
@@ -295,7 +320,7 @@ export class ServicioPos {
         );
       }
 
-      const preparada = registrarVenta(this.p, pedido, {
+      const preparada = registrarVenta(this.p, sedeId, pedido, {
         correlativoInicial: this.config<number>("ventas.correlativoInicial") ?? 1,
       });
 

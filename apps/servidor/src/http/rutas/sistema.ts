@@ -53,25 +53,39 @@ export async function rutasSistema(
   });
 
   /** Lo que la PWA necesita al arrancar, en una sola llamada. */
-  app.get("/estado", { config: { rol: "CAJERO" } }, async () => {
+  app.get("/estado", { config: { rol: "CAJERO" } }, async (peticion) => {
+    const sede = pos.p.sede(peticion.sede);
     const estadoImpresora = await impresora.estado();
     const modoImpresora = pos.config<string>("impresora.modo");
 
     return {
+      /**
+       * Los datos que salen impresos en el ticket.
+       *
+       * El NOMBRE y el RUC son de la empresa; la DIRECCIÓN y la CIUDAD, del
+       * local donde se está cobrando (en Perú, un RUC con varios
+       * establecimientos anexos). El pie es el de la sucursal si lo tiene y si
+       * no el del negocio.
+       */
       negocio: {
         nombre: pos.config<string>("negocio.nombre"),
-        direccion: pos.config<string>("negocio.direccion"),
-        ciudad: pos.config<string>("negocio.ciudad"),
+        direccion: sede?.direccion || pos.config<string>("negocio.direccion"),
+        ciudad: sede?.ciudad || pos.config<string>("negocio.ciudad"),
         ruc: pos.config<string>("negocio.ruc"),
-        pie: pos.config<string>("negocio.pie"),
+        pie: sede?.pie || pos.config<string>("negocio.pie"),
       },
+      /** En qué sucursal está operando esta sesión. */
+      sede: sede ? { id: sede.id, nombre: sede.nombre, prefijoTicket: sede.prefijoTicket } : null,
+      /** Las sucursales entre las que puede moverse quien pregunta. */
+      sedes: pos.p.sedesActivas().map((s) => ({ id: s.id, nombre: s.nombre })),
       siguienteCorrelativo: siguienteCorrelativo(
         pos.p,
+        peticion.sede,
         pos.config<number>("ventas.correlativoInicial") ?? 1,
       ),
-      turnoAbierto: pos.p.turnoAbierto,
+      turnoAbierto: pos.p.turnoAbiertoDe(peticion.sede),
       exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
-      alertasDeStock: stockBajo(pos.p).length,
+      alertasDeStock: stockBajo(pos.p, peticion.sede).length,
       correos: notificaciones.contadorDeHoy(),
       impresora: estadoImpresora,
       // Barato a propósito: nada de lo que entra acá vuelve a tocar el disco
@@ -144,7 +158,7 @@ export async function rutasSistema(
     // `itemParaPantalla` y no el ítem crudo: la pantalla de cobro espera el
     // mismo objeto que le da `/catalogo` —con `nombreCompleto` y `stock`— y
     // devolverlo a medias hacía que un escaneo mostrara "undefined".
-    if (item && item.activo) return { tipo: "item", item: pos.p.itemParaPantalla(item) };
+    if (item && item.activo) return { tipo: "item", item: pos.p.itemParaPantalla(item, peticion.sede) };
 
     // 4. Tarjeta de fidelidad, por serial o por nombre.
     const identificacion = identificarPorEscaneo(pos.p, texto);

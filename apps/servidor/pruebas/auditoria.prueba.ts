@@ -1,3 +1,4 @@
+import { SEDE_PRINCIPAL } from "@cupula/contratos";
 /**
  * Pruebas del export de auditoría.
  *
@@ -66,7 +67,7 @@ const señal = (a: Awaited<ReturnType<typeof construirAuditoria>>, tipo: string)
 describe("auditoría", () => {
   it("resuelve nombres en vez de dejar identificadores", async () => {
     const { pos, dir, corte, barberoId, clienteId } = await posConMovimientos();
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: corte, cantidad: 1, barberoId }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       clienteId,
@@ -86,7 +87,7 @@ describe("auditoría", () => {
 
   it("marca la anulación de una venta en efectivo con cuánto tardó", async () => {
     const { pos, dir, corte, clienteId } = await posConMovimientos();
-    const r = await pos.cobrar({
+    const r = await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: corte, cantidad: 1 }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       clienteId,
@@ -105,7 +106,7 @@ describe("auditoría", () => {
 
   it("delata el cobro por debajo del precio de lista", async () => {
     const { pos, dir, corte, clienteId } = await posConMovimientos();
-    await pos.cobrar({
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: corte, cantidad: 1, precioUnitario: 1000 }], // lista: 20.00
       pagos: [{ medio: "EFECTIVO", monto: 1000 }],
       clienteId,
@@ -123,15 +124,15 @@ describe("auditoría", () => {
 
   it("reporta el faltante de caja con el monto exacto", async () => {
     const { pos, dir, corte, clienteId } = await posConMovimientos();
-    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
-    await pos.cobrar({
+    await pos.escribir(() => abrirTurno(pos.p, SEDE_PRINCIPAL, { montoInicial: 5000 }).eventos);
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: corte, cantidad: 1 }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       clienteId,
       claveIdempotencia: ulid(),
     });
     // Esperado 70.00, se cuentan 65.00.
-    await pos.escribir(() => cerrarTurno(pos.p, { contadoEfectivo: 6500 }).eventos);
+    await pos.escribir(() => cerrarTurno(pos.p, SEDE_PRINCIPAL, { contadoEfectivo: 6500 }).eventos);
 
     const a = await construirAuditoria(pos.almacen, dir, "2026-09-18T20:00:00.000-05:00");
     const s = señal(a, "no cuadraron");
@@ -144,9 +145,9 @@ describe("auditoría", () => {
 
   it("junta las salidas de mercadería que no son venta", async () => {
     const { pos, dir, cera } = await posConMovimientos();
-    await pos.escribir(() => registrarMerma(pos.p, { itemId: cera, cantidad: 2, motivo: "se rompió" }));
+    await pos.escribir(() => registrarMerma(pos.p, SEDE_PRINCIPAL, { itemId: cera, cantidad: 2, motivo: "se rompió" }));
     await pos.escribir(() =>
-      ajustarStock(pos.p, { itemId: cera, cantidadContada: 3, motivo: "conteo" }),
+      ajustarStock(pos.p, SEDE_PRINCIPAL, { itemId: cera, cantidadContada: 3, motivo: "conteo" }),
     );
 
     const a = await construirAuditoria(pos.almacen, dir, "2026-09-18T20:00:00.000-05:00");
@@ -160,14 +161,14 @@ describe("auditoría", () => {
 
   it("no inventa señales cuando el día fue normal", async () => {
     const { pos, dir, corte, clienteId } = await posConMovimientos();
-    await pos.escribir(() => abrirTurno(pos.p, { montoInicial: 5000 }).eventos);
-    await pos.cobrar({
+    await pos.escribir(() => abrirTurno(pos.p, SEDE_PRINCIPAL, { montoInicial: 5000 }).eventos);
+    await pos.cobrar(SEDE_PRINCIPAL, {
       lineas: [{ itemId: corte, cantidad: 1 }],
       pagos: [{ medio: "EFECTIVO", monto: 2000 }],
       clienteId,
       claveIdempotencia: ulid(),
     });
-    await pos.escribir(() => cerrarTurno(pos.p, { contadoEfectivo: 7000 }).eventos);
+    await pos.escribir(() => cerrarTurno(pos.p, SEDE_PRINCIPAL, { contadoEfectivo: 7000 }).eventos);
 
     const a = await construirAuditoria(pos.almacen, dir, "2026-09-18T20:00:00.000-05:00");
 

@@ -29,6 +29,7 @@ function exigirProducto(p: Proyeccion, itemId: string) {
 /** Llegó mercadería. */
 export function registrarEntrada(
   p: Proyeccion,
+  sedeId: string,
   entrada: { itemId: string; cantidad: number; costoUnitario?: number; motivo: string; referencia?: string },
 ): EventoNuevo[] {
   exigirProducto(p, entrada.itemId);
@@ -40,6 +41,7 @@ export function registrarEntrada(
       tipo: "stock.entrada",
       datos: {
         itemId: entrada.itemId,
+        sedeId,
         cantidad: entrada.cantidad,
         costoUnitario: entrada.costoUnitario,
         motivo: entrada.motivo.trim(),
@@ -58,6 +60,7 @@ export function registrarEntrada(
  */
 export function ajustarStock(
   p: Proyeccion,
+  sedeId: string,
   ajuste: { itemId: string; cantidadContada: number; motivo: string },
 ): EventoNuevo[] {
   exigirProducto(p, ajuste.itemId);
@@ -77,8 +80,9 @@ export function ajustarStock(
       tipo: "stock.ajustado",
       datos: {
         itemId: ajuste.itemId,
+        sedeId,
         cantidadContada: ajuste.cantidadContada,
-        cantidadSistema: p.stockDe(ajuste.itemId),
+        cantidadSistema: p.stockDe(sedeId, ajuste.itemId),
         motivo: ajuste.motivo.trim(),
       },
     },
@@ -88,6 +92,7 @@ export function ajustarStock(
 /** Se rompió, se venció, se perdió. */
 export function registrarMerma(
   p: Proyeccion,
+  sedeId: string,
   merma: { itemId: string; cantidad: number; motivo: string },
 ): EventoNuevo[] {
   exigirProducto(p, merma.itemId);
@@ -100,7 +105,7 @@ export function registrarMerma(
   return [
     {
       tipo: "stock.merma",
-      datos: { itemId: merma.itemId, cantidad: merma.cantidad, motivo: merma.motivo.trim() },
+      datos: { itemId: merma.itemId, sedeId, cantidad: merma.cantidad, motivo: merma.motivo.trim() },
     },
   ];
 }
@@ -135,11 +140,14 @@ export function bajoMinimo(stock: number, stockMinimo: number): boolean {
 }
 
 /** Productos por debajo de su mínimo. Alimenta la alerta de la pantalla. */
-export function stockBajo(p: Proyeccion): { itemId: string; nombre: string; stock: number; minimo: number }[] {
+export function stockBajo(
+  p: Proyeccion,
+  sedeId: string,
+): { itemId: string; nombre: string; stock: number; minimo: number }[] {
   const salida = [];
   for (const item of p.items.values()) {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
-    const stock = p.stockDe(item.id);
+    const stock = p.stockDe(sedeId, item.id);
     if (bajoMinimo(stock, item.stockMinimo)) {
       salida.push({ itemId: item.id, nombre: p.nombreCompleto(item), stock, minimo: item.stockMinimo });
     }

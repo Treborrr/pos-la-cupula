@@ -216,7 +216,14 @@ describe("corte de luz", () => {
     await recuperado.cerrar();
   });
 
-  it("no pierde ninguno de 2000 eventos escritos de a lotes", async () => {
+  /**
+   * El tiempo límite va subido a mano porque esta prueba escribe 2000 eventos
+   * de verdad a disco, en 400 lotes con su fsync cada uno. Tarda ~2 s sola,
+   * pero corriendo en paralelo con el resto de la suite pasaba de los 5 s por
+   * defecto y fallaba por tiempo, no por haber perdido un evento. Lo que se
+   * verifica acá es la integridad, no la velocidad.
+   */
+  it("no pierde ninguno de 2000 eventos escritos de a lotes", { timeout: 20_000 }, async () => {
     const dir = await nuevaCarpeta();
     const almacen = await abrirAlmacen(dir);
 

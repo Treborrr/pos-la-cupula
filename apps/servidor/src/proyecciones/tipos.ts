@@ -10,6 +10,24 @@
 
 import type { CategoriaEgreso, Centimos, MedioPago, Pago, RolUsuario, TipoItem, LineaVenta } from "@cupula/contratos";
 
+/**
+ * Un local. Ver la nota larga en `sede.creada` (contratos/eventos.ts) sobre qué
+ * es de la sucursal y qué es de la cadena.
+ */
+export interface Sede {
+  /** Slug legible, no ULID: es la dimensión por la que se audita el log. */
+  id: string;
+  nombre: string;
+  direccion: string;
+  ciudad: string;
+  /** Pie del ticket. Cadena vacía = hereda el del negocio. */
+  pie: string;
+  /** Prefijo de su serie de tickets: `NV` → `NV000030`. */
+  prefijoTicket: string;
+  activa: boolean;
+  creadaEn: string;
+}
+
 export interface Item {
   id: string;
   codigo: string;
@@ -46,6 +64,8 @@ export interface Item {
 export interface Venta {
   id: string;
   correlativo: string;
+  /** En qué local se cobró. Las ventas anteriores a multisucursal: "principal". */
+  sedeId: string;
   ts: string;
   lineas: LineaVenta[];
   subtotal: Centimos;
@@ -64,6 +84,8 @@ export interface Venta {
 
 export interface Turno {
   id: string;
+  /** De qué caja es este turno. */
+  sedeId: string;
   abiertoEn: string;
   montoInicial: Centimos;
   cerradoEn?: string;
@@ -75,6 +97,8 @@ export interface Turno {
 /** Una salida de efectivo del cajón que no es una venta. */
 export interface Egreso {
   id: string;
+  /** De qué caja salió la plata. */
+  sedeId: string;
   ts: string;
   /** Null si se registró con la caja cerrada. */
   turnoId: string | null;
@@ -137,6 +161,8 @@ export interface Cliente {
 export interface Barbero {
   id: string;
   nombre: string;
+  /** En qué local trabaja hoy. Sus ventas viejas no se mueven si cambia. */
+  sedeId: string;
   activo: boolean;
 }
 
@@ -148,6 +174,11 @@ export interface Usuario {
   rol: RolUsuario;
   /** Formato auto-descriptivo de `seguridad/contrasenas.ts`. Nunca texto plano. */
   hash: string;
+  /**
+   * La sucursal del CAJERO: la única que ve y en la que opera. En un ADMIN no
+   * se usa, porque el ADMIN ve toda la cadena.
+   */
+  sedeId: string;
   activo: boolean;
   /** Solo para ADMIN: a dónde se manda el código de "Mi cuenta". Vacío en las cuentas creadas antes de esta función. */
   correo?: string;

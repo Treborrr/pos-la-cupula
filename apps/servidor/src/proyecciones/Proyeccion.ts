@@ -13,7 +13,7 @@
  *    aplicar, no se recalculan al consultar.
  */
 
-import { normalizar, esDeTipo, type Centimos, type Evento } from "@cupula/contratos";
+import { normalizar, esDeTipo, SEDE_PRINCIPAL, type Centimos, type Evento } from "@cupula/contratos";
 
 import {
   mediosEnCero,
@@ -24,6 +24,7 @@ import {
   type Liquidacion,
   type Propina,
   type ResumenCorreosDelDia,
+  type Sede,
   type Turno,
   type TotalesPorMedio,
   type Usuario,
@@ -39,11 +40,40 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 7;
+export const FORMATO_PROYECCION = 8;
+
+/**
+ * La clave del mapa de stock y del de precios por sucursal.
+ *
+ * Se usa `\u0000` como separador y no `:` ni `-` porque es el único byte que no
+ * puede aparecer ni en un slug de sucursal ni en un ULID: con cualquier otro
+ * separador existiría, al menos en teoría, un par (sucursal, ítem) distinto que
+ * produce la misma clave y pisa el stock del otro.
+ */
+export function claveStock(sedeId: string, itemId: string): string {
+  return `${sedeId}\u0000${itemId}`;
+}
+
+/**
+ * La sucursal de un evento que puede no traerla.
+ *
+ * Los eventos escritos antes de que el sistema fuera multisucursal no tienen
+ * `sedeId`, y significan la principal: cuando se escribieron había un solo
+ * local y era ese. Ver la nota de `VERSION_ACTUAL` en el contrato.
+ */
+export function sedeDe(datos: { sedeId?: string }): string {
+  return datos.sedeId ?? SEDE_PRINCIPAL;
+}
 
 export class Proyeccion {
   /** Último `seq` aplicado. Define desde dónde seguir reproduciendo. */
   seq = 0;
+
+  /**
+   * Las sucursales, por su slug. Siempre hay al menos una: el arranque siembra
+   * `principal` si el log no trae ninguna (ver `ServicioPos`).
+   */
+  readonly sedes = new Map<string, Sede>();
 
   readonly items = new Map<string, Item>();
   /** código (mayúsculas) → itemId. Garantiza códigos únicos. */
@@ -56,8 +86,22 @@ export class Proyeccion {
    * reportar ventas por marca sin recorrer los 137 ítems en cada consulta).
    */
   readonly porMarca = new Map<string, string[]>();
-  /** itemId → unidades. Solo PRODUCTO. Puede quedar negativo (ver abajo). */
+  /**
+   * (sucursal, ítem) → unidades. Solo PRODUCTO. Puede quedar negativo (ver abajo).
+   *
+   * La clave la arma `claveStock()`. El stock es lo más claramente LOCAL que
+   * tiene el sistema: son unidades físicas en un estante concreto, y sumarlas
+   * entre locales daría un número que no se puede ir a contar a ningún lado.
+   */
   readonly stock = new Map<string, number>();
+
+  /**
+   * (sucursal, ítem) → precio propio de esa sucursal, en céntimos.
+   *
+   * Solo están los ítems que la sucursal se apartó del precio de la cadena. Lo
+   * que NO está acá hereda `Item.precio`. Ver `item.precio_sede_cambiado`.
+   */
+  readonly preciosPorSede = new Map<string, Centimos>();
 
   readonly ventas = new Map<string, Venta>();
   readonly porCorrelativo = new Map<string, string>();
@@ -65,11 +109,22 @@ export class Proyeccion {
   readonly porIdempotencia = new Map<string, string>();
   /** "2026-09-16" → ventaIds, en orden de emisión. */
   readonly ventasPorDia = new Map<string, string[]>();
-  /** Mayor correlativo emitido. 0 si todavía no hay ninguno. */
-  ultimoCorrelativo = 0;
+  /**
+   * sucursal → mayor correlativo emitido en ESA sucursal. Sin entrada = ninguno.
+   *
+   * Cada local lleva su propia serie: compartir una sola entre sucursales
+   * obligaría a coordinarlas para no repetir número y dejaría la secuencia de
+   * cada una llena de saltos sin explicación (los números que se llevó el otro
+   * local). Un contador no puede explicar eso.
+   */
+  readonly ultimoCorrelativoPorSede = new Map<string, number>();
 
   readonly turnos = new Map<string, Turno>();
-  turnoAbierto: Turno | null = null;
+  /**
+   * sucursal → su turno abierto. Dos locales pueden tener caja abierta a la
+   * vez; lo que sigue siendo imposible es que UNO tenga dos.
+   */
+  readonly turnosAbiertos = new Map<string, Turno>();
 
   /**
    * Las salidas de efectivo del cajón, por id.
@@ -119,6 +174,45 @@ export class Proyeccion {
 
   aplicar(e: Evento): void {
     switch (e.tipo) {
+      case "sede.creada": {
+        const d = e.datos;
+        this.sedes.set(d.sedeId, {
+          id: d.sedeId,
+          nombre: d.nombre,
+          direccion: d.direccion ?? "",
+          ciudad: d.ciudad ?? "",
+          pie: d.pie ?? "",
+          prefijoTicket: d.prefijoTicket,
+          activa: true,
+          creadaEn: e.ts,
+        });
+        break;
+      }
+
+      case "sede.actualizada": {
+        const d = e.datos;
+        const sede = this.sedes.get(d.sedeId);
+        if (!sede) break;
+        if (d.nombre !== undefined) sede.nombre = d.nombre;
+        if (d.direccion !== undefined) sede.direccion = d.direccion;
+        if (d.ciudad !== undefined) sede.ciudad = d.ciudad;
+        if (d.pie !== undefined) sede.pie = d.pie;
+        if (d.prefijoTicket !== undefined) sede.prefijoTicket = d.prefijoTicket;
+        break;
+      }
+
+      case "sede.desactivada": {
+        const sede = this.sedes.get(e.datos.sedeId);
+        if (sede) sede.activa = false;
+        break;
+      }
+
+      case "sede.reactivada": {
+        const sede = this.sedes.get(e.datos.sedeId);
+        if (sede) sede.activa = true;
+        break;
+      }
+
       case "item.creado": {
         const d = e.datos;
         const item: Item = {
@@ -140,7 +234,6 @@ export class Proyeccion {
         this.items.set(item.id, item);
         this.porCodigo.set(item.codigo, item.id);
         this.indexarMarca(item.marca, item.id);
-        if (item.tipo === "PRODUCTO" && !this.stock.has(item.id)) this.stock.set(item.id, 0);
         break;
       }
 
@@ -170,6 +263,16 @@ export class Proyeccion {
         if (!item) break;
         item.precio = e.datos.precioNuevo;
         item.actualizadoEn = e.ts;
+        break;
+      }
+
+      case "item.precio_sede_cambiado": {
+        const d = e.datos;
+        const clave = claveStock(d.sedeId, d.itemId);
+        // `null` NO es "sin precio": es volver a heredar el de la cadena, y
+        // eso se representa quitando la entrada, no guardando un null.
+        if (d.precioNuevo === null) this.preciosPorSede.delete(clave);
+        else this.preciosPorSede.set(clave, d.precioNuevo);
         break;
       }
 
@@ -215,24 +318,34 @@ export class Proyeccion {
       case "stock.entrada":
         // El recosteo va ANTES de mover el stock: el promedio se pondera contra
         // las unidades que había, no contra las que quedan después de entrar.
-        this.recostear(e.datos.itemId, e.datos.cantidad, e.datos.costoUnitario);
-        this.moverStock(e.datos.itemId, e.datos.cantidad);
+        this.recostear(sedeDe(e.datos), e.datos.itemId, e.datos.cantidad, e.datos.costoUnitario);
+        this.moverStock(sedeDe(e.datos), e.datos.itemId, e.datos.cantidad);
         break;
 
       case "stock.merma":
-        this.moverStock(e.datos.itemId, -e.datos.cantidad);
+        this.moverStock(sedeDe(e.datos), e.datos.itemId, -e.datos.cantidad);
         break;
 
       case "stock.ajustado":
         // El ajuste FIJA el saldo, no lo suma: es el resultado de haber contado.
-        this.stock.set(e.datos.itemId, e.datos.cantidadContada);
+        this.stock.set(claveStock(sedeDe(e.datos), e.datos.itemId), e.datos.cantidadContada);
         break;
+
+      case "stock.traslado": {
+        // Los dos lados en el mismo paso: un traslado existe entero o no
+        // existe. Ver la nota de `stock.traslado` en el contrato.
+        const d = e.datos;
+        this.moverStock(d.desdeSedeId, d.itemId, -d.cantidad);
+        this.moverStock(d.haciaSedeId, d.itemId, d.cantidad);
+        break;
+      }
 
       case "venta.registrada": {
         const d = e.datos;
         const venta: Venta = {
           id: d.ventaId,
           correlativo: d.correlativo,
+          sedeId: sedeDe(d),
           ts: e.ts,
           lineas: d.lineas,
           subtotal: d.subtotal,
@@ -254,14 +367,17 @@ export class Proyeccion {
         if (delDia) delDia.push(venta.id);
         else this.ventasPorDia.set(dia, [venta.id]);
 
-        const numero = Number(d.correlativo.slice(2));
-        if (numero > this.ultimoCorrelativo) this.ultimoCorrelativo = numero;
+        // Los últimos 6 dígitos, sin suponer que el prefijo mide 2: desde que
+        // cada sucursal tiene su serie, mide entre 2 y 4.
+        const numero = Number(d.correlativo.slice(-6));
+        const mayor = this.ultimoCorrelativoPorSede.get(venta.sedeId) ?? 0;
+        if (numero > mayor) this.ultimoCorrelativoPorSede.set(venta.sedeId, numero);
 
         // El stock se descuenta DERIVÁNDOLO de la venta, sin un evento aparte.
         // Así es imposible que exista una venta sin su movimiento de stock:
         // son el mismo hecho, no dos que hay que mantener sincronizados.
         for (const linea of d.lineas) {
-          if (linea.tipo === "PRODUCTO") this.moverStock(linea.itemId, -linea.cantidad);
+          if (linea.tipo === "PRODUCTO") this.moverStock(venta.sedeId, linea.itemId, -linea.cantidad);
         }
 
         if (venta.clienteId) this.sumarVisita(venta.clienteId, venta.total, e.ts);
@@ -276,7 +392,7 @@ export class Proyeccion {
         venta.anuladaEn = e.ts;
 
         for (const linea of venta.lineas) {
-          if (linea.tipo === "PRODUCTO") this.moverStock(linea.itemId, linea.cantidad);
+          if (linea.tipo === "PRODUCTO") this.moverStock(venta.sedeId, linea.itemId, linea.cantidad);
         }
         if (venta.clienteId) this.restarVisita(venta.clienteId, venta.total);
         break;
@@ -309,12 +425,13 @@ export class Proyeccion {
       case "caja.turno_abierto": {
         const turno: Turno = {
           id: e.datos.turnoId,
+          sedeId: sedeDe(e.datos),
           abiertoEn: e.ts,
           montoInicial: e.datos.montoInicial,
           notas: e.datos.notas,
         };
         this.turnos.set(turno.id, turno);
-        this.turnoAbierto = turno;
+        this.turnosAbiertos.set(turno.sedeId, turno);
         break;
       }
 
@@ -322,6 +439,7 @@ export class Proyeccion {
         const d = e.datos;
         this.egresos.set(d.egresoId, {
           id: d.egresoId,
+          sedeId: sedeDe(d),
           ts: e.ts,
           turnoId: d.turnoId,
           monto: d.monto,
@@ -341,7 +459,11 @@ export class Proyeccion {
           turno.diferencia = e.datos.diferencia;
           if (e.datos.notas) turno.notas = e.datos.notas;
         }
-        if (this.turnoAbierto?.id === e.datos.turnoId) this.turnoAbierto = null;
+        // La sucursal se toma del TURNO guardado y no del evento de cierre: es
+        // la misma, y el turno es la fuente que no puede discrepar.
+        if (turno && this.turnosAbiertos.get(turno.sedeId)?.id === turno.id) {
+          this.turnosAbiertos.delete(turno.sedeId);
+        }
         break;
       }
 
@@ -385,13 +507,16 @@ export class Proyeccion {
         this.barberos.set(e.datos.barberoId, {
           id: e.datos.barberoId,
           nombre: e.datos.nombre,
+          sedeId: sedeDe(e.datos),
           activo: true,
         });
         break;
 
       case "barbero.actualizado": {
         const b = this.barberos.get(e.datos.barberoId);
-        if (b && e.datos.nombre !== undefined) b.nombre = e.datos.nombre;
+        if (!b) break;
+        if (e.datos.nombre !== undefined) b.nombre = e.datos.nombre;
+        if (e.datos.sedeId !== undefined) b.sedeId = e.datos.sedeId;
         break;
       }
 
@@ -431,10 +556,17 @@ export class Proyeccion {
           nombre: e.datos.nombre,
           rol: e.datos.rol,
           hash: e.datos.hash,
+          sedeId: sedeDe(e.datos),
           activo: true,
         });
         this.porNombreDeUsuario.set(e.datos.usuario, e.datos.usuarioId);
         break;
+
+      case "usuario.sede_cambiada": {
+        const u = this.usuarios.get(e.datos.usuarioId);
+        if (u) u.sedeId = e.datos.sedeId;
+        break;
+      }
 
       case "usuario.contrasena_cambiada": {
         const u = this.usuarios.get(e.datos.usuarioId);
@@ -516,11 +648,12 @@ export class Proyeccion {
    * el cliente está con el billete en la mano. El negativo es una señal de que
    * hay que contar, y la pantalla lo muestra en rojo.
    */
-  private moverStock(itemId: string, delta: number): void {
+  private moverStock(sedeId: string, itemId: string, delta: number): void {
+    const clave = claveStock(sedeId, itemId);
     // Redondeo a 3 decimales: sin esto, sumar y restar fracciones acumula
     // 0.30000000000000004 y el stock deja de dar exacto.
-    const nuevo = Math.round(((this.stock.get(itemId) ?? 0) + delta) * 1000) / 1000;
-    this.stock.set(itemId, nuevo);
+    const nuevo = Math.round(((this.stock.get(clave) ?? 0) + delta) * 1000) / 1000;
+    this.stock.set(clave, nuevo);
   }
 
   /**
@@ -535,12 +668,16 @@ export class Proyeccion {
    * suponerle costo cero a la mercadería que entró sin factura a mano
    * abarataría el promedio y el reporte mostraría una utilidad que no existe.
    */
-  private recostear(itemId: string, cantidad: number, costoUnitario?: number): void {
+  private recostear(sedeId: string, itemId: string, cantidad: number, costoUnitario?: number): void {
     if (costoUnitario === undefined) return;
     const item = this.items.get(itemId);
     if (!item) return;
 
-    const enMano = this.stock.get(itemId) ?? 0;
+    // Se pondera contra las unidades de LA SUCURSAL donde entró, no contra las
+    // de toda la cadena: la mercadería que entró se mezcla físicamente con la
+    // que ya estaba en ESE estante. El costo resultante sí es de la cadena
+    // (ver la nota de `sedeId` en `stock.entrada`).
+    const enMano = this.stock.get(claveStock(sedeId, itemId)) ?? 0;
 
     // Sin unidades con las que ponderar —o con stock negativo, que es un saldo
     // por corregir y no un valor de inventario— el costo que acaba de entrar es
@@ -628,8 +765,43 @@ export class Proyeccion {
     return id ? this.ventas.get(id) : undefined;
   }
 
-  stockDe(itemId: string): number {
-    return this.stock.get(itemId) ?? 0;
+  /** Unidades de un producto EN UNA SUCURSAL. */
+  stockDe(sedeId: string, itemId: string): number {
+    return this.stock.get(claveStock(sedeId, itemId)) ?? 0;
+  }
+
+  /** Unidades de un producto sumando TODAS las sucursales. Para el consolidado. */
+  stockTotalDe(itemId: string): number {
+    let total = 0;
+    for (const sedeId of this.sedes.keys()) total += this.stockDe(sedeId, itemId);
+    return Math.round(total * 1000) / 1000;
+  }
+
+  /**
+   * El precio con el que una sucursal vende un ítem: el suyo si lo fijó, y si
+   * no, el de la cadena. Ver `item.precio_sede_cambiado`.
+   */
+  precioEn(sedeId: string, itemId: string): Centimos | null {
+    const propio = this.preciosPorSede.get(claveStock(sedeId, itemId));
+    if (propio !== undefined) return propio;
+    return this.items.get(itemId)?.precio ?? null;
+  }
+
+  /** El turno abierto de una sucursal, o null si tiene la caja cerrada. */
+  turnoAbiertoDe(sedeId: string): Turno | null {
+    return this.turnosAbiertos.get(sedeId) ?? null;
+  }
+
+  /** La sucursal, o la principal si la que se pide no existe. */
+  sede(sedeId: string): Sede | undefined {
+    return this.sedes.get(sedeId);
+  }
+
+  /** Las sucursales activas, ordenadas por nombre. */
+  sedesActivas(): Sede[] {
+    return [...this.sedes.values()]
+      .filter((s) => s.activa)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   }
 
   /**
@@ -670,11 +842,29 @@ export class Proyeccion {
    * estaba en el mensaje: estaba en que había seis formas de contestar la misma
    * pregunta y una se quedó atrás.
    */
-  itemParaPantalla(item: Item): Item & { nombreCompleto: string; stock: number | null } {
+  itemParaPantalla(
+    item: Item,
+    sedeId: string,
+  ): Item & {
+    nombreCompleto: string;
+    stock: number | null;
+    precioCadena: Centimos | null;
+    precioPropio: boolean;
+  } {
+    const clave = claveStock(sedeId, item.id);
+    const propio = this.preciosPorSede.get(clave);
     return {
       ...item,
+      // `precio` es el EFECTIVO en esta sucursal, no el de la cadena. Así, todo
+      // lo que ya leía `precio` (la grilla de cobro, el escaneo, el carrito)
+      // cobra el precio del local sin enterarse de que existen los demás.
+      precio: propio ?? item.precio,
+      /** El de la cadena, para que Ajustes pueda mostrar de qué se apartó. */
+      precioCadena: item.precio,
+      /** true = esta sucursal fijó el suyo; false = hereda el de la cadena. */
+      precioPropio: propio !== undefined,
       nombreCompleto: this.nombreCompleto(item),
-      stock: item.tipo === "PRODUCTO" ? this.stockDe(item.id) : null,
+      stock: item.tipo === "PRODUCTO" ? this.stockDe(sedeId, item.id) : null,
     };
   }
 
@@ -728,13 +918,15 @@ export class Proyeccion {
     return {
       formato: FORMATO_PROYECCION,
       seq: this.seq,
+      sedes: [...this.sedes.values()],
       items: [...this.items.values()],
       stock: [...this.stock.entries()],
+      preciosPorSede: [...this.preciosPorSede.entries()],
       ventas: [...this.ventas.values()],
       idempotencia: [...this.porIdempotencia.entries()],
-      ultimoCorrelativo: this.ultimoCorrelativo,
+      ultimoCorrelativoPorSede: [...this.ultimoCorrelativoPorSede.entries()],
       turnos: [...this.turnos.values()],
-      turnoAbiertoId: this.turnoAbierto?.id ?? null,
+      turnosAbiertosIds: [...this.turnosAbiertos.values()].map((t) => t.id),
       egresos: [...this.egresos.values()],
       propinas: [...this.propinas.values()],
       clientes: [...this.clientes.values()],
@@ -759,7 +951,8 @@ export class Proyeccion {
 
     const p = new Proyeccion();
     p.seq = d.seq ?? 0;
-    p.ultimoCorrelativo = d.ultimoCorrelativo ?? 0;
+    for (const [k, v] of d.ultimoCorrelativoPorSede ?? []) p.ultimoCorrelativoPorSede.set(k, v);
+    for (const sede of d.sedes ?? []) p.sedes.set(sede.id, sede);
 
     for (const item of d.items ?? []) {
       p.items.set(item.id, item);
@@ -767,6 +960,7 @@ export class Proyeccion {
       p.indexarMarca(item.marca ?? "", item.id);
     }
     for (const [k, v] of d.stock ?? []) p.stock.set(k, v);
+    for (const [k, v] of d.preciosPorSede ?? []) p.preciosPorSede.set(k, v);
     for (const venta of d.ventas ?? []) {
       p.ventas.set(venta.id, venta);
       p.porCorrelativo.set(venta.correlativo, venta.id);
@@ -784,7 +978,10 @@ export class Proyeccion {
       if (deLaVenta) deLaVenta.push(propina);
       else p.propinasPorVenta.set(propina.ventaId, [propina]);
     }
-    p.turnoAbierto = d.turnoAbiertoId ? (p.turnos.get(d.turnoAbiertoId) ?? null) : null;
+    for (const id of d.turnosAbiertosIds ?? []) {
+      const turno = p.turnos.get(id);
+      if (turno) p.turnosAbiertos.set(turno.sedeId, turno);
+    }
     for (const cliente of d.clientes ?? []) {
       p.clientes.set(cliente.id, cliente);
       p.indexarNombre(cliente.nombre, cliente.id);
