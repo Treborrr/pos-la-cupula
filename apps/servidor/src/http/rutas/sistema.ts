@@ -76,8 +76,20 @@ export async function rutasSistema(
       },
       /** En qué sucursal está operando esta sesión. */
       sede: sede ? { id: sede.id, nombre: sede.nombre, prefijoTicket: sede.prefijoTicket } : null,
-      /** Las sucursales entre las que puede moverse quien pregunta. */
-      sedes: pos.p.sedesActivas().map((s) => ({ id: s.id, nombre: s.nombre })),
+      /**
+       * Las sucursales entre las que puede moverse quien pregunta.
+       *
+       * Un CAJERO ve SOLO la suya, aunque la pantalla no le muestre el
+       * selector: no tiene por qué saber qué otros locales existen, y una
+       * lista que llega "por si acaso" es la que termina apareciendo en
+       * alguna pantalla el día que alguien la reutilice sin mirar el rol.
+       */
+      sedes:
+        peticion.sesion?.rol === "ADMIN"
+          ? pos.p.sedesActivas().map((s) => ({ id: s.id, nombre: s.nombre }))
+          : sede
+            ? [{ id: sede.id, nombre: sede.nombre }]
+            : [],
       siguienteCorrelativo: siguienteCorrelativo(
         pos.p,
         peticion.sede,

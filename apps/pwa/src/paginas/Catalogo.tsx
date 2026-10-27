@@ -14,6 +14,7 @@ import { api, FalloDeApi, type Item } from "../lib/api";
 import { aCentimos, aTexto, aTextoConSimbolo, margenLegible, montoOAusente } from "../lib/formato";
 import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
+import { PreciosPorSede } from "../componentes/PreciosPorSede";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Segmentado } from "../componentes/Piezas";
 
 export function Catalogo() {
@@ -768,6 +769,11 @@ function FormularioDeItem({
             </Campo>
           ) : null}
         </div>
+
+        {/* El precio por sucursal va JUSTO debajo del general, no en otra
+            pantalla: así se ve de una que el de arriba es el de la cadena y
+            que lo de abajo son las excepciones. Con un solo local no aparece. */}
+        {item ? <PreciosPorSede itemId={item.id} /> : null}
 
         {/* El margen en vivo: es lo que convierte dos números sueltos en una
             decisión. Y avisa del dedo más común, invertir compra y venta. */}

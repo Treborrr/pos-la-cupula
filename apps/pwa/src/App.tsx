@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BarChart3,
@@ -15,14 +15,20 @@ import {
   Scissors,
   Settings,
   ShoppingCart,
+  Store,
   Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
 
-import { api, ServidorCaido, type EstadoGeneral } from "./lib/api";
+import { api, elegirSede, ServidorCaido, type EstadoGeneral } from "./lib/api";
 import { hora } from "./lib/formato";
-import { banderaDeSalidaIntencional, ProveedorDeUsuario, type UsuarioDeSesion } from "./lib/sesion";
+import {
+  banderaDeSalidaIntencional,
+  ProveedorDeUsuario,
+  usarUsuario,
+  type UsuarioDeSesion,
+} from "./lib/sesion";
 import { usarPrimerosPasos } from "./componentes/PrimerosPasos";
 import { BotonLectorDeTicket } from "./componentes/LectorDeTicket";
 import { MenuDeCuenta } from "./componentes/MenuDeCuenta";
@@ -317,6 +323,7 @@ function BarraSuperior({ estado }: { estado?: EstadoGeneral }) {
     <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-linea bg-white px-4 md:px-6">
       <div className="flex min-w-0 items-center gap-3 md:gap-6">
         <Reloj />
+        <SelectorDeSucursal estado={estado} />
         {estado ? (
           <div className="hidden items-center gap-2 text-sm text-tinta/60 md:flex">
             Próximo ticket
@@ -336,6 +343,50 @@ function BarraSuperior({ estado }: { estado?: EstadoGeneral }) {
 
       <BotonLectorDeTicket />
     </header>
+  );
+}
+
+/**
+ * En qué local estás parado. Solo aparece cuando hay más de una sucursal: con
+ * un solo local sería ruido permanente que no decide nada.
+ *
+ * Va en la barra de arriba, SIEMPRE a la vista, y no escondido en un menú,
+ * porque de él dependen el stock, la caja y los precios que se están mirando.
+ * Alguien que no sabe en qué local está puede trasladar mercadería al revés o
+ * cambiarle el precio al local equivocado.
+ *
+ * El cajero no lo ve: su sucursal la resuelve el servidor desde su cuenta y no
+ * puede cambiarla, así que un selector sería una promesa falsa.
+ */
+function SelectorDeSucursal({ estado }: { estado?: EstadoGeneral }) {
+  const usuario = usarUsuario();
+  const qc = useQueryClient();
+
+  const sedes = estado?.sedes ?? [];
+  if (usuario.rol !== "ADMIN" || sedes.length < 2) return null;
+
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <Store className="h-4 w-4 shrink-0 text-tinta/50" />
+      <select
+        className="max-w-40 rounded-lg bg-hueso px-2.5 py-1.5 font-semibold text-tinta"
+        value={estado?.sede?.id ?? ""}
+        onChange={(e) => {
+          elegirSede(e.target.value);
+          // Se tira TODA la caché: el stock, la caja, el catálogo y los
+          // reportes que están en pantalla son de la sucursal anterior. Dejar
+          // una sola consulta vieja significaría mostrar el stock de un local
+          // mientras el encabezado dice el nombre del otro.
+          qc.clear();
+        }}
+      >
+        {sedes.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.nombre}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

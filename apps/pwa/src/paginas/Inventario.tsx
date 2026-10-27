@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   Boxes,
   ClipboardCheck,
   PackageMinus,
@@ -18,10 +19,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { api, FalloDeApi, type Item } from "../lib/api";
+import { api, FalloDeApi, type EstadoGeneral, type Item } from "../lib/api";
 import { aCentimos, aTextoConSimbolo, cantidad, fechaYHora, montoOAusente } from "../lib/formato";
 import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
+import { Traslado } from "../componentes/Traslado";
 import { Campo, EncabezadoPagina, Pagina, Pastilla, Recuadro, Segmentado } from "../componentes/Piezas";
 
 interface ProductoConStock extends Item {
@@ -255,6 +257,12 @@ function FichaDeProducto({ producto, alCerrar }: { producto: ProductoConStock; a
   const acciones = ACCIONES.filter((a) => !a.soloAdmin || usuario.rol === "ADMIN");
   const [accion, setAccion] = useState<Accion | null>(null);
   const [hecho, setHecho] = useState<string | null>(null);
+  const [trasladando, setTrasladando] = useState(false);
+
+  // El botón de traslado solo tiene sentido con más de un local, y solo para
+  // el ADMIN: mover mercadería entre sucursales es decisión del dueño.
+  const estado = useQuery({ queryKey: ["estado"], queryFn: () => api.get<EstadoGeneral>("/estado") });
+  const puedeTrasladar = usuario.rol === "ADMIN" && (estado.data?.sedes.length ?? 0) > 1;
 
   const kardex = useQuery({
     queryKey: ["kardex", producto.id],
@@ -273,8 +281,27 @@ function FichaDeProducto({ producto, alCerrar }: { producto: ProductoConStock; a
               {cantidad(stock)} <span className="text-lg font-normal text-tinta/50">unidades</span>
             </div>
           </div>
-          <EstadoDeStock producto={{ ...producto, stock }} />
+          <div className="flex items-center gap-3">
+            <EstadoDeStock producto={{ ...producto, stock }} />
+            {puedeTrasladar ? (
+              <button type="button" className="boton-suave boton-chico" onClick={() => setTrasladando(true)}>
+                <ArrowLeftRight className="h-4 w-4" />
+                Trasladar
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {trasladando ? (
+          <Traslado
+            itemId={producto.id}
+            sedeActualId={estado.data?.sede?.id}
+            alCerrar={() => {
+              setTrasladando(false);
+              qc.invalidateQueries({ queryKey: ["kardex", producto.id] });
+            }}
+          />
+        ) : null}
 
         {hecho ? <Aviso tono="bien">{hecho}</Aviso> : null}
 

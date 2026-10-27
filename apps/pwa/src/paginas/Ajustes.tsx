@@ -30,6 +30,7 @@ import { SeccionCatalogo } from "./ajustes/Catalogo";
 import { SeccionImpresora } from "./ajustes/Impresora";
 import { SeccionRespaldos } from "./ajustes/Respaldos";
 import { SeccionUsuarios } from "./ajustes/Usuarios";
+import { SeccionSucursales } from "./ajustes/Sucursales";
 import { SeccionMiCuenta } from "./ajustes/MiCuenta";
 import { SeccionSeguridad } from "./ajustes/Seguridad";
 import { CampoGuardable, Casilla, Dato, EncabezadoPagina, Pagina } from "../componentes/Piezas";
@@ -55,6 +56,7 @@ const SECCIONES: { id: string; texto: string; icono: LucideIcon }[] = [
   { id: "catalogo", texto: "Catálogo", icono: FileSpreadsheet },
   { id: "ticketera", texto: "Ticketera", icono: Printer },
   { id: "respaldos", texto: "Respaldos", icono: HardDrive },
+  { id: "sucursales", texto: "Sucursales", icono: Store },
   { id: "usuarios", texto: "Usuarios", icono: Users },
   { id: "mi-cuenta", texto: "Mi cuenta", icono: UserCog },
   { id: "seguridad", texto: "Seguridad", icono: ShieldCheck },
@@ -180,6 +182,14 @@ export function Ajustes() {
               key={String(config.data?.["respaldos.destinoExterno"] ?? "")}
               destinoConfigurado={String(config.data?.["respaldos.destinoExterno"] ?? "")}
             />
+          </Bloque>
+
+          <Bloque
+            id="sucursales"
+            titulo="Sucursales"
+            descripcion="Los locales de la cadena. Cada uno lleva su propio stock, su caja y su numeración de tickets."
+          >
+            <SeccionSucursales />
           </Bloque>
 
           <Bloque

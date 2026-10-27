@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Plus, RotateCcw, UserX } from "lucide-react";
 
-import { api, FalloDeApi, type RolUsuario } from "../../lib/api";
+import { api, FalloDeApi, type RolUsuario, type Sede } from "../../lib/api";
 import { Aviso, Modal } from "../../componentes/Modal";
 import { Campo, Pastilla } from "../../componentes/Piezas";
 
@@ -21,6 +21,8 @@ interface UsuarioAdmin {
   usuario: string;
   nombre: string;
   rol: RolUsuario;
+  /** En qué local trabaja. Solo significa algo en un CAJERO. */
+  sedeId: string;
   activo: boolean;
 }
 
@@ -136,11 +138,27 @@ function ModalCrearCajero({ alCerrar, alCrear }: { alCerrar: () => void; alCrear
   const [usuario, setUsuario] = useState("");
   const [nombre, setNombre] = useState("");
   const [contrasena, setContrasena] = useState("");
+  const [sedeId, setSedeId] = useState("");
 
-  const valido = usuario.trim().length >= 3 && nombre.trim().length > 0 && contrasena.length >= 8;
+  const sedes = useQuery({ queryKey: ["sedes"], queryFn: () => api.get<{ sedes: Sede[] }>("/sedes") });
+  const activas = (sedes.data?.sedes ?? []).filter((s) => s.activa);
+  // Con un solo local no se pregunta: el servidor usa la sucursal del ADMIN.
+  const hayQueElegir = activas.length > 1;
+
+  const valido =
+    usuario.trim().length >= 3 &&
+    nombre.trim().length > 0 &&
+    contrasena.length >= 8 &&
+    (!hayQueElegir || sedeId !== "");
 
   const crear = useMutation({
-    mutationFn: () => api.post("/usuarios", { usuario: usuario.trim(), nombre: nombre.trim(), contrasena }),
+    mutationFn: () =>
+      api.post("/usuarios", {
+        usuario: usuario.trim(),
+        nombre: nombre.trim(),
+        contrasena,
+        ...(sedeId ? { sedeId } : {}),
+      }),
     onSuccess: () => {
       alCrear();
       alCerrar();
@@ -188,6 +206,22 @@ function ModalCrearCajero({ alCerrar, alCrear }: { alCerrar: () => void; alCrear
         <Campo etiqueta="Contraseña" ayuda="Al menos 8 caracteres.">
           <input className="campo" type="password" value={contrasena} onChange={(e) => setContrasena(e.target.value)} />
         </Campo>
+
+        {hayQueElegir ? (
+          <Campo
+            etiqueta="En qué sucursal trabaja"
+            ayuda="Solo va a ver y cobrar en ese local. No puede cambiarlo desde el mostrador."
+          >
+            <select className="campo" value={sedeId} onChange={(e) => setSedeId(e.target.value)}>
+              <option value="">Elige la sucursal…</option>
+              {activas.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        ) : null}
       </form>
     </Modal>
   );

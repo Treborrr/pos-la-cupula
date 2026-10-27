@@ -1,6 +1,9 @@
 # Plan: multisucursal
 
-Estado: propuesta, sin empezar. Decidido con el cliente el 25 de octubre de 2026.
+Estado: IMPLEMENTADO el 27 de octubre de 2026. Las siete fases están hechas,
+con 36 pruebas propias (410 en total, todas en verde).
+
+Decidido con el cliente el 25 de octubre de 2026.
 
 `ARQUITECTURA.md` lista "multisucursal" como fuera de alcance de la v1. Esto lo
 saca de esa lista, igual que la v0.11.0 sacó "multiusuario y roles".
@@ -44,10 +47,19 @@ Pero al estar publicado en Railway, hoy ya comparten esa suerte.
 
 ## Cómo se migra lo que ya existe
 
-Sin migración destructiva. `paquetes/contratos/src/upcasters.ts` está cableado
-desde el día 1 justo para esto: se sube `VERSION_ACTUAL` de los eventos que
-ganan `sedeId` y el upcaster de v1 a v2 les inyecta `sedeId: "principal"` AL
-LEER. El archivo en disco no se toca.
+Sin migración destructiva, y al final ni siquiera hizo falta un upcaster.
+
+`sedeId` entró como campo OPCIONAL en los eventos que lo ganaron, que es lo que
+la regla 4 del contrato ya permitía ("agregar un campo opcional no requiere
+subir `v`"). Un evento sin `sedeId` se lee como `principal`, que es exactamente
+lo que significaba: cuando se escribió había un solo local y era ese. Es el
+mismo camino que ya había usado `categoria` en `caja.egreso_registrado`.
+
+El correlativo se ENSANCHÓ en vez de cambiarse (`/^NV\d{6}$/` pasó a
+`/^[A-Z]{2,4}\d{6}$/`), y ensanchar nunca invalida lo ya escrito.
+
+El archivo en disco no se toca, ningún evento subió de versión, y el gancho de
+`upcasters.ts` sigue ahí sin usar para el día que haga falta de verdad.
 
 Al arrancar, si no existe ninguna sucursal, se siembra "principal" con los datos
 que hoy están en la configuración `negocio.*`. Para el cliente actual no cambia
@@ -56,6 +68,18 @@ nada: sigue viendo su local y su numeración `NV`.
 ## Fases
 
 Cada fase se despliega sola y deja el sistema funcionando.
+
+> Lo que sigue es el plan tal como se acordó. Se cumplió completo, con dos
+> cambios que el plan no había previsto y que aparecieron al construirlo:
+>
+> 1. **No hizo falta ningún upcaster.** `sedeId` entró como campo OPCIONAL, que
+>    la regla 4 del contrato ya permitía, y un evento sin él se lee como
+>    `principal`. El archivo en disco no se toca y tampoco hubo que subir
+>    ninguna versión de evento.
+> 2. **El límite de sesiones de cajero estaba atado a un solo local.**
+>    `ServicioDeSesiones` permitía UN cajero logueado en todo el sistema. Con
+>    varias sucursales, la cajera del segundo local al entrar echaba al cajero
+>    del primero. Ahora el límite es por local. Lo encontró una prueba nueva.
 
 ### F1. La entidad Sucursal
 
@@ -68,7 +92,8 @@ No toca nada existente. El sistema sigue comportándose igual.
 ### F2. Ventas y caja por sucursal
 
 `sedeId` en `venta.registrada`, `caja.turno_abierto`, `caja.egreso_registrado`
-y `caja.turno_cerrado`, con sus upcasters.
+y `caja.turno_cerrado`, como campo opcional (ver arriba: no hicieron falta
+upcasters).
 
 Correlativo por sucursal: hoy `ultimoCorrelativo` es un contador único en
 `Proyeccion.ts:69`. Pasa a ser un contador por sucursal, con el prefijo de cada
@@ -118,7 +143,24 @@ hardware local, y desde la nube no se llega. Hoy producción corre sin ticketera
 local liviano" pendiente. No es un problema nuevo de la segunda sucursal, pero
 con varios locales se multiplica.
 
-## Estimación
+## Lo que se construyó
 
-Cinco o seis sesiones de trabajo. Toca el núcleo del dominio: las tres
-decisiones del cliente son las tres opciones más completas.
+**Dominio.** `dominio/sedes/sedes.ts` (alta, edición, baja, siembra de la
+principal) y `dominio/inventario/traslados.ts`. El stock pasó a llevarse por
+par (sucursal, producto) y el correlativo, por sucursal.
+
+**HTTP.** `/api/sedes` con su alta, edición, baja, stock por local y traslados;
+`/api/catalogo/:id/precio-sede`; `/api/usuarios/:id/sede`. La sucursal de cada
+petición la resuelve `autorizacion.ts`.
+
+**Pantallas.** Ajustes → Sucursales, selector de local en el encabezado (solo
+ADMIN y solo con más de uno), traslado desde la ficha de inventario, precios por
+sucursal debajo del precio general, y elección de local al crear un cajero.
+
+**Pruebas.** 36 nuevas: 23 de dominio (`sedes.prueba.ts`), 11 de API
+(`sedesApi.prueba.ts`) y 2 del límite de sesiones por local. 410 en total.
+
+La regresión con la que más se habría perdido, y que tiene prueba propia:
+`arquear` recorría TODAS las ventas y egresos. Sin filtrar por sucursal, una
+venta cobrada en otro local con la caja cerrada entraba como "cobrada fuera de
+turno" en el arqueo de este, y el cajón esperaba plata que estaba a 200 km.

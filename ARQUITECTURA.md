@@ -33,11 +33,16 @@ Estas no se re-discuten. Si alguna cambia, cambia el documento primero.
 ### Fuera de alcance en v1 (decidido, no olvidado)
 
 Agenda de citas · promociones y paquetes · devoluciones
-parciales · comisiones · facturación electrónica · multisucursal ·
+parciales · comisiones · facturación electrónica ·
 app nativa · sincronización en la nube.
 
 (**Multiusuario y roles** salió de esta lista en la v0.11.0 — dejó de estar
 fuera de alcance. Ver la nota de D3 abajo.)
+
+(**Multisucursal** salió en la v0.13.0. Qué es de cada local —stock, precios,
+caja, serie de tickets, ventas y barberos— y qué es de la cadena —catálogo,
+clientes y su fidelidad, usuarios y RUC— está en `PLAN-MULTISUCURSAL.md` y en
+el evento `sede.creada` del contrato.)
 
 > **Los egresos se encendieron en la v0.6.0.** Eran el defecto más grande del
 > sistema: sin registrar las salidas de efectivo (compra de insumos, adelanto a

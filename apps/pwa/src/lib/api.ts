@@ -41,10 +41,40 @@ export class ServidorCaido extends Error {
   }
 }
 
+/**
+ * La sucursal en la que está trabajando el ADMIN, elegida en el selector del
+ * encabezado. Va como `?sede=` en TODAS las peticiones.
+ *
+ * Vive acá y no en cada pantalla a propósito: si cada una tuviera que acordarse
+ * de mandarla, la primera que se olvide cobra o descuenta stock en el local
+ * equivocado, y el error aparecería en la caja de otra persona. Mandarla
+ * siempre, desde un solo lugar, hace imposible ese olvido.
+ *
+ * Para un CAJERO esto no tiene ningún efecto: el servidor resuelve su sucursal
+ * desde su cuenta e IGNORA este parámetro. No es una decisión del navegador.
+ */
+let sedeElegida: string | null = localStorage.getItem("cupula.sede");
+
+export function sedeActual(): string | null {
+  return sedeElegida;
+}
+
+export function elegirSede(sedeId: string | null): void {
+  sedeElegida = sedeId;
+  if (sedeId) localStorage.setItem("cupula.sede", sedeId);
+  else localStorage.removeItem("cupula.sede");
+}
+
+/** Le pega `?sede=` a la ruta, respetando los parámetros que ya tenga. */
+function conSede(ruta: string): string {
+  if (!sedeElegida) return ruta;
+  return `${ruta}${ruta.includes("?") ? "&" : "?"}sede=${encodeURIComponent(sedeElegida)}`;
+}
+
 async function pedir<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   let respuesta: Response;
   try {
-    respuesta = await fetch(`/api${ruta}`, {
+    respuesta = await fetch(`/api${conSede(ruta)}`, {
       ...opciones,
       headers: {
         ...(opciones.body ? { "Content-Type": "application/json" } : {}),
@@ -106,8 +136,31 @@ export interface Item {
   orden: number;
   activo: boolean;
   stock: number | null;
+  /**
+   * El precio de la CADENA, del que esta sucursal puede apartarse. `precio`
+   * de arriba es el EFECTIVO del local: es el que se cobra.
+   */
+  precioCadena?: number | null;
+  /** true = esta sucursal fijó su propio precio; false = hereda el general. */
+  precioPropio?: boolean;
   /** Nombre del archivo en /fotos/, o null si no tiene. */
   foto: string | null;
+}
+
+/** Un local. Ver `PLAN-MULTISUCURSAL.md`. */
+export interface Sede {
+  id: string;
+  nombre: string;
+  direccion: string;
+  ciudad: string;
+  pie: string;
+  /** Prefijo de su serie de tickets: `NV` → `NV000030`. */
+  prefijoTicket: string;
+  activa: boolean;
+  creadaEn: string;
+  /** Cuántos tickets lleva emitidos. Con uno o más, el prefijo ya no se cambia. */
+  ticketsEmitidos?: number;
+  cajaAbierta?: boolean;
 }
 
 export interface LineaVenta {
@@ -185,6 +238,7 @@ export interface Propina {
 
 export interface Turno {
   id: string;
+  sedeId: string;
   abiertoEn: string;
   montoInicial: number;
   cerradoEn?: string;
@@ -234,7 +288,12 @@ export interface Alerta {
 }
 
 export interface EstadoGeneral {
+  /** Nombre y RUC son de la empresa; dirección y ciudad, del local donde se cobra. */
   negocio: { nombre: string; direccion: string; ciudad: string; ruc: string; pie: string };
+  /** En qué sucursal está operando esta sesión. */
+  sede: { id: string; nombre: string; prefijoTicket: string } | null;
+  /** Entre cuáles puede moverse quien pregunta. Un cajero ve solo la suya. */
+  sedes: { id: string; nombre: string }[];
   siguienteCorrelativo: string;
   turnoAbierto: Turno | null;
   exigirTurnoAbierto: boolean;
