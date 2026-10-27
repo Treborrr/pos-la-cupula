@@ -106,7 +106,7 @@ export function Login({ modoAdmin = false, mensaje }: { modoAdmin?: boolean; men
             </Link>
           ) : (
             <Link to="/login/admin" className="text-sm font-medium text-tinta/50 hover:text-tinta">
-              ¿Sos el dueño? Entrar como administrador
+              ¿Eres el dueño? Entrar como administrador
             </Link>
           )}
         </div>
