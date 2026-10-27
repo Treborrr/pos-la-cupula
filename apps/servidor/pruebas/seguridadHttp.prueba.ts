@@ -18,6 +18,7 @@ import {
   abrirAlmacen,
   borrar,
   carpetaTemporal,
+  conSesionAdmin,
   dependenciasDeSeguridadDePrueba,
   notificacionesDePrueba,
 } from "./ayuda";
@@ -27,7 +28,7 @@ afterEach(async () => {
   for (const cerrar of aCerrar.splice(0)) await cerrar();
 });
 
-async function api(enNube = true) {
+async function api(enNube = true, conAdmin = false) {
   const dir = await carpetaTemporal();
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
   const app = await construirApp({
@@ -40,6 +41,10 @@ async function api(enNube = true) {
     ...dependenciasDeSeguridadDePrueba(),
     enNube,
   });
+  // Las pruebas que tocan rutas de ADMIN necesitan sesión; las que miden
+  // cabeceras o el 401 de entrada, no — y crearla ahí solo sumaría ruido.
+  if (conAdmin) await conSesionAdmin(app, pos);
+
   aCerrar.push(async () => {
     await app.close();
     await pos.cerrar();
@@ -144,6 +149,67 @@ describe("entradas hostiles", () => {
 
     expect(ultima.statusCode).toBe(429);
     expect(ultima.json().error.mensaje).toMatch(/Demasiados intentos/);
+  });
+});
+
+describe("subir fotos de catálogo", () => {
+  /** Un PNG mínimo de verdad: cabecera + lo justo para que sea válido. */
+  const PNG_REAL = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(64),
+  ]);
+
+  async function conItem(app: Awaited<ReturnType<typeof api>>) {
+    const r = await app.inject({
+      method: "POST",
+      url: "/api/catalogo",
+      payload: { codigo: "X1", nombre: "X", tipo: "PRODUCTO", categoria: "C", precio: 100 },
+    });
+    return r.json().item.id as string;
+  }
+
+  /**
+   * El `Content-Type` lo elige quien sube, así que por sí solo no prueba nada.
+   * Sin mirar los bytes, el POS guardaba cualquier archivo rotulado como
+   * imagen, se lo llevaba en cada respaldo y lo conservaba para siempre.
+   */
+  it("rechaza un archivo que dice ser PNG y no lo es", async () => {
+    const app = await api(true, true);
+    const itemId = await conItem(app);
+
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/png" },
+      payload: Buffer.from("<script>alert(1)</script>"),
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error.mensaje).toMatch(/no es una imagen/i);
+  });
+
+  it("acepta un PNG de verdad", async () => {
+    const app = await api(true, true);
+    const itemId = await conItem(app);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/png" },
+      payload: PNG_REAL,
+    });
+    expect(r.statusCode).toBe(201);
+  });
+
+  /** SVG ejecuta scripts: no entra, aunque sea una imagen de verdad. */
+  it("no acepta SVG", async () => {
+    const app = await api(true, true);
+    const itemId = await conItem(app);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/catalogo/${itemId}/foto`,
+      headers: { "content-type": "image/svg+xml" },
+      payload: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"),
+    });
+    expect(r.statusCode).toBe(400);
   });
 });
 

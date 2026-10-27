@@ -33,6 +33,30 @@ const EXTENSION_POR_TIPO: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/**
+ * Los primeros bytes que tiene que traer cada formato para ser lo que dice.
+ *
+ * El `Content-Type` lo elige quien sube el archivo, así que por sí solo no
+ * prueba nada: se puede mandar cualquier cosa rotulada `image/png`. Que el
+ * navegador no la ejecute ya está resuelto (se sirve con `nosniff` y el tipo
+ * sale de la extensión), pero sin esta comprobación el POS igual guardaría ese
+ * archivo en la carpeta de datos, se lo llevaría en cada respaldo y lo
+ * conservaría para siempre. Un almacén de archivos arbitrarios dentro de un
+ * sistema de ventas no le sirve a nadie salvo a quien lo quiera usar de
+ * escondite.
+ *
+ * Se miran solo los bytes de cabecera, no se decodifica la imagen: alcanza
+ * para descartar lo que no es una imagen y no cuesta nada.
+ */
+const FIRMA_POR_TIPO: Record<string, (b: Buffer) => boolean> = {
+  "image/jpeg": (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/png": (b) =>
+    b.length > 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  // WEBP es un contenedor RIFF: "RIFF" + 4 bytes de tamaño + "WEBP".
+  "image/webp": (b) =>
+    b.length > 12 && b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP",
+};
+
 /** 3 MB alcanza de sobra para una foto de producto y no castiga el respaldo. */
 const MAX_BYTES_FOTO = 3 * 1024 * 1024;
 
@@ -377,6 +401,16 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       }
 
       const bytes = peticion.body as Buffer;
+
+      // Que el archivo SEA lo que dice ser, no solo que lo declare.
+      if (!FIRMA_POR_TIPO[tipo]?.(bytes)) {
+        throw new ErrorDeNegocio(
+          "DATO_INVALIDO",
+          "Ese archivo no es una imagen válida.",
+          "Vuelve a exportarla como JPG, PNG o WEBP y súbela de nuevo.",
+        );
+      }
+
       await mkdir(carpetaFotos, { recursive: true });
       await borrarFotoVieja(id);
       const archivo = `${id}.${extension}`;
