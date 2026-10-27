@@ -7,9 +7,9 @@
  * que el catálogo y los clientes NO se duplican.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Power, Store } from "lucide-react";
+import { Plus, Power, Search, Store } from "lucide-react";
 
 import { api, FalloDeApi, type Sede } from "../../lib/api";
 import { Aviso, Modal } from "../../componentes/Modal";
@@ -25,8 +25,28 @@ export function SeccionSucursales() {
     queryFn: () => api.get<{ sedes: Sede[] }>("/sedes"),
   });
 
+  const [busqueda, setBusqueda] = useState("");
+
   const lista = sedes.data?.sedes ?? [];
   const activas = lista.filter((s) => s.activa).length;
+  const conCajaAbierta = lista.filter((s) => s.cajaAbierta).length;
+
+  /**
+   * El buscador aparece recién con unas cuantas sucursales. Con dos o tres,
+   * un campo de búsqueda sobre una lista que entra entera en la pantalla es
+   * una cosa más que leer y decidir, para nada.
+   */
+  const valeLaPenaBuscar = lista.length > 8;
+
+  const visibles = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return lista;
+    return lista.filter((s) =>
+      [s.nombre, s.ciudad, s.direccion, s.prefijoTicket].some((campo) =>
+        (campo ?? "").toLowerCase().includes(q),
+      ),
+    );
+  }, [lista, busqueda]);
 
   const refrescar = () => {
     qc.invalidateQueries({ queryKey: ["sedes"] });
@@ -53,8 +73,43 @@ export function SeccionSucursales() {
         </Aviso>
       ) : null}
 
+      {/* Un resumen de la cadena antes de la lista: con veinte locales, lo
+          primero que se quiere saber no es el detalle de uno sino cuántos hay
+          y cuántos están operando ahora mismo. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-hueso px-5 py-4">
+        <span>
+          <span className="cifra text-2xl font-semibold">{activas}</span>{" "}
+          <span className="ayuda">{activas === 1 ? "sucursal activa" : "sucursales activas"}</span>
+        </span>
+        <span>
+          <span className="cifra text-2xl font-semibold text-bien">{conCajaAbierta}</span>{" "}
+          <span className="ayuda">con la caja abierta ahora</span>
+        </span>
+        {lista.length > activas ? (
+          <span>
+            <span className="cifra text-2xl font-semibold text-tinta/40">{lista.length - activas}</span>{" "}
+            <span className="ayuda">desactivadas</span>
+          </span>
+        ) : null}
+      </div>
+
+      {valeLaPenaBuscar ? (
+        <label className="relative block">
+          <Search className="pointer-events-none absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 text-tinta/35" />
+          <input
+            className="campo pl-12"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, ciudad o prefijo…"
+          />
+        </label>
+      ) : null}
+
       <div className="tarjeta divide-y divide-linea">
-        {lista.map((s) => (
+        {visibles.length === 0 ? (
+          <p className="ayuda p-5">Ninguna sucursal coincide con «{busqueda}».</p>
+        ) : null}
+        {visibles.map((s) => (
           <div key={s.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-hueso-hondo">
               <Store className="h-5 w-5 text-tinta/50" />
@@ -95,8 +150,8 @@ export function SeccionSucursales() {
       </button>
       <p className="ayuda">
         {activas === 1
-          ? "Hoy hay un solo local. Al abrir el segundo aparece un selector arriba para moverte entre ellos."
-          : `${activas} sucursales activas.`}
+          ? "Hoy hay un solo local. Al abrir el segundo aparece un selector arriba para moverte entre ellos, y una opción «Todas» para ver la cadena entera."
+          : "Usa el selector de arriba para trabajar en un local, o «Todas las sucursales» para ver el consolidado. Los reportes comparan los locales entre sí."}
       </p>
 
       {creando ? <FormularioDeSede alCerrar={() => setCreando(false)} alGuardar={refrescar} /> : null}
@@ -130,6 +185,28 @@ function FormularioDeSede({
    */
   const prefijoCongelado = (sede?.ticketsEmitidos ?? 0) > 0;
 
+  /**
+   * El prefijo se propone solo a partir del nombre, y el servidor garantiza
+   * que esté libre.
+   *
+   * Con veinte locales, pedirle al dueño que invente veinte códigos que además
+   * no se repitan es trabajo manual puro: prueba uno, el sistema se lo
+   * rechaza, prueba otro. Sigue pudiendo escribir el suyo; lo que cambia es
+   * que no tiene que hacerlo.
+   *
+   * Solo al crear: en una sucursal que ya existe, pisarle el prefijo mientras
+   * se le corrige el nombre sería cambiarle la serie sin que lo pida.
+   */
+  const sugerencia = useQuery({
+    queryKey: ["prefijo-sugerido", nombre.trim()],
+    queryFn: () =>
+      api.get<{ prefijo: string }>(`/sedes/prefijo-sugerido?nombre=${encodeURIComponent(nombre.trim())}`),
+    enabled: !sede && nombre.trim().length >= 2,
+  });
+
+  const [prefijoTocado, setPrefijoTocado] = useState(false);
+  const prefijoEfectivo = prefijoTocado || sede ? prefijo : (sugerencia.data?.prefijo ?? prefijo);
+
   const guardar = useMutation({
     mutationFn: () => {
       const datos = {
@@ -137,7 +214,7 @@ function FormularioDeSede({
         direccion: direccion.trim(),
         ciudad: ciudad.trim(),
         pie: pie.trim(),
-        ...(prefijoCongelado ? {} : { prefijoTicket: prefijo.trim().toUpperCase() }),
+        ...(prefijoCongelado ? {} : { prefijoTicket: prefijoEfectivo.trim().toUpperCase() }),
       };
       return sede ? api.patch(`/sedes/${sede.id}`, datos) : api.post("/sedes", datos);
     },
@@ -149,7 +226,9 @@ function FormularioDeSede({
 
   const faltan: string[] = [];
   if (!nombre.trim()) faltan.push("el nombre");
-  if (!prefijoCongelado && !/^[A-Za-z]{2,4}$/.test(prefijo.trim())) faltan.push("el prefijo del ticket");
+  if (!prefijoCongelado && !/^[A-Za-z][A-Za-z0-9]{1,3}$/.test(prefijoEfectivo.trim())) {
+    faltan.push("el prefijo del ticket");
+  }
 
   const fallo = guardar.error instanceof FalloDeApi ? guardar.error : null;
 
@@ -212,22 +291,29 @@ function FormularioDeSede({
         ) : (
           <Campo
             etiqueta="Prefijo del ticket"
-            ayuda="De 2 a 4 letras. Cada local necesita el suyo para que dos tickets nunca lleven el mismo número."
+            ayuda={
+              prefijoTocado || sede
+                ? "De 2 a 4 caracteres, empezando por letra. Cada local necesita el suyo para que dos tickets nunca lleven el mismo número."
+                : "Lo propone el sistema a partir del nombre, y ya verificó que esté libre. Puedes cambiarlo."
+            }
           >
             <input
               className="campo uppercase"
-              value={prefijo}
+              value={prefijoEfectivo}
               maxLength={4}
-              onChange={(e) => setPrefijo(e.target.value.toUpperCase())}
-              placeholder="SC"
+              onChange={(e) => {
+                setPrefijoTocado(true);
+                setPrefijo(e.target.value.toUpperCase());
+              }}
+              placeholder="BG"
             />
           </Campo>
         )}
 
         {!sede ? (
           <p className="ayuda">
-            La numeración de esta sucursal empieza en {prefijo.trim().toUpperCase() || "XX"}000001. No
-            continúa la de ningún otro local.
+            La numeración de esta sucursal empieza en {prefijoEfectivo.trim().toUpperCase() || "XX"}000001.
+            No continúa la de ningún otro local.
           </p>
         ) : null}
       </div>

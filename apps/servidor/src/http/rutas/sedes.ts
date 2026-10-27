@@ -10,7 +10,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { crearSede, actualizarSede, desactivarSede, reactivarSede } from "../../dominio/sedes/sedes";
+import {
+  actualizarSede,
+  crearSede,
+  desactivarSede,
+  prefijoSugerido,
+  reactivarSede,
+} from "../../dominio/sedes/sedes";
 import { trasladarStock } from "../../dominio/inventario/traslados";
 import type { Dependencias } from "../app";
 
@@ -29,6 +35,15 @@ export async function rutasSedes(app: FastifyInstance, { pos }: Dependencias) {
         cajaAbierta: pos.p.turnoAbiertoDe(s.id) !== null,
       }));
     return { sedes };
+  });
+
+  /**
+   * Propone un prefijo de ticket libre para un nombre. La pantalla lo pide
+   * mientras se escribe el nombre, así el dueño no tiene que inventar nada.
+   */
+  app.get("/sedes/prefijo-sugerido", { config: { rol: "ADMIN" } }, async (peticion) => {
+    const { nombre } = z.object({ nombre: z.string().trim().max(80) }).parse(peticion.query);
+    return { prefijo: prefijoSugerido(pos.p, nombre) };
   });
 
   app.post("/sedes", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {

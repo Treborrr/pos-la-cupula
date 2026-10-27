@@ -161,7 +161,10 @@ export const esquemaPrefijoTicket = z
   .trim()
   .min(2)
   .max(4)
-  .regex(/^[A-Z]+$/, "el prefijo del ticket va en mayúsculas, de 2 a 4 letras");
+  .regex(
+    /^[A-Z][A-Z0-9]{1,3}$/,
+    "el prefijo empieza con letra y sigue con letras o números, de 2 a 4 caracteres",
+  );
 
 /**
  * Correlativo de venta: prefijo de la sucursal + 6 dígitos.
@@ -169,8 +172,14 @@ export const esquemaPrefijoTicket = z
  * Era `/^NV\d{6}$/` cuando había un solo local. Se ensanchó, no se cambió:
  * `NV000030` sigue validando igual, así que ningún evento ya escrito queda
  * fuera del esquema (regla 4).
+ *
+ * El prefijo admite números después de la primera letra (`S01`, `BG2`) porque
+ * con veinte locales inventar veinte códigos de solo letras que además no se
+ * repitan es un trabajo manual que no le sirve a nadie. La primera posición
+ * sigue siendo una letra: así nunca hay ambigüedad sobre dónde termina el
+ * prefijo y empieza el número, que son los últimos 6 dígitos siempre.
  */
-export const esquemaCorrelativo = z.string().regex(/^[A-Z]{2,4}\d{6}$/);
+export const esquemaCorrelativo = z.string().regex(/^[A-Z][A-Z0-9]{1,3}\d{6}$/);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sobre del evento

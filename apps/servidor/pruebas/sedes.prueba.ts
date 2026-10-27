@@ -13,7 +13,13 @@ import { ulid } from "ulid";
 
 import { ServicioPos } from "../src/servicios/Pos";
 import { crearItem, cambiarPrecioDeSede } from "../src/dominio/catalogo/catalogo";
-import { crearSede, actualizarSede, desactivarSede, slugDeSede } from "../src/dominio/sedes/sedes";
+import {
+  actualizarSede,
+  crearSede,
+  desactivarSede,
+  prefijoSugerido,
+  slugDeSede,
+} from "../src/dominio/sedes/sedes";
 import { registrarEntrada, ajustarStock } from "../src/dominio/inventario/inventario";
 import { trasladarStock } from "../src/dominio/inventario/traslados";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
@@ -546,6 +552,72 @@ describe("los reportes respetan la sucursal", () => {
     const soloCentro = construirReporte(pos.p, centro, d, d).inventario;
     const todas = construirReporte(pos.p, null, d, d).inventario;
     expect(todas.productos).toBe(soloCentro.productos); // el catálogo es el mismo
+    await pos.cerrar();
+  });
+});
+
+/**
+ * Administrar veinte locales tiene que seguir siendo cómodo. Lo que lo hace
+ * incómodo no es la cantidad: es el trabajo manual que la cantidad multiplica.
+ */
+describe("abrir muchas sucursales sin trabajo manual", () => {
+  it("propone un prefijo legible a partir del nombre", async () => {
+    const { pos } = await posDePrueba();
+    expect(prefijoSugerido(pos.p, "Bagua Grande")).toBe("BG");
+    expect(prefijoSugerido(pos.p, "Jaen")).toBe("JA");
+    expect(prefijoSugerido(pos.p, "San Juan de Lurigancho")).toBe("SJDL");
+    await pos.cerrar();
+  });
+
+  it("nunca propone uno ya tomado", async () => {
+    const { pos } = await posDePrueba();
+    const usados = new Set(["NV"]);
+
+    // Veintidós locales, varios con nombres que colisionan a propósito.
+    for (const nombre of [
+      "Bagua Grande", "Bagua Chica", "Bagua Centro", "Jaen", "Jaen Norte",
+      "Chachapoyas", "Cumba", "Cajaruro", "Copallin", "Chiclayo",
+      "Lima", "Lonya", "La Peca", "Moyobamba", "Mendoza",
+      "Nueva Cajamarca", "Pedro Ruiz", "Rioja", "Tarapoto", "Utcubamba", "Yamon",
+    ]) {
+      const prefijo = prefijoSugerido(pos.p, nombre);
+      expect(prefijo, `para ${nombre}`).not.toBe("");
+      expect(usados.has(prefijo), `${prefijo} repetido en ${nombre}`).toBe(false);
+      usados.add(prefijo);
+
+      await pos.transaccion(() => {
+        const r = crearSede(pos.p, { nombre, prefijoTicket: prefijo });
+        return { eventos: r.eventos, resultado: null };
+      });
+    }
+
+    expect(pos.p.sedes.size).toBe(22); // las 21 nuevas + la principal
+    await pos.cerrar();
+  });
+
+  /**
+   * Con veinte locales, códigos de solo letras obligan a inventar
+   * abreviaturas cada vez más forzadas. El número después de la letra inicial
+   * es la salida que siempre funciona.
+   */
+  it("admite números en el prefijo, no solo letras", async () => {
+    const { pos } = await posDePrueba();
+    const id = await pos.transaccion(() => {
+      const r = crearSede(pos.p, { nombre: "Sucursal Dos", prefijoTicket: "S02" });
+      return { eventos: r.eventos, resultado: r.sedeId };
+    });
+    expect(pos.p.sede(id)!.prefijoTicket).toBe("S02");
+    await pos.cerrar();
+  });
+
+  it("un prefijo que no empieza con letra se rechaza", async () => {
+    const { pos } = await posDePrueba();
+    await expect(
+      pos.transaccion(() => {
+        const r = crearSede(pos.p, { nombre: "Mala", prefijoTicket: "02" });
+        return { eventos: r.eventos, resultado: null };
+      }),
+    ).rejects.toThrow(/empieza con una letra/);
     await pos.cerrar();
   });
 });

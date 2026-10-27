@@ -42,12 +42,59 @@ function slugLibre(p: Proyeccion, nombre: string): string {
   throw new ErrorDeNegocio("DATO_INVALIDO", "Demasiadas sucursales con nombres parecidos.");
 }
 
+/** Primera posición letra, el resto letras o números. Ver `esquemaCorrelativo`. */
+const FORMATO_PREFIJO = /^[A-Z][A-Z0-9]{1,3}$/;
+
 /** ¿Alguna sucursal ya emite tickets con este prefijo? */
 function prefijoTomado(p: Proyeccion, prefijo: string, exceptoSedeId?: string): boolean {
   for (const s of p.sedes.values()) {
     if (s.id !== exceptoSedeId && s.prefijoTicket === prefijo) return true;
   }
   return false;
+}
+
+/**
+ * Un prefijo de ticket LIBRE, propuesto a partir del nombre del local.
+ *
+ * Con veinte sucursales, pedirle al dueño que invente veinte códigos de dos a
+ * cuatro letras que además no se repitan es trabajo manual puro: lo intenta,
+ * el sistema le rechaza el repetido, prueba otro. La máquina puede responder
+ * eso sola, y la propuesta sigue siendo editable por si prefiere la suya.
+ *
+ * El orden de los intentos va de lo más legible a lo que simplemente funciona:
+ * primero las iniciales de las palabras ("Bagua Grande" → BG), después las
+ * primeras letras ("Jaen" → JA, JAE, JAEN), y recién si todo eso está tomado,
+ * la letra inicial con un número ("B2", "B3"). Un prefijo que se entiende
+ * leyendo el ticket vale más que uno correlativo.
+ */
+export function prefijoSugerido(p: Proyeccion, nombre: string): string {
+  const limpio = nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z ]/g, " ")
+    .trim();
+
+  const palabras = limpio.split(/\s+/).filter(Boolean);
+  const candidatos: string[] = [];
+
+  // Iniciales: "Bagua Grande" → BG; "San Juan de Lurigancho" → SJDL.
+  if (palabras.length >= 2) {
+    candidatos.push(palabras.map((w) => w[0]).join("").slice(0, 4));
+  }
+  // Primeras letras de la primera palabra: JA, JAE, JAEN.
+  const primera = palabras[0] ?? "";
+  for (const largo of [2, 3, 4]) {
+    if (primera.length >= largo) candidatos.push(primera.slice(0, largo));
+  }
+  // Inicial + número, que siempre alcanza.
+  const inicial = primera[0] ?? "S";
+  for (let i = 2; i <= 99; i++) candidatos.push(`${inicial}${i}`);
+
+  for (const c of candidatos) {
+    if (FORMATO_PREFIJO.test(c) && !prefijoTomado(p, c)) return c;
+  }
+  return "";
 }
 
 export function crearSede(
@@ -69,11 +116,11 @@ export function crearSede(
   }
 
   const prefijo = datos.prefijoTicket?.trim().toUpperCase();
-  if (!prefijo || !/^[A-Z]{2,4}$/.test(prefijo)) {
+  if (!prefijo || !FORMATO_PREFIJO.test(prefijo)) {
     throw new ErrorDeNegocio(
       "DATO_INVALIDO",
-      "El prefijo del ticket va en mayúsculas, de 2 a 4 letras.",
-      'Por ejemplo "SC" para Sucursal Centro.',
+      "El prefijo empieza con una letra y sigue con letras o números, de 2 a 4 caracteres.",
+      'Por ejemplo "BG" para Bagua Grande, o "S02" para la segunda sucursal.',
     );
   }
 
@@ -123,8 +170,11 @@ export function actualizarSede(
   let prefijo: string | undefined;
   if (datos.prefijoTicket !== undefined) {
     prefijo = datos.prefijoTicket.trim().toUpperCase();
-    if (!/^[A-Z]{2,4}$/.test(prefijo)) {
-      throw new ErrorDeNegocio("DATO_INVALIDO", "El prefijo del ticket va en mayúsculas, de 2 a 4 letras.");
+    if (!FORMATO_PREFIJO.test(prefijo)) {
+      throw new ErrorDeNegocio(
+        "DATO_INVALIDO",
+        "El prefijo empieza con una letra y sigue con letras o números, de 2 a 4 caracteres.",
+      );
     }
     if (prefijo !== sede.prefijoTicket) {
       /**
