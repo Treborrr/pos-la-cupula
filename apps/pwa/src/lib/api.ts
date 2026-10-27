@@ -53,6 +53,12 @@ export class ServidorCaido extends Error {
  * Para un CAJERO esto no tiene ningún efecto: el servidor resuelve su sucursal
  * desde su cuenta e IGNORA este parámetro. No es una decisión del navegador.
  */
+/**
+ * El valor especial que pide el consolidado de toda la cadena. Lo entiende el
+ * servidor en `autorizacion.ts`; un cajero que lo mande sigue viendo su local.
+ */
+export const TODAS_LAS_SEDES = "todas";
+
 let sedeElegida: string | null = localStorage.getItem("cupula.sede");
 
 export function sedeActual(): string | null {
@@ -290,11 +296,15 @@ export interface Alerta {
 export interface EstadoGeneral {
   /** Nombre y RUC son de la empresa; dirección y ciudad, del local donde se cobra. */
   negocio: { nombre: string; direccion: string; ciudad: string; ruc: string; pie: string };
-  /** En qué sucursal está operando esta sesión. */
+  /**
+   * En qué sucursal está operando esta sesión. `null` = se está mirando toda
+   * la cadena, y entonces no se puede cobrar ni abrir caja.
+   */
   sede: { id: string; nombre: string; prefijoTicket: string } | null;
   /** Entre cuáles puede moverse quien pregunta. Un cajero ve solo la suya. */
   sedes: { id: string; nombre: string }[];
-  siguienteCorrelativo: string;
+  /** `null` mirando toda la cadena: cada local tiene su propia serie. */
+  siguienteCorrelativo: string | null;
   turnoAbierto: Turno | null;
   exigirTurnoAbierto: boolean;
   alertasDeStock: number;

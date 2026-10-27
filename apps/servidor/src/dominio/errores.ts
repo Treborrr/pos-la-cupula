@@ -54,6 +54,8 @@ export type CodigoError =
   /** No se puede desactivar la única sucursal activa: no quedaría dónde cobrar. */
   | "ULTIMA_SEDE"
   | "TURNO_ABIERTO"
+  /** Se intentó escribir mirando el consolidado: hay que elegir una sucursal. */
+  | "SEDE_NO_ELEGIDA"
   /**
    * Solo en TRASLADOS entre sucursales. La venta, a propósito, NO lo usa: ahí
    * hay un cliente esperando y se cobra igual, avisando. Ver `trasladarStock`.

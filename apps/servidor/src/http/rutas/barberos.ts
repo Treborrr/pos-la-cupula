@@ -21,6 +21,7 @@ import {
 } from "../../dominio/barberos/barberos";
 import { reporteDeBarbero } from "../../consultas/barberos";
 import { booleanoDeQuery } from "./catalogo";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 
 export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias) {
@@ -30,6 +31,12 @@ export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias)
       .parse(peticion.query);
 
     const barberos = [...pos.p.barberos.values()]
+      /**
+       * Cada local tiene su plantel. Un cajero que ve los barberos de las
+       * otras sucursales puede atribuirle un corte a alguien que está a 200 km,
+       * y entonces la producción por barbero deja de significar algo.
+       */
+      .filter((b) => peticion.sedeFiltro === null || b.sedeId === peticion.sedeFiltro)
       .filter((b) => incluirInactivos || b.activo)
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
     return { barberos };
@@ -38,7 +45,7 @@ export async function rutasBarberos(app: FastifyInstance, { pos }: Dependencias)
   app.post("/barberos", { config: { rol: "ADMIN" } }, async (peticion, respuesta) => {
     const { nombre } = z.object({ nombre: z.string().trim().min(1).max(80) }).parse(peticion.body);
     const barberoId = await pos.transaccion(() => {
-      const r = crearBarbero(pos.p, nombre);
+      const r = crearBarbero(pos.p, nombre, sedeParaEscribir(peticion));
       return { eventos: r.eventos, resultado: r.barberoId };
     }, peticion.actor);
     return respuesta.status(201).send({ barbero: pos.p.barberos.get(barberoId) });

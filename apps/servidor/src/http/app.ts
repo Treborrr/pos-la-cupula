@@ -7,7 +7,7 @@
  * que cambia detrás es el adaptador del almacén.
  */
 
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import fastifyCookie from "@fastify/cookie";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
@@ -60,6 +60,33 @@ export interface Dependencias {
   enNube: boolean;
 }
 
+/**
+ * Cuántos saltos de proxy hay de verdad por delante. Ver la nota de
+ * `trustProxy` abajo: es un límite de seguridad, no una comodidad.
+ */
+function saltosDeProxyConfiables(enNube: boolean): FastifyServerOptions["trustProxy"] {
+  // Instalado en la PC de la barbería no hay ningún proxy por delante: ahí una
+  // cabecera `X-Forwarded-For` solo puede venir de alguien mintiendo, así que
+  // no se lee nunca.
+  if (!enNube) return false;
+
+  /**
+   * En Railway hay EXACTAMENTE un proxy por delante.
+   *
+   * `salto` cuenta desde el servidor hacia afuera: 0 es quien se conectó
+   * directo —el proxy de Railway— y de ahí para la izquierda están los valores
+   * que vinieron escritos en la cabecera, o sea los que el cliente controla.
+   * Confiando solo en el salto 0, Fastify se queda con la IP que el proxy
+   * agregó (la real) y descarta cualquier cosa que el atacante haya puesto
+   * antes.
+   *
+   * Se escribe como función y no como el número `1` porque los tipos de
+   * Fastify no aceptan números, aunque en ejecución funcionen: la función es
+   * lo mismo, tipado y además dice qué significa.
+   */
+  return (_direccion: string, salto: number) => salto === 0;
+}
+
 export async function construirApp(deps: Dependencias): Promise<FastifyInstance> {
   const app = Fastify({
     // Registro en JSON plano. Corriendo como servicio de Windows nadie lo lee
@@ -67,13 +94,108 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     logger: { level: process.env.NIVEL_LOG ?? (process.env.VITEST ? "silent" : "info") },
     // El cuerpo más grande que puede llegar es un ticket con muchas líneas.
     bodyLimit: 1_000_000,
-    // Necesario para que `request.ip`/`request.protocol` lean `X-Forwarded-*`
-    // detrás del proxy de Railway — sin esto, la lista de redes permitidas
-    // del cajero compararía contra la IP interna del proxy, no la de quien
-    // se conectó de verdad. Confirmar el comportamiento real una vez
-    // desplegado; si Railway resulta ser más de un salto, endurecer esto a
-    // un número exacto en vez de confiar en toda la cadena.
-    trustProxy: true,
+    /**
+     * CUÁNTOS saltos de proxy se creen, no "créele a todos".
+     *
+     * La IP del cliente es un límite de seguridad acá: de ella dependen el
+     * filtro de redes del cajero (`seguridad.redesCajero`) y el tope de
+     * intentos de login. Con `trustProxy: true` Fastify se queda con el valor
+     * de MÁS A LA IZQUIERDA de `X-Forwarded-For`, y esa parte la escribe quien
+     * se conecta: mandando `X-Forwarded-For: 192.168.1.50` cualquiera entraba
+     * como si estuviera en la red del local, desde cualquier parte del mundo.
+     * Los dos controles quedaban en decoración. Hay prueba que lo fija.
+     *
+     * Con un número, Fastify confía SOLO en esa cantidad de saltos contados
+     * desde el servidor hacia afuera, y se queda con el primero que está más
+     * allá. En Railway hay exactamente un proxy por delante: lo que ese proxy
+     * agrega es la IP real, y cualquier cosa que el atacante haya puesto antes
+     * queda más a la izquierda y se descarta.
+     *
+     * Instalado en la PC de la barbería no hay ningún proxy, así que no se
+     * confía en la cabecera en absoluto: ahí `X-Forwarded-For` solo puede
+     * venir de alguien tratando de mentir.
+     */
+    trustProxy: saltosDeProxyConfiables(deps.enNube),
+  });
+
+  /**
+   * Cabeceras de seguridad, escritas a mano.
+   *
+   * A mano y no con `@fastify/helmet` a propósito: son diez líneas que se leen
+   * de una, y una dependencia menos es una vía menos por la que entra código
+   * ajeno a un sistema que maneja la plata de un negocio. El mismo criterio que
+   * ya se aplicó al service worker.
+   *
+   * Van en un `onRequest`, antes de todo, para que salgan TAMBIÉN en las
+   * respuestas de error y en los archivos estáticos de la PWA. Puestas solo en
+   * las rutas del API, el `index.html` —que es el que el navegador interpreta—
+   * quedaría sin ninguna.
+   */
+  app.addHook("onRequest", async (_peticion, respuesta) => {
+    /**
+     * CSP. El POS no carga NADA de afuera: ni una fuente, ni un script, ni una
+     * imagen. Por eso puede permitirse la política estricta que un sitio con
+     * CDNs no puede, y esa es justamente la defensa que convierte un XSS de
+     * "robo de sesión" en "no pasa nada".
+     *
+     *  · `'unsafe-inline'` SOLO en estilos: el `index.html` trae un bloque
+     *    `<style>` y las barras de los reportes se dibujan con `style={{...}}`.
+     *    En estilos el riesgo es cosmético; en scripts sería el agujero entero,
+     *    y ahí no se permite.
+     *  · `img-src` admite `data:` y `blob:` por el QR del ticket y las fotos
+     *    del catálogo que se previsualizan antes de subirlas.
+     *  · `frame-ancestors 'none'` es lo que impide el clickjacking: nadie puede
+     *    meter el POS en un iframe y hacer que el dueño apriete "Anular" sin
+     *    saberlo.
+     *  · `form-action` y `base-uri` cierran dos vías clásicas de exfiltración
+     *    si algún día entrara HTML inyectado.
+     */
+    respuesta.header(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+      ].join("; "),
+    );
+
+    // Que el navegador NO adivine el tipo de un archivo. Importa por las fotos
+    // del catálogo: llegan con el Content-Type que manda el cliente y se
+    // sirven desde el mismo origen, así que sin esto un archivo disfrazado de
+    // PNG podría llegar a interpretarse como otra cosa.
+    respuesta.header("X-Content-Type-Options", "nosniff");
+
+    // Lo mismo que `frame-ancestors`, para navegadores viejos que no leen CSP.
+    respuesta.header("X-Frame-Options", "DENY");
+
+    // Las URLs del POS llevan ids de venta y de cliente. Que no salgan hacia
+    // ningún lado al hacer clic en un enlace externo.
+    respuesta.header("Referrer-Policy", "no-referrer");
+
+    // El POS no usa ninguna de las tres. Apagarlas evita que un día un script
+    // inyectado pueda siquiera pedirlas.
+    respuesta.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+
+    // Aísla la pestaña: nada que se abra desde acá conserva una referencia a
+    // la ventana del POS.
+    respuesta.header("Cross-Origin-Opener-Policy", "same-origin");
+
+    /**
+     * HSTS solo en la nube. En la barbería el POS se sirve por HTTP en la red
+     * local, y mandar esta cabecera ahí dejaría el navegador del mostrador
+     * negándose a abrirlo —el navegador recuerda la orden durante meses y no
+     * hay forma simple de deshacerla desde el servidor.
+     */
+    if (deps.enNube) {
+      respuesta.header("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+    }
   });
 
   await app.register(fastifyCookie);
@@ -123,6 +245,39 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
           codigo: "DATO_INVALIDO",
           mensaje: `${primero.path.join(".") || "El dato"}: ${primero.message}`,
           detalles: error.issues.map((i) => ({ campo: i.path.join("."), problema: i.message })),
+        },
+      });
+    }
+
+    /**
+     * Errores que el propio Fastify ya clasificó: JSON malformado (400),
+     * cuerpo más grande que el tope (413), demasiados intentos de login (429).
+     *
+     * Sin esto caían todos al 500 de abajo, y eso tenía dos costos. Uno, de
+     * cara a la persona: pasados los 10 intentos, el login respondía "Algo
+     * falló en el sistema" en vez de "Demasiados intentos, espera un minuto",
+     * así que la única señal de que el freno existe quedaba escondida detrás de
+     * un mensaje de avería. Dos, de cara a quien opera: un 500 es "revisar el
+     * servidor" y un 429 es "funcionó la defensa"; confundirlos hace que un
+     * ataque de fuerza bruta se lea como un sistema roto.
+     *
+     * Solo se respetan los 4xx. Un 5xx que venga de una librería se sigue
+     * tratando como imprevisto: se registra con su detalle y afuera sale el
+     * mensaje genérico, sin filtrar nada del interior.
+     */
+    const conEstado = (error ?? {}) as { statusCode?: unknown; code?: unknown; message?: unknown; error?: { codigo?: string; mensaje?: string } };
+    const estadoPropio = typeof conEstado.statusCode === "number" ? conEstado.statusCode : 0;
+    if (estadoPropio >= 400 && estadoPropio < 500) {
+      // Si ya trae un `error` con nuestra forma (lo arman los limitadores de
+      // intentos), se respeta tal cual: ese mensaje está escrito para la
+      // persona del mostrador y es mejor que cualquiera que se arme acá.
+      if (conEstado.error?.mensaje) {
+        return respuesta.status(estadoPropio).send({ error: conEstado.error });
+      }
+      return respuesta.status(estadoPropio).send({
+        error: {
+          codigo: typeof conEstado.code === "string" ? conEstado.code : "PETICION_INVALIDA",
+          mensaje: typeof conEstado.message === "string" ? conEstado.message : "La petición no se pudo procesar.",
         },
       });
     }

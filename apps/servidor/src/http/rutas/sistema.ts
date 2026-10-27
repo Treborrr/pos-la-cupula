@@ -54,7 +54,13 @@ export async function rutasSistema(
 
   /** Lo que la PWA necesita al arrancar, en una sola llamada. */
   app.get("/estado", { config: { rol: "CAJERO" } }, async (peticion) => {
-    const sede = pos.p.sede(peticion.sede);
+    /**
+     * `sedeFiltro` en null es "estoy mirando toda la cadena". La pantalla
+     * necesita saberlo para dejar el selector en "Todas" y para esconder lo
+     * que no tiene sentido sin un local concreto (la caja, el próximo ticket).
+     */
+    const mirandoTodas = peticion.sedeFiltro === null;
+    const sede = mirandoTodas ? undefined : pos.p.sede(peticion.sede);
     const estadoImpresora = await impresora.estado();
     const modoImpresora = pos.config<string>("impresora.modo");
 
@@ -74,7 +80,10 @@ export async function rutasSistema(
         ruc: pos.config<string>("negocio.ruc"),
         pie: sede?.pie || pos.config<string>("negocio.pie"),
       },
-      /** En qué sucursal está operando esta sesión. */
+      /**
+       * En qué sucursal está operando esta sesión. `null` = el consolidado de
+       * toda la cadena, donde no se puede cobrar ni abrir caja.
+       */
       sede: sede ? { id: sede.id, nombre: sede.nombre, prefijoTicket: sede.prefijoTicket } : null,
       /**
        * Las sucursales entre las que puede moverse quien pregunta.
@@ -90,12 +99,16 @@ export async function rutasSistema(
           : sede
             ? [{ id: sede.id, nombre: sede.nombre }]
             : [],
-      siguienteCorrelativo: siguienteCorrelativo(
-        pos.p,
-        peticion.sede,
-        pos.config<number>("ventas.correlativoInicial") ?? 1,
-      ),
-      turnoAbierto: pos.p.turnoAbiertoDe(peticion.sede),
+      // Sin una sucursal elegida no hay "próximo ticket": cada local tiene el
+      // suyo y mostrar el de una al azar sería mentir.
+      siguienteCorrelativo: mirandoTodas
+        ? null
+        : siguienteCorrelativo(
+            pos.p,
+            peticion.sede,
+            pos.config<number>("ventas.correlativoInicial") ?? 1,
+          ),
+      turnoAbierto: mirandoTodas ? null : pos.p.turnoAbiertoDe(peticion.sede),
       exigirTurnoAbierto: pos.config<boolean>("ventas.exigirTurnoAbierto"),
       alertasDeStock: stockBajo(pos.p, peticion.sede).length,
       correos: notificaciones.contadorDeHoy(),
@@ -116,7 +129,8 @@ export async function rutasSistema(
   app.get("/config", { config: { rol: "ADMIN" } }, async () => pos.configCompleta());
 
   app.put("/config", { config: { rol: "ADMIN" } }, async (peticion) => {
-    const cuerpo = z.record(z.unknown()).parse(peticion.body);
+    // zod 4 exige declarar el tipo de la CLAVE además del valor.
+    const cuerpo = z.record(z.string(), z.unknown()).parse(peticion.body);
     for (const [clave, valor] of Object.entries(cuerpo)) {
       await pos.guardarConfig(clave, valor, peticion.actor);
     }

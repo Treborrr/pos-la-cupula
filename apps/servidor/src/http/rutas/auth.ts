@@ -32,7 +32,19 @@ export async function rutasAuth(app: FastifyInstance, { pos, sesiones, intentosD
         rateLimit: {
           max: 10,
           timeWindow: "1 minute",
+          /**
+           * `statusCode` es obligatorio acá, aunque parezca redundante.
+           *
+           * Lo que devuelve esta función NO se envía: se le pasa al manejador
+           * de errores de `app.ts` como si fuera un error. Sin `statusCode` es
+           * un objeto suelto que ese manejador no sabe clasificar, así que lo
+           * trataba como imprevisto y respondía 500 con "Algo falló en el
+           * sistema". El freno de fuerza bruta funcionaba, pero su mensaje
+           * nunca llegaba a la pantalla: la persona veía una avería y el 429
+           * —la señal de que la defensa actuó— no aparecía en ningún lado.
+           */
           errorResponseBuilder: () => ({
+            statusCode: 429,
             error: {
               codigo: "CREDENCIALES_INVALIDAS",
               mensaje: "Demasiados intentos. Espera un minuto y vuelve a probar.",

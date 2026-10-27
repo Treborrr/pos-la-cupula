@@ -18,6 +18,7 @@ import {
   reactivarUsuario,
 } from "../../dominio/usuarios/usuarios";
 import { hashearContrasena } from "../../seguridad/contrasenas";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 
 function paraPantalla(u: {
@@ -76,7 +77,7 @@ export async function rutasUsuarios(app: FastifyInstance, { pos, sesiones }: Dep
         nombre,
         rol: "CAJERO",
         hash,
-        sedeId: sedeId ?? peticion.sede,
+        sedeId: sedeId ?? sedeParaEscribir(peticion),
       });
       return { eventos: r.eventos, resultado: r.usuarioId };
     }, peticion.actor);

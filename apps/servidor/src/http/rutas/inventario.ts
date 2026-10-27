@@ -14,6 +14,7 @@ import {
 } from "../../dominio/inventario/inventario";
 import { registrarCompra } from "../../dominio/compras/compras";
 import { kardexDe } from "../../consultas/kardex";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 
 export async function rutasInventario(app: FastifyInstance, { pos }: Dependencias) {
@@ -72,7 +73,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarEntrada(pos.p, peticion.sede, datos), peticion.actor);
+    await pos.escribir(() => registrarEntrada(pos.p, sedeParaEscribir(peticion), datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 
@@ -90,7 +91,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => ajustarStock(pos.p, peticion.sede, datos), peticion.actor);
+    await pos.escribir(() => ajustarStock(pos.p, sedeParaEscribir(peticion), datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 
@@ -118,7 +119,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       .parse(peticion.body);
 
     const resultado = await pos.transaccion(() => {
-      const r = registrarCompra(pos.p, peticion.sede, datos);
+      const r = registrarCompra(pos.p, sedeParaEscribir(peticion), datos);
       return { eventos: r.eventos, resultado: r };
     }, peticion.actor);
 
@@ -138,7 +139,7 @@ export async function rutasInventario(app: FastifyInstance, { pos }: Dependencia
       })
       .parse(peticion.body);
 
-    await pos.escribir(() => registrarMerma(pos.p, peticion.sede, datos), peticion.actor);
+    await pos.escribir(() => registrarMerma(pos.p, sedeParaEscribir(peticion), datos), peticion.actor);
     return respuesta.status(201).send({ itemId: datos.itemId, stock: pos.p.stockDe(peticion.sede, datos.itemId) });
   });
 

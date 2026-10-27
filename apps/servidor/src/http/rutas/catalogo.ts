@@ -23,6 +23,7 @@ import {
 import { ErrorDeNegocio } from "../../dominio/errores";
 import { importarCatalogo, planificarImportacion } from "../../dominio/catalogo/importar";
 import { generarPlantilla, leerPlantilla } from "../../adaptadores/planilla/plantillaCatalogo";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 
 /** JPG, PNG y WEBP: lo que cualquier celular o cámara produce sin convertir nada. */
@@ -297,7 +298,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       );
     }
 
-    const plan = planificarImportacion(pos.p, peticion.sede, lectura.filas, modo);
+    const plan = planificarImportacion(pos.p, sedeParaEscribir(peticion), lectura.filas, modo);
 
     if (!aplicar) {
       return { aplicado: false, problemas: lectura.problemas, filas: lectura.filas.length, plan };
@@ -317,7 +318,7 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
       throw new ErrorDeNegocio("PLANILLA_VACIA", "La planilla no tiene ninguna fila con datos.");
     }
 
-    await pos.escribir(() => importarCatalogo(pos.p, peticion.sede, lectura.filas, modo), peticion.actor);
+    await pos.escribir(() => importarCatalogo(pos.p, sedeParaEscribir(peticion), lectura.filas, modo), peticion.actor);
 
     return { aplicado: true, problemas: [], filas: lectura.filas.length, plan };
   });

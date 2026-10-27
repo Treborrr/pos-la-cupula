@@ -113,7 +113,7 @@ describe("utilidad y margen", () => {
     const { pos, ids } = await posConCatalogo();
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 2, precioUnitario: 4500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.total).toBe(9000);
     expect(r.utilidad.costo).toBe(5600); // 2 × 28.00
@@ -132,7 +132,7 @@ describe("utilidad y margen", () => {
       { itemId: ids["VAPE"], cantidad: 2, precioUnitario: 2500 },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.total).toBe(14000);
     // El margen sigue siendo el de la cera: es lo único costeable.
@@ -153,7 +153,7 @@ describe("utilidad y margen", () => {
       { itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.total).toBe(14500);
     expect(r.utilidad.margen).toBe(37.8); // el de la cera, intacto
@@ -166,7 +166,7 @@ describe("utilidad y margen", () => {
     const { pos, ids } = await posConCatalogo();
     await cobrar(pos, [{ itemId: ids["VAPE"], cantidad: 1, precioUnitario: 2500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.total).toBe(2500);
     expect(r.utilidad.margen).toBeNull();
@@ -183,7 +183,7 @@ describe("agrupaciones", () => {
       { itemId: ids["VAPE"], cantidad: 1, precioUnitario: 2500 },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const porNombre = Object.fromEntries(r.porCategoria.map((c) => [c.clave, c]));
 
     expect(porNombre["Barbería"].margen).toBe(37.8);
@@ -202,7 +202,7 @@ describe("agrupaciones", () => {
       { itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.porMarca.map((m) => m.clave)).toEqual(["NIVEL TRES"]);
     expect(r.porMarca[0].total).toBe(4500);
@@ -231,7 +231,7 @@ describe("agrupaciones", () => {
       { itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 }, // 45.00 en producto
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.porMarca.map((m) => m.clave)).toEqual(["NIVEL TRES"]);
     // Pero la marca SÍ quedó guardada en el ítem y en la línea de venta: no se
@@ -244,7 +244,7 @@ describe("agrupaciones", () => {
     const { pos, ids } = await posConCatalogo();
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.ranking[0].etiqueta).toBe("NIVEL TRES PASTA MATE FIRME");
     await pos.cerrar();
   });
@@ -256,7 +256,7 @@ describe("señales", () => {
     // La cera cuesta 28 y se cobra 20: se pierden 8 por unidad, 16 en total.
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 2, precioUnitario: 2000 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.bajoCosto).toHaveLength(1);
     expect(r.bajoCosto[0]).toMatchObject({ nombre: "NIVEL TRES PASTA MATE FIRME", perdida: 1600 });
@@ -288,7 +288,7 @@ describe("señales", () => {
       /no se puede vender/,
     );
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.total).toBe(0);
     expect(r.inventario.sinPrecio).toBe(1);
     expect(r.sinRotar.map((s) => s.nombre)).toContain("FORAJIDO PASTA ROJA");
@@ -299,7 +299,7 @@ describe("señales", () => {
 describe("inventario y rotación", () => {
   it("valoriza a costo y a precio de venta por separado", async () => {
     const { pos } = await posConCatalogo();
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     // CERA 10 × 28 = 280, DORMIDO 4 × 15 = 60 → 340. El vape no tiene costo.
     expect(r.inventario.valorCosto).toBe(34000);
@@ -315,7 +315,7 @@ describe("inventario y rotación", () => {
     const { pos, ids } = await posConCatalogo();
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 1, precioUnitario: 4500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const nombres = r.sinRotar.map((s) => s.nombre);
 
     expect(nombres).toContain("FORAJIDO FIJADOR DORADO");
@@ -325,7 +325,7 @@ describe("inventario y rotación", () => {
 
   it("dice cuánta plata hay parada en lo que no rota", async () => {
     const { pos } = await posConCatalogo();
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const dormido = r.sinRotar.find((s) => s.nombre === "FORAJIDO FIJADOR DORADO")!;
 
     expect(dormido.inmovilizado).toBe(6000); // 4 × 15.00
@@ -341,7 +341,7 @@ describe("inventario y rotación", () => {
       { tipo: "stock.ajustado", datos: { itemId: ids["DORMIDO"], cantidadContada: 0, cantidadSistema: 4, motivo: "Conteo" } },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.sinRotar.map((s) => s.nombre)).not.toContain("FORAJIDO FIJADOR DORADO");
     await pos.cerrar();
   });
@@ -354,7 +354,7 @@ describe("ventas por hora", () => {
     const { pos, ids } = await posConCatalogo();
     await cobrar(pos, [{ itemId: ids["CORTE"], cantidad: 1, precioUnitario: 2000 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
 
     expect(r.porHora).toHaveLength(24);
     expect(r.porHora.map((h) => h.hora)).toEqual([...Array(24).keys()]);
@@ -378,7 +378,7 @@ describe("lista de reposición", () => {
     // La cera se vende, la laca no.
     await cobrar(pos, [{ itemId: ids["CERA"], cantidad: 3, precioUnitario: 4500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const nombres = r.paraReponer.map((x) => x.nombre);
 
     expect(nombres[0]).toBe("NIVEL TRES PASTA MATE FIRME"); // la que se vendió, primero
@@ -390,7 +390,7 @@ describe("lista de reposición", () => {
     const { pos, ids } = await posConCatalogo();
     await pos.escribir(() => [{ tipo: "item.actualizado", datos: { itemId: ids["DORMIDO"], stockMinimo: 10 } }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const laca = r.paraReponer.find((x) => x.nombre === "FORAJIDO FIJADOR DORADO")!;
 
     expect(laca.stock).toBe(4);
@@ -407,7 +407,7 @@ describe("lista de reposición", () => {
       { tipo: "stock.ajustado", datos: { itemId: ids["DORMIDO"], cantidadContada: 0, cantidadSistema: 4, motivo: "Conteo" } },
     ]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.paraReponer.map((x) => x.nombre)).not.toContain("FORAJIDO FIJADOR DORADO");
     await pos.cerrar();
   });
@@ -417,7 +417,7 @@ describe("lista de reposición", () => {
     // Se vende todo el stock del vape (10 unidades).
     await cobrar(pos, [{ itemId: ids["VAPE"], cantidad: 10, precioUnitario: 2500 }]);
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     const vape = r.paraReponer.find((x) => x.nombre.includes("CARTUCHO"))!;
 
     expect(vape.stock).toBe(0);
@@ -432,7 +432,7 @@ describe("lista de reposición", () => {
 describe("comparación con el período anterior", () => {
   it("el período anterior es del mismo largo e inmediatamente antes", async () => {
     const { pos } = await posConCatalogo();
-    const r = construirReporte(pos.p, "2026-09-01", "2026-09-30");
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, "2026-09-01", "2026-09-30");
 
     expect(r.dias).toBe(30);
     expect(r.anterior).toMatchObject({ desde: "2026-08-02", hasta: "2026-08-31", dias: 30 });
@@ -462,7 +462,7 @@ describe("propinas en el reporte", () => {
       claveIdempotencia: ulid(),
     });
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.propinas).toEqual([{ barberoId, nombre: "Juan", cantidad: 1, total: 500 }]);
     await pos.cerrar();
   });
@@ -480,7 +480,7 @@ describe("propinas en el reporte", () => {
       claveIdempotencia: ulid(),
     });
 
-    const r = construirReporte(pos.p, hoy(), hoy());
+    const r = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
     expect(r.total).toBe(2000);
     await pos.cerrar();
   });
@@ -515,11 +515,11 @@ describe("propinas en el reporte", () => {
       () => registrarPropina(pos.p, { ventaId: venta.id, lineaIndex: 0, barberoId, monto: 700 }).eventos,
     );
 
-    expect(construirReporte(pos.p, "2026-09-16", "2026-09-16").propinas).toEqual([
+    expect(construirReporte(pos.p, SEDE_PRINCIPAL, "2026-09-16", "2026-09-16").propinas).toEqual([
       { barberoId, nombre: "Luis", cantidad: 1, total: 700 },
     ]);
     // El período de la venta (el 15) no la cuenta: la propina no pasó ese día.
-    expect(construirReporte(pos.p, "2026-09-15", "2026-09-15").propinas).toEqual([]);
+    expect(construirReporte(pos.p, SEDE_PRINCIPAL, "2026-09-15", "2026-09-15").propinas).toEqual([]);
     await pos.cerrar();
   });
 });

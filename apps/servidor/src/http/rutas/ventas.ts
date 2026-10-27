@@ -8,8 +8,9 @@ import { z } from "zod";
 
 import { coincide } from "@cupula/contratos";
 import type { Venta } from "../../proyecciones/tipos";
-import { construirReporte } from "../../consultas/reportes";
+import { compararSedes, construirReporte } from "../../consultas/reportes";
 import { registrarPropina } from "../../dominio/venta/propina";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 import { booleanoDeQuery } from "./catalogo";
 
@@ -52,7 +53,7 @@ const esquemaCobro = z.object({
 export async function rutasVentas(app: FastifyInstance, { pos, impresora, notificaciones }: Dependencias) {
   app.post("/ventas", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const pedido = esquemaCobro.parse(peticion.body);
-    const { venta, advertencias, duplicada } = await pos.cobrar(peticion.sede, pedido, peticion.actor);
+    const { venta, advertencias, duplicada } = await pos.cobrar(sedeParaEscribir(peticion), pedido, peticion.actor);
 
     // La impresión va DESPUÉS de que la venta está en disco, y su resultado no
     // afecta al de la venta: que falle la ticketera no puede deshacer un cobro
@@ -107,6 +108,19 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
       ventas = [...pos.p.ventas.values()];
     }
 
+    /**
+     * El historial es el de la sucursal en la que se está parado. Sin este
+     * filtro, un cajero vería los tickets de los otros locales y el ADMIN
+     * tendría un listado mezclado en el que el selector de arriba no cambia
+     * nada: diría "Bagua Centro" mostrando las ventas de toda la cadena.
+     *
+     * `sedeFiltro` en null (solo ADMIN, con `?sede=todas`) devuelve la cadena
+     * entera a propósito.
+     */
+    if (peticion.sedeFiltro !== null) {
+      ventas = ventas.filter((v) => v.sedeId === peticion.sedeFiltro);
+    }
+
     if (!incluirAnuladas) ventas = ventas.filter((v) => !v.anulada);
     if (q) {
       ventas = ventas.filter(
@@ -123,16 +137,39 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     return { ventas: ventas.slice(0, limite), cantidadTotal: ventas.length, totales };
   });
 
+  /**
+   * Busca una venta por id o correlativo, PERO solo dentro de la sucursal en
+   * la que opera quien pregunta.
+   *
+   * El filtro del listado no alcanza como defensa: los correlativos son
+   * secuenciales y salen impresos en el ticket, así que adivinar el de otro
+   * local es trivial. Sin esta comprobación, un cajero podía leer, reimprimir
+   * y —lo peor— ANULAR el cobro de otra sucursal, borrándole plata de un
+   * arqueo que no es el suyo.
+   *
+   * Devuelve el MISMO 404 que una venta inexistente, a propósito. Un 403
+   * ("existe pero no es tuya") convertiría la ruta en un oráculo para mapear
+   * qué correlativos emitieron los demás locales.
+   */
+  function buscarVentaDeMiSede(peticion: { sedeFiltro: string | null }, id: string): Venta | undefined {
+    const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
+    if (!venta) return undefined;
+    if (peticion.sedeFiltro !== null && venta.sedeId !== peticion.sedeFiltro) return undefined;
+    return venta;
+  }
+
+  /** El 404 único: mismo cuerpo exista o no, para no filtrar nada. */
+  const noExiste = (respuesta: { status: (n: number) => { send: (c: unknown) => unknown } }, id: string) =>
+    respuesta.status(404).send({
+      error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
+    });
+
   app.get("/ventas/:id", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     // Acepta el id interno o el correlativo: la pistola devuelve correlativo,
     // la lista de la pantalla tiene el id.
-    const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
-    if (!venta) {
-      return respuesta.status(404).send({
-        error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
-      });
-    }
+    const venta = buscarVentaDeMiSede(peticion, id);
+    if (!venta) return noExiste(respuesta, id);
     return {
       venta,
       vistaPreviaTicket: (await imprimir(venta, true)).vistaPrevia,
@@ -140,21 +177,18 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
     };
   });
 
-  app.post("/ventas/:id/anular", { config: { rol: "CAJERO" } }, async (peticion) => {
+  app.post("/ventas/:id/anular", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
     const { motivo } = z.object({ motivo: z.string().trim().min(3).max(200) }).parse(peticion.body);
-    const ventaId = pos.p.ventas.has(id) ? id : (pos.p.ventaPorCorrelativo(id)?.id ?? id);
-    return { venta: await pos.anular(ventaId, motivo, peticion.actor) };
+    const venta = buscarVentaDeMiSede(peticion, id);
+    if (!venta) return noExiste(respuesta, id);
+    return { venta: await pos.anular(venta.id, motivo, peticion.actor) };
   });
 
   app.post("/ventas/:id/reimprimir", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
-    if (!venta) {
-      return respuesta.status(404).send({
-        error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
-      });
-    }
+    const venta = buscarVentaDeMiSede(peticion, id);
+    if (!venta) return noExiste(respuesta, id);
     await pos.registrarReimpresion(venta.id, peticion.actor);
     return { venta: pos.p.ventas.get(venta.id), impresion: await imprimir(venta, true) };
   });
@@ -167,12 +201,8 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
    */
   app.post("/ventas/:id/propina", { config: { rol: "CAJERO" } }, async (peticion, respuesta) => {
     const { id } = z.object({ id: z.string() }).parse(peticion.params);
-    const venta = pos.p.ventas.get(id) ?? pos.p.ventaPorCorrelativo(id);
-    if (!venta) {
-      return respuesta.status(404).send({
-        error: { codigo: "VENTA_NO_EXISTE", mensaje: `No existe la venta ${id}.` },
-      });
-    }
+    const venta = buscarVentaDeMiSede(peticion, id);
+    if (!venta) return noExiste(respuesta, id);
 
     const { lineaIndex, barberoId, monto } = z
       .object({
@@ -202,7 +232,20 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
 
     // El cálculo entero vive en `consultas/reportes`: la ruta solo valida el
     // rango y devuelve. Así se puede probar el reporte sin levantar HTTP.
-    return construirReporte(pos.p, desde, hasta);
+    //
+    // `sedeFiltro` en null es el consolidado de toda la cadena (`?sede=todas`).
+    return {
+      ...construirReporte(pos.p, peticion.sedeFiltro, desde, hasta),
+      /**
+       * La comparativa viaja SIEMPRE, con una sucursal elegida o con el
+       * consolidado: es la pregunta que no existía con un solo local y la
+       * razón de abrir el segundo. Mirar un local sin poder compararlo con el
+       * otro es administrar dos negocios sueltos, no una cadena.
+       */
+      porSede: compararSedes(pos.p, desde, hasta),
+      /** Qué se está mirando, para que la pantalla no tenga que adivinarlo. */
+      sede: peticion.sedeFiltro,
+    };
   });
 
   function datosDelNegocio() {

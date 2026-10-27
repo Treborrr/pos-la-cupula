@@ -9,6 +9,7 @@ import { CATEGORIAS_EGRESO } from "@cupula/contratos";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../../dominio/caja/caja";
 import { ErrorDeNegocio } from "../../dominio/errores";
 import type { DatosDelCierre } from "../../puertos/Impresora";
+import { sedeParaEscribir } from "../autorizacion";
 import type { Dependencias } from "../app";
 
 /**
@@ -58,7 +59,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const egresoId = await pos.transaccion(() => {
-      const r = registrarEgreso(pos.p, peticion.sede, datos);
+      const r = registrarEgreso(pos.p, sedeParaEscribir(peticion), datos);
       return { eventos: r.eventos, resultado: r.egresoId };
     }, peticion.actor);
 
@@ -77,7 +78,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const turnoId = await pos.transaccion(() => {
-      const r = abrirTurno(pos.p, peticion.sede, { montoInicial, notas });
+      const r = abrirTurno(pos.p, sedeParaEscribir(peticion), { montoInicial, notas });
       return { eventos: r.eventos, resultado: r.turnoId };
     }, peticion.actor);
 
@@ -93,7 +94,7 @@ export async function rutasCaja(app: FastifyInstance, { pos, respaldos, impresor
       .parse(peticion.body);
 
     const cierre = await pos.transaccion(() => {
-      const r = cerrarTurno(pos.p, peticion.sede, { contadoEfectivo, notas });
+      const r = cerrarTurno(pos.p, sedeParaEscribir(peticion), { contadoEfectivo, notas });
       return { eventos: r.eventos, resultado: r };
     }, peticion.actor);
 

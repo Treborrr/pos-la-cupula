@@ -65,8 +65,25 @@ interface TotalesDelPeriodo {
   utilidad: Utilidad;
 }
 
+/** Una fila de la comparativa entre sucursales. */
+interface ComparativaDeSede {
+  sedeId: string;
+  nombre: string;
+  total: number;
+  cantidad: number;
+  ticketPromedio: number;
+  utilidad: number;
+  margen: number | null;
+  variacion: number | null;
+  cajaAbierta: boolean;
+}
+
 interface Reporte extends TotalesDelPeriodo {
   anterior: TotalesDelPeriodo;
+  /** Cómo le fue a cada local en el mismo período. Viaja siempre. */
+  porSede: ComparativaDeSede[];
+  /** Qué se está mirando: una sucursal, o `null` para toda la cadena. */
+  sede: string | null;
   porDia: { dia: string; total: number; cantidad: number; utilidad: number | null }[];
   ranking: FilaAgrupada[];
   porCategoria: FilaAgrupada[];
@@ -224,6 +241,10 @@ export function Reportes() {
         <div className="space-y-6">
           <Totales r={r} />
 
+          {/* Antes que cualquier desglose: con varios locales, la primera
+              pregunta del dueño no es "qué se vendió" sino "cuál vendió más". */}
+          <ComparativaSucursales filas={r.porSede} mirando={r.sede} />
+
           {/* El inventario NO depende del período —es una foto de hoy— así que va
               separado y con su propio encabezado, para que nadie lea "plata en
               stock" como si fuera del mes elegido. */}
@@ -280,6 +301,97 @@ export function Reportes() {
 function variacion(ahora: number, antes: number): number | null {
   if (antes === 0) return null;
   return Math.round(((ahora - antes) / Math.abs(antes)) * 1000) / 10;
+}
+
+/**
+ * Cómo le fue a cada local, uno al lado del otro.
+ *
+ * Es la tabla que justifica el segundo local: cuál vende más, cuál creció y
+ * cuál se quedó. Con una sola sucursal no aparece, porque compararse consigo
+ * mismo no responde nada.
+ *
+ * Se muestra SIEMPRE, incluso con una sucursal elegida arriba: la pregunta
+ * "¿cómo va este local?" casi nunca se hace sin la de al lado, "¿y comparado
+ * con el otro?". Obligar a cambiar el selector para enterarse sería esconder
+ * justo el dato por el que se abrió la cadena.
+ */
+function ComparativaSucursales({
+  filas,
+  mirando,
+}: {
+  filas: ComparativaDeSede[];
+  mirando: string | null;
+}) {
+  if (filas.length < 2) return null;
+
+  const mayor = Math.max(...filas.map((f) => f.total), 1);
+  const totalCadena = filas.reduce((a, f) => a + f.total, 0);
+
+  return (
+    <div className="tarjeta overflow-hidden">
+      <div className="border-b border-linea px-5 py-4">
+        <h2 className="font-semibold">Cómo va cada sucursal</h2>
+        <p className="ayuda">
+          En el período elegido, comparado con los días anteriores. La cadena entera vendió{" "}
+          {aTextoConSimbolo(totalCadena)}.
+        </p>
+      </div>
+
+      <div className="scroll-fino overflow-x-auto">
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Sucursal</th>
+              <th className="text-right">Vendido</th>
+              <th className="text-right">Ventas</th>
+              <th className="text-right">Ticket promedio</th>
+              <th className="text-right">Margen</th>
+              <th className="text-right">Contra el período anterior</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr
+                key={f.sedeId}
+                /* La sucursal que se está mirando arriba, resaltada: sin esto
+                   hay que buscarla con el dedo cada vez. */
+                className={mirando === f.sedeId ? "bg-hueso" : ""}
+              >
+                <td>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{f.nombre}</span>
+                    {f.cajaAbierta ? <Pastilla tono="bien">Caja abierta</Pastilla> : null}
+                  </span>
+                  {/* La barra hace comparables de un vistazo 22 filas que como
+                      números sueltos habría que leer una por una. */}
+                  <span className="mt-1.5 block h-1 rounded-full bg-hueso-hondo">
+                    <span
+                      className="block h-1 rounded-full bg-laton"
+                      style={{ width: `${Math.round((f.total / mayor) * 100)}%` }}
+                    />
+                  </span>
+                </td>
+                <td className="cifra text-right font-semibold">{aTextoConSimbolo(f.total)}</td>
+                <td className="cifra text-right">{f.cantidad}</td>
+                <td className="cifra text-right">{aTextoConSimbolo(f.ticketPromedio)}</td>
+                <td className="cifra text-right">{f.margen === null ? "—" : `${f.margen}%`}</td>
+                <td className="cifra text-right">
+                  {f.variacion === null ? (
+                    <span className="text-tinta/35">sin base</span>
+                  ) : (
+                    <span className={f.variacion >= 0 ? "text-bien" : "text-mal"}>
+                      {f.variacion >= 0 ? "+" : ""}
+                      {f.variacion}%
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function Totales({ r }: { r: Reporte }) {

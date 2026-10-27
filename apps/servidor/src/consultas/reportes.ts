@@ -66,6 +66,21 @@ export interface TotalesDelPeriodo {
   utilidad: Utilidad;
 }
 
+/** Una fila de la comparativa entre sucursales. */
+export interface ComparativaDeSede {
+  sedeId: string;
+  nombre: string;
+  total: Centimos;
+  cantidad: number;
+  ticketPromedio: Centimos;
+  utilidad: Centimos;
+  /** `null` si no hubo base costeada para calcularlo. */
+  margen: number | null;
+  /** Contra el mismo período anterior. `null` si antes no vendió nada. */
+  variacion: number | null;
+  cajaAbierta: boolean;
+}
+
 export interface VentaBajoCosto {
   correlativo: string;
   fecha: string;
@@ -190,10 +205,17 @@ function cerrarUtilidad(a: AcumUtilidad): Utilidad {
   };
 }
 
-/** Ventas NO anuladas cuya fecha cae dentro del rango, inclusive. */
-function ventasEntre(p: Proyeccion, desde: string, hasta: string): Venta[] {
+/**
+ * Ventas NO anuladas cuya fecha cae dentro del rango, inclusive.
+ *
+ * `sedeId = null` significa TODA LA CADENA. No es lo mismo que "ninguna": el
+ * dueño de varios locales necesita poder mirar el consolidado, y esa es una
+ * pregunta distinta de "cómo le fue a Bagua Centro".
+ */
+function ventasEntre(p: Proyeccion, sedeId: string | null, desde: string, hasta: string): Venta[] {
   return [...p.ventas.values()].filter((v) => {
     if (v.anulada) return false;
+    if (sedeId !== null && v.sedeId !== sedeId) return false;
     const f = v.ts.slice(0, 10);
     return f >= desde && f <= hasta;
   });
@@ -207,6 +229,7 @@ function ventasEntre(p: Proyeccion, desde: string, hasta: string): Venta[] {
  */
 function propinasPorBarberoEntre(
   p: Proyeccion,
+  sedeId: string | null,
   desde: string,
   hasta: string,
 ): { barberoId: string; nombre: string; cantidad: number; total: Centimos }[] {
@@ -215,6 +238,9 @@ function propinasPorBarberoEntre(
   for (const propina of p.propinas.values()) {
     const f = propina.ts.slice(0, 10);
     if (f < desde || f > hasta) continue;
+    // La propina pertenece al local donde se cobró el servicio, no a donde se
+    // anotó: la venta es la que dice de qué sucursal es.
+    if (sedeId !== null && p.ventas.get(propina.ventaId)?.sedeId !== sedeId) continue;
     const b = porBarbero.get(propina.barberoId) ?? { cantidad: 0, total: 0 };
     b.cantidad += 1;
     b.total += propina.monto;
@@ -238,8 +264,8 @@ function sumarDias(fecha: string, dias: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function totalesDe(p: Proyeccion, desde: string, hasta: string): TotalesDelPeriodo {
-  const ventas = ventasEntre(p, desde, hasta);
+function totalesDe(p: Proyeccion, sedeId: string | null, desde: string, hasta: string): TotalesDelPeriodo {
+  const ventas = ventasEntre(p, sedeId, desde, hasta);
   const medios = mediosEnCero();
   const acum = acumVacio();
   let total = 0;
@@ -302,7 +328,20 @@ function nombreDeLinea(linea: Venta["lineas"][number]): string {
   return linea.marca ? `${linea.marca} ${linea.nombre}` : linea.nombre;
 }
 
-function valorizarInventario(p: Proyeccion): Inventario {
+/**
+ * El stock que mira el reporte: el de la sucursal elegida, o el de toda la
+ * cadena en el consolidado.
+ *
+ * Existe en un solo lugar porque hay tres sitios que necesitan la misma
+ * respuesta (valorizado, sin rotar y para reponer), y si cada uno la resolviera
+ * por su lado, el valorizado podría quedar de un local y las sugerencias de
+ * reposición de otro, en el mismo informe.
+ */
+function stockDelReporte(p: Proyeccion, sedeId: string | null, itemId: string): number {
+  return sedeId === null ? p.stockTotalDe(itemId) : p.stockDe(sedeId, itemId);
+}
+
+function valorizarInventario(p: Proyeccion, sedeId: string | null): Inventario {
   let valorCosto = 0;
   let valorVenta = 0;
   let productos = 0;
@@ -316,7 +355,7 @@ function valorizarInventario(p: Proyeccion): Inventario {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
     productos += 1;
 
-    const stock = p.stockTotalDe(item.id);
+    const stock = stockDelReporte(p, sedeId, item.id);
     const positivo = Math.max(0, stock);
     if (stock <= 0) agotados += 1;
     if (stock < 0) enNegativo += 1;
@@ -351,7 +390,7 @@ function valorizarInventario(p: Proyeccion): Inventario {
  * Solo entran los que tienen stock: un producto agotado que no se vende no tiene
  * plata inmovilizada, así que no es el problema que este reporte busca.
  */
-function productosSinRotar(p: Proyeccion, hasta: string, ventas: Venta[]): ProductoSinRotar[] {
+function productosSinRotar(p: Proyeccion, sedeId: string | null, hasta: string, ventas: Venta[]): ProductoSinRotar[] {
   const vendidoEnPeriodo = new Set<string>();
   for (const venta of ventas) {
     for (const linea of venta.lineas) vendidoEnPeriodo.add(linea.itemId);
@@ -372,7 +411,7 @@ function productosSinRotar(p: Proyeccion, hasta: string, ventas: Venta[]): Produ
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
     if (vendidoEnPeriodo.has(item.id)) continue;
 
-    const stock = p.stockTotalDe(item.id);
+    const stock = stockDelReporte(p, sedeId, item.id);
     if (stock <= 0) continue;
 
     const ultima = ultimaVenta.get(item.id) ?? null;
@@ -437,7 +476,7 @@ function ventasBajoCosto(ventas: Venta[]): VentaBajoCosto[] {
  * Se ordena por lo que MÁS SE VENDE, no por lo que menos queda: reponer
  * primero lo que rota es lo que evita perder ventas.
  */
-function productosParaReponer(p: Proyeccion, ventas: Venta[]): ParaReponer[] {
+function productosParaReponer(p: Proyeccion, sedeId: string | null, ventas: Venta[]): ParaReponer[] {
   const vendidas = new Map<string, number>();
   for (const venta of ventas) {
     for (const l of venta.lineas) {
@@ -449,7 +488,7 @@ function productosParaReponer(p: Proyeccion, ventas: Venta[]): ParaReponer[] {
   for (const item of p.items.values()) {
     if (item.tipo !== "PRODUCTO" || !item.activo) continue;
 
-    const stock = p.stockTotalDe(item.id);
+    const stock = stockDelReporte(p, sedeId, item.id);
     const seVendio = vendidas.get(item.id) ?? 0;
     const bajo = estaBajoMinimo(stock, item.stockMinimo);
 
@@ -484,12 +523,25 @@ function productosParaReponer(p: Proyeccion, ventas: Venta[]): ParaReponer[] {
  * Deducirlo acá y no en la pantalla evita que dos pantallas comparen contra
  * períodos distintos y muestren variaciones que no coinciden.
  */
-export function construirReporte(p: Proyeccion, desde: string, hasta: string): Reporte {
-  const ventas = ventasEntre(p, desde, hasta);
-  const totales = totalesDe(p, desde, hasta);
+/**
+ * El reporte de un período. `sedeId = null` consolida toda la cadena.
+ *
+ * El inventario y los productos sin rotar siguen la misma regla: con una
+ * sucursal elegida se cuenta SU stock, y en el consolidado se suman todos los
+ * locales. Mezclarlos sería el peor de los dos mundos: un valorizado que no se
+ * puede ir a contar a ningún estante.
+ */
+export function construirReporte(
+  p: Proyeccion,
+  sedeId: string | null,
+  desde: string,
+  hasta: string,
+): Reporte {
+  const ventas = ventasEntre(p, sedeId, desde, hasta);
+  const totales = totalesDe(p, sedeId, desde, hasta);
 
   const largo = totales.dias;
-  const anterior = totalesDe(p, sumarDias(desde, -largo), sumarDias(desde, -1));
+  const anterior = totalesDe(p, sedeId, sumarDias(desde, -largo), sumarDias(desde, -1));
 
   const porDia = new Map<string, { total: number; cantidad: number; acum: AcumUtilidad }>();
   const porBarbero = new Map<string, { cantidad: number; total: number }>();
@@ -563,17 +615,57 @@ export function construirReporte(p: Proyeccion, desde: string, hasta: string): R
       }))
       .sort((a, b) => b.total - a.total),
 
-    propinas: propinasPorBarberoEntre(p, desde, hasta),
+    propinas: propinasPorBarberoEntre(p, sedeId, desde, hasta),
 
     bajoCosto: ventasBajoCosto(ventas),
-    inventario: valorizarInventario(p),
-    sinRotar: productosSinRotar(p, hasta, ventas),
+    inventario: valorizarInventario(p, sedeId),
+    sinRotar: productosSinRotar(p, sedeId, hasta, ventas),
     porHora,
-    paraReponer: productosParaReponer(p, ventas),
+    paraReponer: productosParaReponer(p, sedeId, ventas),
   };
 }
 
 /** Variación porcentual entre dos cifras. `null` cuando no hay base contra la cual comparar. */
+/**
+ * Cómo le fue a CADA sucursal en el mismo período, una al lado de la otra.
+ *
+ * Es la pregunta que no existía con un solo local y que es la razón entera de
+ * abrir el segundo: cuál vende más, cuál creció y cuál se quedó. Un dueño de
+ * cadena que solo puede mirar los locales de a uno no está administrando una
+ * cadena, está administrando varios negocios sueltos.
+ *
+ * Se ordena por total descendente: la pregunta se lee de arriba.
+ */
+export function compararSedes(
+  p: Proyeccion,
+  desde: string,
+  hasta: string,
+): ComparativaDeSede[] {
+  const largo = Math.max(1, diasEntre(desde, hasta));
+  const antesDesde = sumarDias(desde, -largo);
+  const antesHasta = sumarDias(desde, -1);
+
+  const filas: ComparativaDeSede[] = [];
+  for (const sede of p.sedesActivas()) {
+    const ahora = totalesDe(p, sede.id, desde, hasta);
+    const antes = totalesDe(p, sede.id, antesDesde, antesHasta);
+
+    filas.push({
+      sedeId: sede.id,
+      nombre: sede.nombre,
+      total: ahora.total,
+      cantidad: ahora.cantidadVentas,
+      ticketPromedio: ahora.ticketPromedio,
+      utilidad: ahora.utilidad.utilidad,
+      margen: ahora.utilidad.margen,
+      variacion: variacion(ahora.total, antes.total),
+      cajaAbierta: p.turnoAbiertoDe(sede.id) !== null,
+    });
+  }
+
+  return filas.sort((a, b) => b.total - a.total);
+}
+
 export function variacion(ahora: number, antes: number): number | null {
   if (antes === 0) return null;
   return Math.round(((ahora - antes) / Math.abs(antes)) * 1000) / 10;

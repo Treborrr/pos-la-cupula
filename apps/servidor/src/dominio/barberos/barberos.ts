@@ -11,18 +11,26 @@
  * cero.
  */
 
-import type { Centimos, EventoNuevo } from "@cupula/contratos";
+import { SEDE_PRINCIPAL, type Centimos, type EventoNuevo } from "@cupula/contratos";
 import { ulid } from "ulid";
 
 import { ErrorDeNegocio } from "../errores";
 import type { Proyeccion } from "../../proyecciones/Proyeccion";
 
-export function crearBarbero(p: Proyeccion, nombre: string): { eventos: EventoNuevo[]; barberoId: string } {
+/** En qué local trabaja. Cada sucursal tiene su propio plantel. */
+export function crearBarbero(
+  p: Proyeccion,
+  nombre: string,
+  sedeId: string = SEDE_PRINCIPAL,
+): { eventos: EventoNuevo[]; barberoId: string } {
   const limpio = nombre.trim();
   if (!limpio) throw new ErrorDeNegocio("DATO_INVALIDO", "El barbero necesita un nombre.");
 
   const barberoId = ulid();
-  return { barberoId, eventos: [{ tipo: "barbero.creado", datos: { barberoId, nombre: limpio } }] };
+  return {
+    barberoId,
+    eventos: [{ tipo: "barbero.creado", datos: { barberoId, nombre: limpio, sedeId } }],
+  };
 }
 
 export function actualizarBarbero(p: Proyeccion, barberoId: string, nombre: string): EventoNuevo[] {

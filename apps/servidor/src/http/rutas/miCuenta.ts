@@ -52,7 +52,10 @@ export async function rutasMiCuenta(
         rateLimit: {
           max: 5,
           timeWindow: "1 hour",
+          // `statusCode` obligatorio: ver la nota en `auth.ts`. Sin él esto
+          // sale como un 500 genérico en vez del aviso que explica qué pasó.
           errorResponseBuilder: () => ({
+            statusCode: 429,
             error: { codigo: "DEMASIADOS_PEDIDOS", mensaje: "Ya pediste varios códigos. Espera un poco y vuelve a probar." },
           }),
         },

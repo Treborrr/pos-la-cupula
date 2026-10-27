@@ -17,6 +17,7 @@ import { crearSede, actualizarSede, desactivarSede, slugDeSede } from "../src/do
 import { registrarEntrada, ajustarStock } from "../src/dominio/inventario/inventario";
 import { trasladarStock } from "../src/dominio/inventario/traslados";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
+import { compararSedes, construirReporte } from "../src/consultas/reportes";
 import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
 
 const aBorrar: string[] = [];
@@ -463,5 +464,88 @@ describe("todo sobrevive a reconstruir la proyección desde el log", () => {
     expect(otra.p.precioEn(SEDE_PRINCIPAL, ids["COR"]!)).toBe(2000);
     expect(otra.p.ultimoCorrelativoPorSede.get(centro)).toBe(1);
     await otra.cerrar();
+  });
+});
+
+/**
+ * El agujero que casi se escapa: el selector de sucursal cambiaba el stock y
+ * la caja, pero los reportes, el historial y los barberos seguían mostrando
+ * TODA la cadena. Un selector que dice "Bagua Centro" sobre datos de los dos
+ * locales es peor que no tener selector: el dueño toma decisiones con números
+ * que cree de un local y son de otro.
+ */
+describe("los reportes respetan la sucursal", () => {
+  async function conVentasEnDosLocales() {
+    const { pos, ids } = await posDePrueba();
+    const centro = await conSede(pos, "Centro", "SC");
+
+    const cobrar = (sede: string, cantidad: number) =>
+      pos.cobrar(sede, {
+        lineas: [{ itemId: ids["COR"]!, cantidad }],
+        pagos: [{ medio: "EFECTIVO", monto: 2000 * cantidad }],
+        claveIdempotencia: ulid(),
+      });
+
+    await cobrar(SEDE_PRINCIPAL, 1); // 2000
+    await cobrar(centro, 2); // 4000
+    await cobrar(centro, 3); // 6000
+
+    return { pos, centro, ids };
+  }
+
+  const hoy = () => new Date().toISOString().slice(0, 10);
+
+  it("una sucursal reporta SOLO sus ventas", async () => {
+    const { pos, centro } = await conVentasEnDosLocales();
+
+    const principal = construirReporte(pos.p, SEDE_PRINCIPAL, hoy(), hoy());
+    const deCentro = construirReporte(pos.p, centro, hoy(), hoy());
+
+    expect(principal.total).toBe(2000);
+    expect(principal.cantidadVentas).toBe(1);
+    expect(deCentro.total).toBe(10000);
+    expect(deCentro.cantidadVentas).toBe(2);
+    await pos.cerrar();
+  });
+
+  it("el consolidado suma la cadena entera", async () => {
+    const { pos } = await conVentasEnDosLocales();
+    const todas = construirReporte(pos.p, null, hoy(), hoy());
+
+    expect(todas.total).toBe(12000);
+    expect(todas.cantidadVentas).toBe(3);
+    await pos.cerrar();
+  });
+
+  it("la comparativa ordena los locales por lo que vendieron", async () => {
+    const { pos, centro } = await conVentasEnDosLocales();
+    const filas = compararSedes(pos.p, hoy(), hoy());
+
+    expect(filas.map((f) => f.sedeId)).toEqual([centro, SEDE_PRINCIPAL]);
+    expect(filas[0]!.total).toBe(10000);
+    expect(filas[0]!.cantidad).toBe(2);
+    expect(filas[0]!.ticketPromedio).toBe(5000);
+    expect(filas[1]!.total).toBe(2000);
+    await pos.cerrar();
+  });
+
+  it("el inventario del reporte es el del local elegido, y se suma en el consolidado", async () => {
+    const { pos, ids } = await posDePrueba();
+    const centro = await conSede(pos, "Centro", "SC");
+
+    await pos.escribir(() =>
+      registrarEntrada(pos.p, SEDE_PRINCIPAL, { itemId: ids["CERA"]!, cantidad: 10, motivo: "Compra" }),
+    );
+    await pos.escribir(() =>
+      registrarEntrada(pos.p, centro, { itemId: ids["CERA"]!, cantidad: 4, motivo: "Compra" }),
+    );
+
+    const d = new Date().toISOString().slice(0, 10);
+    expect(construirReporte(pos.p, SEDE_PRINCIPAL, d, d).inventario.agotados).toBe(0);
+    // Valorizado a costo: cada local cuenta lo suyo, la cadena suma.
+    const soloCentro = construirReporte(pos.p, centro, d, d).inventario;
+    const todas = construirReporte(pos.p, null, d, d).inventario;
+    expect(todas.productos).toBe(soloCentro.productos); // el catálogo es el mismo
+    await pos.cerrar();
   });
 });

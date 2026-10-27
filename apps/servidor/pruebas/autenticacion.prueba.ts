@@ -24,7 +24,15 @@ afterEach(async () => {
   for (const fn of aCerrar.splice(0)) await fn().catch(() => undefined);
 });
 
-async function appDePrueba(): Promise<{ app: FastifyInstance; pos: ServicioPos }> {
+/**
+ * `enNube` decide si se lee `X-Forwarded-For`. Las pruebas que simulan la IP
+ * del cliente con esa cabecera TIENEN que pedirlo: fuera de la nube no hay
+ * ningún proxy delante y la cabecera se ignora a propósito, porque ahí solo
+ * puede venir de alguien mintiendo (ver `seguridadRed.prueba.ts`).
+ */
+async function appDePrueba(
+  opciones: { enNube?: boolean } = {},
+): Promise<{ app: FastifyInstance; pos: ServicioPos }> {
   const dir = await carpetaTemporal();
   const pos = await ServicioPos.abrir(await abrirAlmacen(dir));
   await pos.guardarConfig("ventas.exigirCliente", false);
@@ -37,6 +45,7 @@ async function appDePrueba(): Promise<{ app: FastifyInstance; pos: ServicioPos }
     carpetaDatos: dir,
     version: "pruebas",
     ...dependenciasDeSeguridadDePrueba(),
+    enNube: opciones.enNube ?? false,
   });
   aCerrar.push(async () => {
     await app.close();
@@ -215,16 +224,21 @@ describe("matriz de permisos por ruta", () => {
   });
 });
 
+/**
+ * Todo este bloque corre con `enNube: true` porque simula la IP del cliente
+ * con `X-Forwarded-For`, que es como llega de verdad en Railway. La prueba de
+ * que esa cabecera NO se puede falsificar vive en `seguridadRed.prueba.ts`.
+ */
 describe("red permitida del cajero", () => {
   it("vacía: el cajero entra desde cualquier IP", async () => {
-    const { app, pos } = await appDePrueba();
+    const { app, pos } = await appDePrueba({ enNube: true });
     await crearUsuarioDePrueba(pos, "ana", "CAJERO");
     const r = await loguear(app, "ana", CONTRASENA, { "x-forwarded-for": "8.8.8.8" });
     expect(r.statusCode).toBe(200);
   });
 
   it("configurada: rechaza el login desde una IP fuera de la lista", async () => {
-    const { app, pos } = await appDePrueba();
+    const { app, pos } = await appDePrueba({ enNube: true });
     await pos.guardarConfig("seguridad.redesCajero", "192.168.1.0/24");
     await crearUsuarioDePrueba(pos, "ana", "CAJERO");
 
@@ -235,7 +249,7 @@ describe("red permitida del cajero", () => {
   });
 
   it("deja entrar desde una IP que sí matchea el CIDR configurado", async () => {
-    const { app, pos } = await appDePrueba();
+    const { app, pos } = await appDePrueba({ enNube: true });
     await pos.guardarConfig("seguridad.redesCajero", "192.168.1.0/24");
     await crearUsuarioDePrueba(pos, "ana", "CAJERO");
 
@@ -244,7 +258,7 @@ describe("red permitida del cajero", () => {
   });
 
   it("ADMIN nunca tiene esta restricción", async () => {
-    const { app, pos } = await appDePrueba();
+    const { app, pos } = await appDePrueba({ enNube: true });
     await pos.guardarConfig("seguridad.redesCajero", "192.168.1.0/24");
     await crearUsuarioDePrueba(pos, "dueno", "ADMIN");
 
@@ -253,7 +267,7 @@ describe("red permitida del cajero", () => {
   });
 
   it("se revisa en CADA pedido, no solo al loguearse", async () => {
-    const { app, pos } = await appDePrueba();
+    const { app, pos } = await appDePrueba({ enNube: true });
     await crearUsuarioDePrueba(pos, "ana", "CAJERO");
     // Login sin restricción todavía.
     const { cookie } = await loguear(app, "ana", CONTRASENA, { "x-forwarded-for": "192.168.1.50" });

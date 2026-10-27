@@ -172,7 +172,13 @@ export class ServicioDeNotificaciones {
     if (this.resumenDeHoy().reporteDiaEnviado) return;
 
     const hoy = this.hoy();
-    const reporte = construirReporte(this.pos.p, hoy, hoy);
+    /**
+     * El reporte del día va CONSOLIDADO, de toda la cadena: es un correo al
+     * dueño y lo que quiere saber es cómo le fue al negocio. El desglose por
+     * local lo tiene en la pantalla de Reportes, que compara las sucursales
+     * entre sí.
+     */
+    const reporte = construirReporte(this.pos.p, null, hoy, hoy);
     const turnosCerrados: TurnoCerradoDelDia[] = [...this.pos.p.turnos.values()]
       .filter((t) => t.cerradoEn?.slice(0, 10) === hoy)
       .map((t) => ({ horaCierre: t.cerradoEn!.slice(11, 16), diferencia: t.diferencia ?? 0 }));

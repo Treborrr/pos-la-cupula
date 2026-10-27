@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { api, elegirSede, ServidorCaido, type EstadoGeneral } from "./lib/api";
+import { api, elegirSede, ServidorCaido, TODAS_LAS_SEDES, type EstadoGeneral } from "./lib/api";
 import { hora } from "./lib/formato";
 import {
   banderaDeSalidaIntencional,
@@ -324,7 +324,9 @@ function BarraSuperior({ estado }: { estado?: EstadoGeneral }) {
       <div className="flex min-w-0 items-center gap-3 md:gap-6">
         <Reloj />
         <SelectorDeSucursal estado={estado} />
-        {estado ? (
+        {/* Mirando toda la cadena no hay "próximo ticket": cada local tiene su
+            serie, y mostrar la de una al azar sería mentir. */}
+        {estado?.siguienteCorrelativo ? (
           <div className="hidden items-center gap-2 text-sm text-tinta/60 md:flex">
             Próximo ticket
             <span className="cifra rounded-lg bg-hueso px-2.5 py-1 font-semibold text-tinta">
@@ -365,12 +367,15 @@ function SelectorDeSucursal({ estado }: { estado?: EstadoGeneral }) {
   const sedes = estado?.sedes ?? [];
   if (usuario.rol !== "ADMIN" || sedes.length < 2) return null;
 
+  // `sede` viene en null cuando se está mirando la cadena entera.
+  const valor = estado?.sede?.id ?? TODAS_LAS_SEDES;
+
   return (
     <label className="flex items-center gap-2 text-sm">
       <Store className="h-4 w-4 shrink-0 text-tinta/50" />
       <select
-        className="max-w-40 rounded-lg bg-hueso px-2.5 py-1.5 font-semibold text-tinta"
-        value={estado?.sede?.id ?? ""}
+        className="max-w-48 rounded-lg bg-hueso px-2.5 py-1.5 font-semibold text-tinta"
+        value={valor}
         onChange={(e) => {
           elegirSede(e.target.value);
           // Se tira TODA la caché: el stock, la caja, el catálogo y los
@@ -380,6 +385,9 @@ function SelectorDeSucursal({ estado }: { estado?: EstadoGeneral }) {
           qc.clear();
         }}
       >
+        {/* "Todas" primero: es el punto de partida natural del dueño de una
+            cadena, que mira el conjunto y recién después baja a un local. */}
+        <option value={TODAS_LAS_SEDES}>Todas las sucursales ({sedes.length})</option>
         {sedes.map((s) => (
           <option key={s.id} value={s.id}>
             {s.nombre}
