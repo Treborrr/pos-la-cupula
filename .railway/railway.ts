@@ -1,8 +1,11 @@
 /**
  * El despliegue en Railway, como código.
  *
- * Reemplaza a `railway.json`, que Railway deprecó y deja de leer el 1 de
- * diciembre de 2026.
+ * Reemplaza a `railway.json`, que Railway deprecó y dejaba de leer el 1 de
+ * diciembre de 2026. La migración ya está aplicada y el `railway.json` se
+ * borró: dejarlo al lado sería una segunda fuente de verdad que ya nadie lee,
+ * y el día que alguien lo edite creyendo que manda, no pasará nada y perderá
+ * una tarde averiguando por qué.
  *
  * ESTE ARCHIVO SE ESCRIBIÓ A MANO sobre lo que generó `railway config migrate`,
  * porque el generador deja fuera dos cosas que ya existen en el proyecto y que
