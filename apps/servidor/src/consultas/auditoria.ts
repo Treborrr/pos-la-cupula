@@ -407,7 +407,7 @@ export async function construirAuditoria(
       p.aplicar(e);
       // Tocar estas es cambiar las reglas del juego, no configurar la
       // impresora: van marcadas aparte.
-      const sensible = /^(ventas\.|fidelidad\.|respaldos\.)/.test(e.datos.clave);
+      const sensible = /^(ventas\.|fidelidad\.|respaldos\.|seguridad\.)/.test(e.datos.clave);
       const texto = `${fecha} ${hora} · ${e.datos.clave} = ${JSON.stringify(e.datos.valor)}`;
       if (sensible) cambiosDeConfig.push(texto);
       movimientos.push({

@@ -102,7 +102,7 @@ export function calcularAlertas(datos: {
   // perímetro es la red. Publicado en Railway, un cajero sin restricción de
   // red tiene la misma exposición que un admin —todo internet, solo una
   // contraseña de por medio— con una cuenta que no eligió el dueño.
-  if (datos.enNube && datos.redesCajero.trim() === "") {
+  if (datos.enNube && String(datos.redesCajero ?? "").trim() === "") {
     alertas.push({
       codigo: "CAJERO_SIN_RESTRICCION_DE_RED",
       mensaje:

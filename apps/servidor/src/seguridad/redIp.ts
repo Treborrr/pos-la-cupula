@@ -18,7 +18,7 @@ import ipaddr from "ipaddr.js";
  * lo configuró" que ya usaba el candado único que este sistema tenía antes.
  */
 export function estaPermitida(ip: string, lista: string): boolean {
-  const entradas = lista
+  const entradas = String(lista ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);

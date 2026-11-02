@@ -940,12 +940,45 @@ export const usuarioDesactivado = definir(
 // Configuración
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Tope de tamaño de un valor de configuración, en caracteres de su JSON. */
+const TOPE_VALOR_CONFIG = 20_000;
+/**
+ * Profundidad máxima de un valor de configuración.
+ *
+ * No es un número estético: la serialización canónica del log y el render del
+ * ticket recorren el valor RECURSIVAMENTE. Un valor muy anidado desborda la
+ * pila en plena escritura del log, y el nivel exacto en que lo hace depende de
+ * cuán optimizada esté la función en ese momento. Un límite bajo y explícito
+ * mantiene eso lejos.
+ */
+const PROFUNDIDAD_MAXIMA_CONFIG = 8;
+
+function profundidadDeConfig(v: unknown, nivel = 0): number {
+  if (nivel > PROFUNDIDAD_MAXIMA_CONFIG || v === null || typeof v !== "object") return nivel;
+  const hijos = Object.values(v as object);
+  return hijos.length === 0 ? nivel : Math.max(...hijos.map((x) => profundidadDeConfig(x, nivel + 1)));
+}
+
 export const configActualizada = definir(
   "config.actualizada",
   z.object({
     /** Ruta con puntos: "negocio.direccion", "impresora.anchoPuntos". */
     clave: z.string().min(1).max(80),
-    valor: z.unknown(),
+    /**
+     * El valor NO es `z.unknown()` pelado. Era, y por eso un ADMIN podía dejar
+     * 900 KB de basura, o una estructura de dos mil niveles, dentro de un log
+     * inmutable. La lista blanca de `ESQUEMA_CONFIG` (servicios/Pos) ya revisa
+     * clave por clave; esto es el piso que vale para CUALQUIER escritor,
+     * presente o futuro, y protege la serialización del log del desbordamiento
+     * de pila.
+     */
+    valor: z
+      .unknown()
+      .refine((v) => profundidadDeConfig(v) <= PROFUNDIDAD_MAXIMA_CONFIG, "la estructura está demasiado anidada")
+      .refine(
+        (v) => JSON.stringify(v ?? null).length <= TOPE_VALOR_CONFIG,
+        `el valor no puede pasar de ${TOPE_VALOR_CONFIG} caracteres`,
+      ),
   }),
 );
 

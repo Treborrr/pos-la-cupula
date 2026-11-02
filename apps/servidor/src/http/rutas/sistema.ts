@@ -138,11 +138,18 @@ export async function rutasSistema(
   app.get("/config", { config: { rol: "ADMIN" } }, async () => pos.configCompleta());
 
   app.put("/config", { config: { rol: "ADMIN" } }, async (peticion) => {
-    // zod 4 exige declarar el tipo de la CLAVE además del valor.
-    const cuerpo = z.record(z.string(), z.unknown()).parse(peticion.body);
-    for (const [clave, valor] of Object.entries(cuerpo)) {
-      await pos.guardarConfig(clave, valor, peticion.actor);
-    }
+    // La FORMA del cuerpo se revisa acá; QUÉ claves existen y qué valor acepta
+    // cada una lo decide `ESQUEMA_CONFIG` en el servicio, que es el único
+    // camino hasta el log. Antes acá había `z.record(z.string(), z.unknown())`
+    // —cualquier clave con cualquier valor— escrito directo a un log que no se
+    // puede borrar.
+    const cuerpo = z.record(z.string().min(1).max(80), z.unknown()).parse(peticion.body);
+    const cambios = Object.entries(cuerpo);
+    if (cambios.length === 0) return pos.configCompleta();
+
+    // Un solo lote: validadas todas antes de escribir ninguna. La primera clave
+    // inválida corta todo antes de tocar el disco.
+    await pos.guardarConfigs(cambios, peticion.actor);
 
     // El servicio de respaldos guarda el destino en memoria, así que cambiar la
     // configuración sin avisarle lo dejaba escribiendo en el destino anterior

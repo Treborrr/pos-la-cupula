@@ -13,6 +13,8 @@
  * crítica tiene que abarcar las dos cosas, no solo la escritura.
  */
 
+import { z } from "zod";
+
 import { ACTOR_SISTEMA, type Actor, type EventoNuevo } from "@cupula/contratos";
 
 import type { AlmacenDeEventos } from "../puertos/AlmacenDeEventos";
@@ -141,6 +143,65 @@ export const CONFIG_POR_DEFECTO: Record<string, unknown> = {
    * configuró" que ya usaba el candado único que este sistema tenía antes.
    */
   "seguridad.redesCajero": "",
+};
+
+const esquemaCorreo = z.union([z.literal(""), z.string().trim().toLowerCase().email().max(160)]);
+
+/**
+ * QUÉ se puede guardar en CADA clave de configuración.
+ *
+ * Es la lista blanca, y vive al lado de los valores por defecto porque son las
+ * dos caras del mismo contrato: lo que el POS sabe leer es exactamente lo que
+ * se puede escribir.
+ *
+ * POR QUÉ NO ALCANZABA CON `z.record(z.string(), z.unknown())` EN LA RUTA. Cada
+ * cambio de configuración es un evento en un log APPEND-ONLY con cadena de
+ * hash: no hay DELETE, y editar la línea a mano invalida todos los hashes
+ * posteriores. Una clave inventada ("x.y") o un valor con el tipo equivocado
+ * —`seguridad.redesCajero: 0`, que hace estallar `lista.split()` en CADA
+ * pedido de cualquier cajero— se quedaba ahí para siempre: se reaplicaba en
+ * cada arranque y viajaba en cada instantánea. Medido: un solo PUT podía dejar
+ * 84.259 claves basura en el log. En un log que no se puede limpiar, la
+ * validación de entrada no es una comodidad, es la única defensa.
+ *
+ * `impresora.plantilla` se valida solo como "null o un arreglo acotado de
+ * bloques": la PWA nunca la escribe (es config cruda avanzada) y su estructura
+ * recursiva tiene muchas formas válidas; lo que de verdad hay que impedir —un
+ * anidamiento que desborde la pila al serializar el log— lo corta el tope de
+ * profundidad del propio evento (ver `config.actualizada` en el contrato).
+ */
+export const ESQUEMA_CONFIG: Record<string, z.ZodType> = {
+  "negocio.nombre": z.string().max(80),
+  "negocio.direccion": z.string().max(120),
+  "negocio.ciudad": z.string().max(80),
+  "negocio.ruc": z.string().max(20),
+  "negocio.pie": z.string().max(200),
+  "negocio.correoDueno": esquemaCorreo,
+  "negocio.correoDev": esquemaCorreo,
+
+  "ventas.correlativoInicial": z.number().int().min(1).max(999_999),
+  "ventas.exigirTurnoAbierto": z.boolean(),
+  "ventas.exigirCliente": z.boolean(),
+
+  "fidelidad.activo": z.boolean(),
+  "fidelidad.urlApi": z.string().url().max(200),
+
+  "impresora.modo": z.enum(["vistaPrevia", "windows", "red", "archivo"]),
+  "impresora.perfil": z.enum(["advance80", "advance58", "generico80", "generico58", "epson80"]),
+  "impresora.nombreCompartido": z.string().max(80),
+  "impresora.host": z.string().max(120),
+  "impresora.puerto": z.number().int().min(1).max(65_535),
+  "impresora.carpeta": z.string().max(260),
+  "impresora.conLogo": z.boolean(),
+  "impresora.abrirCajon": z.boolean(),
+  "impresora.plantilla": z.union([z.null(), z.array(z.record(z.string(), z.unknown())).max(200)]),
+
+  "respaldos.destinoExterno": z.string().max(260),
+
+  "notificaciones.topeAlertasDiario": z.number().int().min(0).max(1_000),
+  "notificaciones.topeTotalDiario": z.number().int().min(0).max(10_000),
+
+  "seguridad.redesCajero": z.string().max(500),
 };
 
 export interface ResultadoCobro {
@@ -281,7 +342,49 @@ export class ServicioPos {
   }
 
   async guardarConfig(clave: string, valor: unknown, actor?: Actor): Promise<void> {
-    await this.escribir(() => [{ tipo: "config.actualizada", datos: { clave, valor } }], actor);
+    await this.guardarConfigs([[clave, valor]], actor);
+  }
+
+  /**
+   * Varias claves en UN SOLO lote, y validadas TODAS antes de escribir NINGUNA.
+   *
+   * Lo primero (validar) es lo que frena el ataque: la primera clave fuera de
+   * la lista blanca, o con el tipo equivocado, corta el lote entero antes de
+   * tocar el disco, así que nada basura entra al log inmutable.
+   *
+   * Lo segundo (un solo lote) es por rendimiento y por coherencia: la cola de
+   * `transaccion()` es la MISMA por la que pasan los cobros. Guardar 20 claves
+   * de a una eran 20 `fsync` y 20 turnos en esa cola con el mostrador
+   * esperando; un cuerpo de 1 MB con claves sueltas llegaba a bloquearla
+   * minutos. Además, o entran todas o no entra ninguna.
+   */
+  async guardarConfigs(cambios: [string, unknown][], actor?: Actor): Promise<void> {
+    const eventos: EventoNuevo[] = cambios.map(([clave, crudo]) => {
+      const esquema = ESQUEMA_CONFIG[clave];
+      if (!esquema) {
+        throw new ErrorDeNegocio(
+          "DATO_INVALIDO",
+          `"${clave}" no es una opción de configuración de este sistema.`,
+          "Revisa el nombre. Las opciones válidas son las que muestra Ajustes.",
+        );
+      }
+
+      const revisado = esquema.safeParse(crudo);
+      if (!revisado.success) {
+        throw new ErrorDeNegocio(
+          "DATO_INVALIDO",
+          `El valor de "${clave}" no sirve: ${revisado.error.issues[0].message}`,
+          "Corrígelo e intenta de nuevo.",
+        );
+      }
+
+      // Se guarda el valor NORMALIZADO por el esquema (correos en minúscula,
+      // textos sin espacios al borde), no el crudo: lo que queda en el log es
+      // exactamente lo que el sistema va a leer.
+      return { tipo: "config.actualizada", datos: { clave, valor: revisado.data } };
+    });
+
+    await this.escribir(() => eventos, actor);
   }
 
   // ───────────────────────────────────────────────────────────────────────────

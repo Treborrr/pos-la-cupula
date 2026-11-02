@@ -71,7 +71,8 @@ export class ServicioDeRespaldos {
   }
 
   configurarDestino(ruta: string | null): void {
-    this.destinoExterno = ruta && ruta.trim() !== "" ? ruta.trim() : null;
+    const limpia = String(ruta ?? "").trim();
+    this.destinoExterno = limpia !== "" ? limpia : null;
   }
 
   /**
