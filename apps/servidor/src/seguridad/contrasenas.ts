@@ -44,6 +44,29 @@ export async function hashearContrasena(clave: string): Promise<string> {
 }
 
 /**
+ * Un hash SEÑUELO, con los mismos parámetros que los de verdad.
+ *
+ * Sirve para que verificar la contraseña de un usuario que NO existe cueste lo
+ * mismo que la de uno que sí. Sin esto, el login respondía en 2 ms cuando el
+ * usuario no existía y en 43 ms cuando existía —`scrypt` tarda a propósito—,
+ * así que el mensaje "usuario o contraseña incorrectos" era idéntico pero el
+ * CRONÓMETRO delataba cuáles son las cuentas reales. Con eso, un atacante
+ * primero averigua los usuarios válidos y recién después gasta intentos en
+ * adivinar contraseñas, que es exactamente el trabajo que el mensaje genérico
+ * buscaba ahorrarle.
+ *
+ * La clave que se hashea es aleatoria y se tira: nadie puede autenticarse
+ * contra este hash, solo gastar el mismo tiempo que gastaría una cuenta real.
+ *
+ * Se calcula una sola vez, la primera vez que hace falta, y se reutiliza.
+ */
+let senuelo: Promise<string> | null = null;
+export function hashSenuelo(): Promise<string> {
+  senuelo ??= hashearContrasena(randomBytes(32).toString("hex"));
+  return senuelo;
+}
+
+/**
  * `false` ante cualquier hash con forma rara (corrupto, de otro esquema que
  * algún día se deje de soportar) en vez de tirar — un login que falla mal
  * tiene que verse igual que una contraseña incorrecta, nunca como un error

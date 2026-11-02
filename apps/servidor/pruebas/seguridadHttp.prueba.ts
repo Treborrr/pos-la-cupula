@@ -20,6 +20,7 @@ import {
   carpetaTemporal,
   conSesionAdmin,
   dependenciasDeSeguridadDePrueba,
+  USUARIO_ADMIN_DE_PRUEBA,
   notificacionesDePrueba,
 } from "./ayuda";
 
@@ -214,6 +215,45 @@ describe("subir fotos de catálogo", () => {
 });
 
 describe("el servidor no cuenta de más", () => {
+  /**
+   * El login no puede delatar por el CRONÓMETRO qué usuarios existen.
+   *
+   * `scrypt` tarda a propósito (~40 ms). Saltárselo cuando el usuario no
+   * existe hacía que respondiera en 2 ms, así que el mensaje genérico "usuario
+   * o contraseña incorrectos" era idéntico pero el tiempo decía la verdad: un
+   * atacante enumera las cuentas reales y recién después gasta intentos en
+   * adivinar contraseñas.
+   *
+   * Se mide contra un PISO absoluto en vez de comparar los dos tiempos entre
+   * sí: comparar dos medidas ruidosas da una prueba inestable, mientras que
+   * "ambas tienen que costar al menos lo que cuesta un hash" separa limpiamente
+   * el camino correcto del que se saltaba el trabajo, y no se vuelve frágil
+   * porque la máquina sea más rápida.
+   */
+  it("tarda lo mismo con un usuario que existe y con uno que no", async () => {
+    const app = await api(true, true);
+
+    const cronometrar = async (usuario: string) => {
+      const desde = performance.now();
+      await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: { usuario, contrasena: "contrasena-incorrecta" },
+      });
+      return performance.now() - desde;
+    };
+
+    // `conSesionAdmin` ya creó un usuario real; "fantasma" no existe.
+    const existente = await cronometrar(USUARIO_ADMIN_DE_PRUEBA);
+    const inexistente = await cronometrar("fantasma");
+
+    const PISO_MS = 15;
+    expect(existente, "el usuario real ni siquiera verificó el hash").toBeGreaterThan(PISO_MS);
+    expect(inexistente, "el usuario inexistente se saltó el hash: delata que no existe").toBeGreaterThan(
+      PISO_MS,
+    );
+  });
+
   it("un error interno no filtra rutas del disco ni trazas", async () => {
     const app = await api();
     const r = await app.inject({ method: "GET", url: "/fotos/../../../etc/passwd" });

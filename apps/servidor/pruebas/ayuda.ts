@@ -29,7 +29,7 @@ export function dependenciasDeSeguridadDePrueba(reloj: Reloj = relojFijo()) {
   };
 }
 
-const USUARIO_ADMIN_DE_PRUEBA = "admin-prueba";
+export const USUARIO_ADMIN_DE_PRUEBA = "admin-prueba";
 const CONTRASENA_ADMIN_DE_PRUEBA = "una-clave-de-prueba-bien-larga";
 
 /**

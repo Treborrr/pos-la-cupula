@@ -24,6 +24,7 @@ import { ajustarStock, registrarEntrada, stockBajo } from "../src/dominio/invent
 import { trasladarStock } from "../src/dominio/inventario/traslados";
 import { abrirTurno, arquear, cerrarTurno, registrarEgreso } from "../src/dominio/caja/caja";
 import { compararSedes, construirReporte } from "../src/consultas/reportes";
+import { relojDelSistema } from "../src/puertos/Reloj";
 import { abrirAlmacen, borrar, carpetaTemporal } from "./ayuda";
 
 const aBorrar: string[] = [];
@@ -499,7 +500,7 @@ describe("los reportes respetan la sucursal", () => {
     return { pos, centro, ids };
   }
 
-  const hoy = () => new Date().toISOString().slice(0, 10);
+  const hoy = () => relojDelSistema.ahora().slice(0, 10);
 
   it("una sucursal reporta SOLO sus ventas", async () => {
     const { pos, centro } = await conVentasEnDosLocales();
@@ -546,7 +547,7 @@ describe("los reportes respetan la sucursal", () => {
       registrarEntrada(pos.p, centro, { itemId: ids["CERA"]!, cantidad: 4, motivo: "Compra" }),
     );
 
-    const d = new Date().toISOString().slice(0, 10);
+    const d = relojDelSistema.ahora().slice(0, 10);
     expect(construirReporte(pos.p, SEDE_PRINCIPAL, d, d).inventario.agotados).toBe(0);
     // Valorizado a costo: cada local cuenta lo suyo, la cadena suma.
     const soloCentro = construirReporte(pos.p, centro, d, d).inventario;

@@ -16,7 +16,7 @@ import { z } from "zod";
 
 import { cambiarContrasena } from "../../dominio/usuarios/usuarios";
 import { ErrorDeAutenticacion, ErrorDeNegocio } from "../../dominio/errores";
-import { hashearContrasena, verificarContrasena } from "../../seguridad/contrasenas";
+import { hashSenuelo, hashearContrasena, verificarContrasena } from "../../seguridad/contrasenas";
 import { estaPermitida } from "../../seguridad/redIp";
 import { NOMBRE_COOKIE_SESION } from "../autorizacion";
 import type { Dependencias } from "../app";
@@ -73,10 +73,18 @@ export async function rutasAuth(app: FastifyInstance, { pos, sesiones, intentosD
 
       const usuarioId = pos.p.porNombreDeUsuario.get(handle);
       const u = usuarioId ? pos.p.usuarios.get(usuarioId) : undefined;
-      if (!u) return rechazar();
 
-      const ok = await verificarContrasena(contrasena, u.hash);
-      if (!ok) return rechazar();
+      /**
+       * Si el usuario no existe se verifica igual, contra un hash señuelo.
+       *
+       * Parece trabajo al pepe y es justo lo contrario: `scrypt` tarda a
+       * propósito, así que saltárselo hacía que un usuario inexistente
+       * respondiera en 2 ms y uno real en 43. El mensaje era idéntico, pero el
+       * cronómetro decía cuáles son las cuentas de verdad, y eso desde
+       * internet es el primer paso de cualquier ataque dirigido.
+       */
+      const ok = await verificarContrasena(contrasena, u ? u.hash : await hashSenuelo());
+      if (!u || !ok) return rechazar();
 
       if (u.rol === "CAJERO") {
         const redesPermitidas = pos.config<string>("seguridad.redesCajero");
