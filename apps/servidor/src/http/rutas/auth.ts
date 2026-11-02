@@ -132,7 +132,26 @@ export async function rutasAuth(app: FastifyInstance, { pos, sesiones, intentosD
   });
 
   /** Autoservicio: opera SIEMPRE sobre la cuenta de la sesión actual — nunca acepta un id del cuerpo. */
-  app.post("/auth/contrasena", { config: { rol: "CAJERO" } }, async (peticion) => {
+  app.post(
+    "/auth/contrasena",
+    {
+      config: {
+        rol: "CAJERO",
+        // Cambiar la propia contraseña cuesta dos `scrypt` (verificar la actual
+        // y hashear la nueva), caros a propósito. No se hace en ráfaga, así que
+        // cinco por hora sobra para una persona y corta en seco una cookie de
+        // cajero robada que intente quemar CPU pidiéndolo en bucle.
+        rateLimit: {
+          max: 5,
+          timeWindow: "1 hour",
+          errorResponseBuilder: () => ({
+            statusCode: 429,
+            error: { codigo: "DEMASIADOS_PEDIDOS", mensaje: "Demasiados cambios seguidos. Espera un rato." },
+          }),
+        },
+      },
+    },
+    async (peticion) => {
     const { contrasenaActual, contrasenaNueva } = z
       .object({ contrasenaActual: z.string().min(1).max(200), contrasenaNueva: z.string().min(8).max(200) })
       .parse(peticion.body);

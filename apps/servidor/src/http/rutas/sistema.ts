@@ -17,11 +17,31 @@ export async function rutasSistema(
   { pos, impresora, respaldos, notificaciones, version, enNube }: Dependencias,
 ) {
   /**
+   * El resultado de `verificar()` cacheado por `seq`.
+   *
+   * `/salud` es PÚBLICO (lo consulta el healthcheck de Railway y se lee por
+   * teléfono cuando algo falla), y `verificar()` relee el log ENTERO de disco y
+   * rehashea toda la cadena: medido, hasta 1 s de CPU con un año de ventas. Sin
+   * cache, cualquiera en internet podía quemar un núcleo y el disco pidiéndolo
+   * en bucle, sin siquiera tener sesión.
+   *
+   * La integridad de un log append-only SOLO puede cambiar cuando se escribe
+   * algo, y escribir exige sesión. Así que se rehashea una vez por cada avance
+   * de `seq` y se reutiliza mientras no haya escrituras nuevas: bajo un ataque
+   * (que no puede escribir) todas las llamadas devuelven el valor cacheado, y
+   * el healthcheck de Railway deja de releer el log en cada poll.
+   */
+  let integridadCache: { seq: number; valor: Awaited<ReturnType<typeof pos.almacen.verificar>> } | null = null;
+
+  /**
    * Diagnóstico. Es la PRIMERA pregunta cuando algo falla, y está pensada para
    * poder leerse por teléfono: todo lo que importa en una sola respuesta.
    */
   app.get("/salud", { config: { rol: "PUBLICO" } }, async () => {
-    const integridad = await pos.almacen.verificar();
+    if (!integridadCache || integridadCache.seq !== pos.p.seq) {
+      integridadCache = { seq: pos.p.seq, valor: await pos.almacen.verificar() };
+    }
+    const integridad = integridadCache.valor;
     const memoria = process.memoryUsage();
 
     return {

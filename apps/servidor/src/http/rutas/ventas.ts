@@ -228,6 +228,9 @@ export async function rutasVentas(app: FastifyInstance, { pos, impresora, notifi
         desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       })
+      // Un rango invertido no es una pregunta que la pantalla haga nunca, y en
+      // cambio multiplicaba por seis lo que cuesta responder un reporte.
+      .refine((r) => r.hasta >= r.desde, { message: "La fecha final no puede ser anterior a la inicial." })
       .parse(peticion.query);
 
     // El cálculo entero vive en `consultas/reportes`: la ruta solo valida el
