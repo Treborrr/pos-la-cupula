@@ -46,7 +46,7 @@ async function api() {
   return { app, pos };
 }
 
-const put = (app: Awaited<ReturnType<typeof api>>["app"], body: unknown) =>
+const put = (app: Awaited<ReturnType<typeof api>>["app"], body: Record<string, unknown>) =>
   app.inject({ method: "PUT", url: "/api/config", payload: body });
 
 describe("PUT /config valida contra una lista blanca", () => {
