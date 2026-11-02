@@ -120,6 +120,14 @@ describe("entradas hostiles", () => {
     expect(r.statusCode).toBe(413);
   });
 
+  it("las fotos de catálogo exigen sesión", async () => {
+    // No son un secreto, pero no tienen consumidor público: se miran solo
+    // dentro del POS autenticado, así que el gate cierra la categoría gratis.
+    const app = await api();
+    const r = await app.inject({ method: "GET", url: "/fotos/01ABCDEF01ABCDEF01ABCDEF01.jpg" });
+    expect(r.statusCode).toBe(401);
+  });
+
   it("no se puede salir de la carpeta de fotos", async () => {
     const app = await api();
     for (const url of ["/fotos/../../../etc/passwd", "/fotos/..%2f..%2f..%2fetc%2fpasswd"]) {

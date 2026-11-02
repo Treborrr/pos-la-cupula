@@ -105,6 +105,23 @@ function armarZip(entradas: EntradaZip[]): Buffer {
   return Buffer.concat([...locales, cuerpoCentral, fin]);
 }
 
+/**
+ * Topes contra una bomba de descompresión.
+ *
+ * Un `.xlsx` es un ZIP, y un ZIP de pocos KB puede inflar a gigabytes: medido,
+ * 18 KB de entrada llegaron a 480 MB de memoria. En Railway, con RAM acotada,
+ * eso es un OOM que reinicia el servicio, o sea una denegación de servicio para
+ * toda la barbería. La ruta exige ADMIN, pero un archivo malicioso que alguien
+ * le pasa al dueño para que lo importe sigue siendo un vector real.
+ *
+ * Una planilla de catálogo de verdad pesa, descomprimida, unos pocos MB como
+ * mucho (el caso real del cliente eran 187 productos). Estos topes están muy
+ * por encima de eso y muy por debajo de lo que tumba el proceso.
+ */
+const MAX_ENTRADA_DESCOMPRIMIDA = 48 * 1024 * 1024; // 48 MB por archivo del ZIP
+const MAX_TOTAL_DESCOMPRIMIDO = 96 * 1024 * 1024; // 96 MB sumando todo el ZIP
+const MAX_ENTRADAS = 512; // un .xlsx normal tiene unas pocas, no miles
+
 /** Abre un ZIP y devuelve sus entradas descomprimidas, por nombre. */
 function leerZip(datos: Buffer): Map<string, Buffer> {
   // El directorio central está al final, precedido por un comentario de largo
@@ -119,8 +136,12 @@ function leerZip(datos: Buffer): Map<string, Buffer> {
   if (fin < 0) throw new Error("El archivo no es un .xlsx válido (no se encontró el índice del ZIP).");
 
   const cantidad = datos.readUInt16LE(fin + 10);
+  if (cantidad > MAX_ENTRADAS) {
+    throw new Error("El archivo no es una planilla de catálogo válida (demasiadas entradas internas).");
+  }
   let p = datos.readUInt32LE(fin + 16);
   const salida = new Map<string, Buffer>();
+  let totalDescomprimido = 0;
 
   for (let i = 0; i < cantidad; i++) {
     if (datos.readUInt32LE(p) !== 0x02014b50) break;
@@ -140,8 +161,32 @@ function leerZip(datos: Buffer): Map<string, Buffer> {
     const inicio = desplazamiento + 30 + largoNombreLocal + largoExtraLocal;
     const crudo = datos.subarray(inicio, inicio + comprimido);
 
-    if (metodo === 0) salida.set(nombre, Buffer.from(crudo));
-    else if (metodo === 8) salida.set(nombre, inflateRawSync(crudo));
+    if (metodo === 0 || metodo === 8) {
+      // `maxOutputLength` hace que `inflateRawSync` CORTE una entrada que se
+      // pasa de la raya, en vez de materializar gigabytes y reventar el
+      // proceso. Para los no comprimidos (método 0) el tope lo pone el
+      // `subarray`, acotado al tamaño que ya declaró el ZIP.
+      let contenido: Buffer;
+      try {
+        contenido =
+          metodo === 0
+            ? Buffer.from(crudo.subarray(0, MAX_ENTRADA_DESCOMPRIMIDA))
+            : inflateRawSync(crudo, { maxOutputLength: MAX_ENTRADA_DESCOMPRIMIDA });
+      } catch {
+        // Una entrada que no infla o que se pasa del tope tumba SOLO esa
+        // entrada, no la lectura entera: si era una hoja que no hacía falta,
+        // la planilla igual se puede leer; si era la que importaba, más
+        // adelante se avisa "no hay hoja legible".
+        p += 46 + largoNombre + largoExtra + largoComentario;
+        continue;
+      }
+
+      totalDescomprimido += contenido.length;
+      if (totalDescomprimido > MAX_TOTAL_DESCOMPRIMIDO) {
+        throw new Error("El archivo no es una planilla de catálogo válida (contenido descomprimido excesivo).");
+      }
+      salida.set(nombre, contenido);
+    }
     // Cualquier otro método lo escribe un compresor exótico; se ignora la
     // entrada en vez de romper la lectura del resto.
 

@@ -15,7 +15,7 @@ import { ZodError } from "zod";
 import * as path from "node:path";
 import { mkdir } from "node:fs/promises";
 
-import { esErrorDeAutenticacion, esErrorDeAutorizacion, esErrorDeNegocio } from "../dominio/errores";
+import { ErrorDeAutenticacion, esErrorDeAutenticacion, esErrorDeAutorizacion, esErrorDeNegocio } from "../dominio/errores";
 import type { ServicioPos } from "../servicios/Pos";
 import type { Impresora } from "../puertos/Impresora";
 import type { ServicioDeRespaldos } from "../servicios/Respaldos";
@@ -24,7 +24,7 @@ import type { ServicioDeSesiones } from "../servicios/Sesiones";
 import type { ServicioDeIntentosDeLogin } from "../servicios/IntentosDeLogin";
 import type { ServicioDeVerificacionDeCuenta } from "../servicios/VerificacionDeCuenta";
 
-import { registrarAutorizacion } from "./autorizacion";
+import { NOMBRE_COOKIE_SESION, registrarAutorizacion } from "./autorizacion";
 import { rutasAuth } from "./rutas/auth";
 import { rutasUsuarios } from "./rutas/usuarios";
 import { rutasMiCuenta } from "./rutas/miCuenta";
@@ -341,15 +341,49 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
     });
   }
 
-  // Las fotos de catálogo, servidas tal cual quedaron en disco. `decorateReply:
-  // false` porque `reply.sendFile` ya lo decoró el registro de arriba —hacerlo
-  // dos veces revienta con "decorator already added"— y acá no hace falta: esta
-  // ruta solo necesita servir archivos por prefijo, no mandar uno a mano.
+  /**
+   * Las fotos de catálogo, servidas tal cual quedaron en disco.
+   *
+   * EXIGEN SESIÓN, aunque no sean un secreto. Son fotos de producto, como las
+   * de cualquier tienda, y el nombre de archivo lleva 80 bits de azar (un ULID)
+   * así que nadie los adivina. Se piden credenciales igual porque este POS no
+   * tiene escaparate público: las fotos solo se miran DENTRO de la app ya
+   * autenticada, así que exigir sesión no le cuesta nada a nadie y cierra la
+   * categoría entera. El día que haya una carta pública para clientes, este
+   * gate hay que levantarlo.
+   *
+   * Va en su propio plugin encapsulado para poder exigir la sesión SIN tocar
+   * los estáticos de la PWA, que tienen que seguir abiertos: si no, no se vería
+   * ni la pantalla de login. No se gatea la IP del cajero como en las rutas de
+   * API —para una imagen no aporta y un microcorte de red rompería la grilla
+   * del mostrador—; basta con que haya una sesión válida.
+   *
+   * `decorateReply: false` porque `reply.sendFile` ya lo decoró el registro de
+   * la PWA, y hacerlo dos veces revienta con "decorator already added".
+   */
   await mkdir(path.join(deps.carpetaDatos, "fotos"), { recursive: true });
-  await app.register(fastifyStatic, {
-    root: path.join(deps.carpetaDatos, "fotos"),
-    prefix: "/fotos/",
-    decorateReply: false,
+  await app.register(async (zonaFotos) => {
+    zonaFotos.addHook("onRequest", async (peticion) => {
+      const token = peticion.cookies[NOMBRE_COOKIE_SESION];
+      if (!token || !deps.sesiones.obtener(token)) {
+        throw new ErrorDeAutenticacion("NO_AUTENTICADO", "Hace falta iniciar sesión.");
+      }
+    });
+
+    await zonaFotos.register(fastifyStatic, {
+      root: path.join(deps.carpetaDatos, "fotos"),
+      prefix: "/fotos/",
+      decorateReply: false,
+      /**
+       * `@fastify/static` v10 trae `dotfiles: "allow"` por defecto. Hoy no hay
+       * ningún archivo con punto acá (los nombres son `<ulid>.<ext>`), pero el
+       * día que aterrice uno quedaría publicado sin que nadie lo decida.
+       */
+      dotfiles: "deny",
+      // Esta carpeta no tiene índice: que `/fotos/` conteste 403, no el
+      // cascarón de la PWA.
+      index: false,
+    });
   });
 
   return app;
