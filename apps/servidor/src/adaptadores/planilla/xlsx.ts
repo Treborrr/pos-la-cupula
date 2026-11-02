@@ -223,7 +223,8 @@ function desescaparXml(s: string): string {
 
 /** Junta el texto de los `<t>` de un fragmento, que es como XLSX parte las cadenas con formato. */
 function textoDeNodos(xml: string): string {
-  const partes = [...xml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((m) => desescaparXml(m[1]));
+  const partes: string[] = [];
+  for (const cuerpo of fragmentos(xml, "t")) partes.push(desescaparXml(cuerpo));
   return partes.join("");
 }
 
@@ -268,6 +269,78 @@ function rutaDeLaPrimeraHoja(zip: Map<string, Buffer>): string {
 }
 
 /** "BC12" → 54 (índice de columna, base 0). */
+/**
+ * Recorre `<tag ...>…</tag>` en tiempo LINEAL con `indexOf`.
+ *
+ * Reemplaza a `matchAll(/<tag>([\s\S]*?)<\/tag>/g)`, que es O(n²) cuando el
+ * tag de cierre NO existe: el motor intenta abrir en cada posición y escanea
+ * hasta el final cada vez. Medido: 160 KB de `<si>` sin cerrar bloqueaban el
+ * bucle de eventos 23 segundos, y un .xlsx de ~550 KB lo colgaría durante
+ * meses, sin morir ni reiniciar. Acá, si no hay cierre, se corta y listo.
+ */
+function* fragmentos(xml: string, tag: string): Generator<string> {
+  let i = 0;
+  const cierre = `</${tag}>`;
+  for (;;) {
+    const abre = xml.indexOf(`<${tag}`, i);
+    if (abre < 0) return;
+    // Que `<t` no matchee `<table`: el carácter siguiente tiene que cerrar el
+    // nombre del tag.
+    const sig = xml[abre + tag.length + 1];
+    if (sig !== " " && sig !== ">" && sig !== "/" && sig !== "\t" && sig !== "\n" && sig !== "\r") {
+      i = abre + tag.length + 1;
+      continue;
+    }
+    const finAbre = xml.indexOf(">", abre);
+    if (finAbre < 0) return;
+    if (xml[finAbre - 1] === "/") {
+      i = finAbre + 1;
+      yield "";
+      continue;
+    }
+    const cierraEn = xml.indexOf(cierre, finAbre);
+    if (cierraEn < 0) return;
+    yield xml.slice(finAbre + 1, cierraEn);
+    i = cierraEn + cierre.length;
+  }
+}
+
+/** Las celdas `<c ...>…</c>` de una fila, con sus atributos. Lineal, ver `fragmentos`. */
+function* celdasDe(fila: string): Generator<{ atributos: string; cuerpo: string }> {
+  let i = 0;
+  for (;;) {
+    const abre = fila.indexOf("<c", i);
+    if (abre < 0) return;
+    const sig = fila[abre + 2];
+    if (sig !== " " && sig !== ">" && sig !== "/") {
+      i = abre + 2;
+      continue;
+    }
+    const finAbre = fila.indexOf(">", abre);
+    if (finAbre < 0) return;
+    const autocierra = fila[finAbre - 1] === "/";
+    const atributos = fila.slice(abre + 2, autocierra ? finAbre - 1 : finAbre);
+    if (autocierra) {
+      yield { atributos, cuerpo: "" };
+      i = finAbre + 1;
+      continue;
+    }
+    const cierraEn = fila.indexOf("</c>", finAbre);
+    if (cierraEn < 0) return;
+    yield { atributos, cuerpo: fila.slice(finAbre + 1, cierraEn) };
+    i = cierraEn + 4;
+  }
+}
+
+/**
+ * Topes de la planilla. Una de catálogo real tiene unas pocas columnas y
+ * cientos de filas (la del cliente, 138). Estos límites dejan margen de sobra y
+ * cortan los dos vectores que mataban el proceso: una celda `r="ZZZZZZ1"` pedía
+ * un arreglo de 321 millones de posiciones, y las filas no tenían tope.
+ */
+const MAX_FILAS = 50_000;
+const MAX_COLUMNAS = 256;
+
 function columnaDeReferencia(ref: string): number {
   const letras = /^([A-Z]+)/.exec(ref)?.[1] ?? "A";
   let n = 0;
@@ -403,19 +476,20 @@ export function leerXlsx(datos: Buffer): string[][] {
   const compartidas: string[] = [];
   const tabla = zip.get("xl/sharedStrings.xml");
   if (tabla) {
-    for (const m of tabla.toString("utf8").matchAll(/<si>([\s\S]*?)<\/si>/g)) {
-      compartidas.push(textoDeNodos(m[1]));
+    for (const cuerpo of fragmentos(tabla.toString("utf8"), "si")) {
+      compartidas.push(textoDeNodos(cuerpo));
     }
   }
 
   const xml = hoja.toString("utf8");
   const filas: string[][] = [];
 
-  for (const mFila of xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+  for (const cuerpoFila of fragmentos(xml, "row")) {
+    if (filas.length >= MAX_FILAS) {
+      throw new Error(`La planilla tiene más de ${MAX_FILAS} filas. Revisa que no haya filas vacías de más.`);
+    }
     const celdas: string[] = [];
-    for (const mCelda of mFila[1].matchAll(/<c\b([^>]*)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const atributos = mCelda[1];
-      const cuerpo = mCelda[2] ?? "";
+    for (const { atributos, cuerpo } of celdasDe(cuerpoFila)) {
       const ref = /r="([A-Z]+\d+)"/.exec(atributos)?.[1];
       const tipo = /t="([^"]+)"/.exec(atributos)?.[1];
 
@@ -433,6 +507,10 @@ export function leerXlsx(datos: Buffer): string[][] {
       // Las celdas vacías no se escriben: hay que colocar cada una en SU
       // columna o se corren todas las de la derecha.
       const columna = ref ? columnaDeReferencia(ref) : celdas.length;
+      // Una celda más allá de la última columna útil es una nota perdida del
+      // Excel; descartarla evita que `r="ZZZZZZ1"` pida 321 millones de huecos.
+      // El chequeo de encabezados solo mira las primeras columnas.
+      if (columna >= MAX_COLUMNAS) continue;
       while (celdas.length < columna) celdas.push("");
       celdas[columna] = valor.trim();
     }

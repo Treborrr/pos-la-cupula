@@ -123,11 +123,12 @@ export function planificarImportacion(
   filas: FilaDeCatalogo[],
   modo: ModoDeImportacion,
 ): PlanDeImportacion {
+  const indice = indexarPorNombre(p);
   const cambios: CambioDeImportacion[] = [];
   const tocados = new Set<string>();
 
   for (const fila of filas) {
-    const existente = buscarExistente(p, fila);
+    const existente = buscarExistente(indice, fila);
     if (existente) tocados.add(existente.id);
 
     if (!existente) {
@@ -193,7 +194,7 @@ export function planificarImportacion(
       // se queda sin precio: la planilla no borra precios.
       sinPrecio: filas.filter((f) => {
         if (f.precio !== null) return false;
-        const existente = buscarExistente(p, f);
+        const existente = buscarExistente(indice, f);
         return !existente || existente.precio === null;
       }).length,
       sinCategoria: filas.filter((f) => !f.categoria).length,
@@ -220,6 +221,7 @@ export function importarCatalogo(
   filas: FilaDeCatalogo[],
   modo: ModoDeImportacion,
 ): EventoNuevo[] {
+  const indice = indexarPorNombre(p);
   const eventos: EventoNuevo[] = [];
   const tocados = new Set<string>();
 
@@ -239,7 +241,7 @@ export function importarCatalogo(
   const MOTIVO = "Importación de catálogo desde planilla";
 
   for (const fila of filas) {
-    const existente = buscarExistente(p, fila);
+    const existente = buscarExistente(indice, fila);
 
     if (!existente) {
       const itemId = ulid();
@@ -363,6 +365,29 @@ export function importarCatalogo(
   return eventos;
 }
 
+/** nombre normalizado + tipo → los ítems que lo tienen. */
+type IndicePorNombre = Map<string, Item[]>;
+
+/**
+ * Se arma UNA vez por importación, no una por fila.
+ *
+ * Antes cada fila recorría el catálogo ENTERO normalizando el nombre y la marca
+ * de cada ítem, y lo hacía dos veces (el plan y el conteo de `sinPrecio`). Con
+ * las 30.000 filas que caben en el límite del cuerpo y mil ítems, eso medía
+ * casi nueve segundos de servidor bloqueado —nueve segundos en los que nadie
+ * puede cobrar— por una sola importación. Con el índice, es O(filas + ítems).
+ */
+function indexarPorNombre(p: Proyeccion): IndicePorNombre {
+  const indice: IndicePorNombre = new Map();
+  for (const item of p.items.values()) {
+    const clave = `${normalizar(item.nombre)}|${item.tipo}`;
+    const lista = indice.get(clave);
+    if (lista) lista.push(item);
+    else indice.set(clave, [item]);
+  }
+  return indice;
+}
+
 /**
  * Busca el ítem que esta fila representa: por MARCA + NOMBRE + TIPO.
  *
@@ -370,14 +395,13 @@ export function importarCatalogo(
  * un producto que se había dado de baja tiene que REACTIVARLO con su mismo id
  * —conservando su historial de ventas— y no crear un duplicado al lado.
  */
-function buscarExistente(p: Proyeccion, fila: FilaDeCatalogo): Item | undefined {
+function buscarExistente(indice: IndicePorNombre, fila: FilaDeCatalogo): Item | undefined {
   const marca = normalizar(fila.marca);
   const nombre = normalizar(fila.nombre);
 
+  const candidatos = indice.get(`${nombre}|${fila.tipo}`) ?? [];
   const mismoNombre: Item[] = [];
-  for (const item of p.items.values()) {
-    if (item.tipo !== fila.tipo) continue;
-    if (normalizar(item.nombre) !== nombre) continue;
+  for (const item of candidatos) {
     if (normalizar(item.marca) === marca) return item; // coincidencia exacta
     mismoNombre.push(item);
   }
