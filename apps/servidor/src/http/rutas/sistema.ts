@@ -157,6 +157,19 @@ export async function rutasSistema(
 
   app.get("/config", { config: { rol: "ADMIN" } }, async () => pos.configCompleta());
 
+  /**
+   * La IP desde la que se conecta quien pregunta.
+   *
+   * Es lo que hace usable la restricción de red del cajero: en vez de pedirle
+   * al dueño que averigüe la IP pública de su local, la pantalla se la muestra
+   * y le ofrece permitirla de un toque. `peticion.ip` ya viene de la IP real
+   * del cliente (detrás del proxy de Railway, por `trustProxy`), no de la del
+   * proxy.
+   */
+  app.get("/seguridad/mi-ip", { config: { rol: "ADMIN" } }, async (peticion) => {
+    return { ip: peticion.ip };
+  });
+
   app.put("/config", { config: { rol: "ADMIN" } }, async (peticion) => {
     // La FORMA del cuerpo se revisa acá; QUÉ claves existen y qué valor acepta
     // cada una lo decide `ESQUEMA_CONFIG` en el servicio, que es el único
