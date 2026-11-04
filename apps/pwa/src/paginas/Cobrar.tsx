@@ -37,6 +37,7 @@ import {
 import {
   api,
   FalloDeApi,
+  imagenDeItem,
   type Barbero,
   type Cliente,
   type EstadoGeneral,
@@ -638,10 +639,11 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
         </span>
       ) : null}
       <span className={enTicket > 0 ? "pr-9" : ""}>
-        {item.foto ? (
+        {imagenDeItem(item) ? (
           <img
-            src={`/fotos/${item.foto}`}
+            src={imagenDeItem(item)!}
             alt=""
+            onError={(e) => (e.currentTarget.style.display = "none")}
             className="mb-2 h-12 w-12 rounded-lg border border-linea object-cover"
           />
         ) : null}

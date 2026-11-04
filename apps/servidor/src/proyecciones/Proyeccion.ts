@@ -40,7 +40,7 @@ import {
  * código nuevo y produciría un estado silenciosamente mal — el peor tipo de
  * bug que puede tener un sistema de dinero.
  */
-export const FORMATO_PROYECCION = 8;
+export const FORMATO_PROYECCION = 9;
 
 /**
  * La clave del mapa de stock y del de precios por sucursal.
@@ -230,6 +230,7 @@ export class Proyeccion {
           creadoEn: e.ts,
           actualizadoEn: e.ts,
           foto: null,
+          fotoUrl: null,
         };
         this.items.set(item.id, item);
         this.porCodigo.set(item.codigo, item.id);
@@ -319,6 +320,12 @@ export class Proyeccion {
       case "item.foto_actualizada": {
         const item = this.items.get(e.datos.itemId);
         if (item) item.foto = e.datos.archivo;
+        break;
+      }
+
+      case "item.foto_url_cambiada": {
+        const item = this.items.get(e.datos.itemId);
+        if (item) item.fotoUrl = e.datos.url;
         break;
       }
 
@@ -979,6 +986,7 @@ export class Proyeccion {
     for (const sede of d.sedes ?? []) p.sedes.set(sede.id, sede);
 
     for (const item of d.items ?? []) {
+      if (item.fotoUrl === undefined) item.fotoUrl = null;
       p.items.set(item.id, item);
       if (item.activo) p.porCodigo.set(item.codigo, item.id);
       p.indexarMarca(item.marca ?? "", item.id);

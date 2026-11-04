@@ -143,7 +143,11 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
      *    En estilos el riesgo es cosmético; en scripts sería el agujero entero,
      *    y ahí no se permite.
      *  · `img-src` admite `data:` y `blob:` por el QR del ticket y las fotos
-     *    del catálogo que se previsualizan antes de subirlas.
+     *    del catálogo que se previsualizan antes de subirlas, y `https:` por
+     *    los enlaces a imágenes referenciales de producto que el dueño pega
+     *    (ver `item.foto_url_cambiada`). Permitir imágenes externas es de bajo
+     *    riesgo: una imagen no ejecuta código, y `script-src 'self'` —la
+     *    defensa de verdad— no se toca.
      *  · `frame-ancestors 'none'` es lo que impide el clickjacking: nadie puede
      *    meter el POS en un iframe y hacer que el dueño apriete "Anular" sin
      *    saberlo.
@@ -156,7 +160,7 @@ export async function construirApp(deps: Dependencias): Promise<FastifyInstance>
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob:",
+        "img-src 'self' data: blob: https:",
         "font-src 'self'",
         "connect-src 'self'",
         "object-src 'none'",

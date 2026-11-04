@@ -421,3 +421,46 @@ describe("un ADMIN sin sucursal elegida", () => {
     expect(r.statusCode).toBe(201);
   });
 });
+
+/**
+ * El enlace a una imagen referencial externa: se guarda la URL, no el archivo.
+ * El POS la carga de internet, así el log y el respaldo no cargan con los bytes.
+ */
+describe("enlace de imagen del producto", () => {
+  it("guarda un enlace https y lo devuelve en el catálogo", async () => {
+    const { app } = await apiDePrueba();
+    const corte = await crearServicio(app, "COR", "CORTE", 2000);
+
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/catalogo/${corte}/foto-url`,
+      payload: { url: "https://ejemplo.com/cera.jpg" },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().item.fotoUrl).toBe("https://ejemplo.com/cera.jpg");
+
+    const cat = await app.inject({ method: "GET", url: `/api/catalogo?sede=${SEDE_PRINCIPAL}` });
+    const item = cat.json().items.find((i: { id: string }) => i.id === corte);
+    expect(item.fotoUrl).toBe("https://ejemplo.com/cera.jpg");
+  });
+
+  it("rechaza un enlace que no es https (contenido mixto / javascript:)", async () => {
+    const { app } = await apiDePrueba();
+    const corte = await crearServicio(app, "COR", "CORTE", 2000);
+
+    for (const url of ["http://ejemplo.com/x.jpg", "javascript:alert(1)", "data:image/png;base64,AAAA"]) {
+      const r = await app.inject({ method: "PUT", url: `/api/catalogo/${corte}/foto-url`, payload: { url } });
+      expect(r.statusCode, url).toBe(400);
+    }
+  });
+
+  it("un enlace vacío lo quita", async () => {
+    const { app } = await apiDePrueba();
+    const corte = await crearServicio(app, "COR", "CORTE", 2000);
+
+    await app.inject({ method: "PUT", url: `/api/catalogo/${corte}/foto-url`, payload: { url: "https://x.com/a.png" } });
+    const r = await app.inject({ method: "PUT", url: `/api/catalogo/${corte}/foto-url`, payload: { url: null } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().item.fotoUrl).toBeNull();
+  });
+});

@@ -107,6 +107,19 @@ async function pedir<T>(ruta: string, opciones: RequestInit = {}): Promise<T> {
   return cuerpo as T;
 }
 
+/**
+ * La imagen a mostrar de un ítem, o null si no tiene ninguna.
+ *
+ * La foto SUBIDA manda sobre el enlace: si el dueño se tomó el trabajo de subir
+ * la real, es la que quiere ver. Si no, el enlace referencial externo. Existe
+ * en un solo lugar para que la grilla, el cobro y el catálogo muestren siempre
+ * lo mismo.
+ */
+export function imagenDeItem(item: { foto?: string | null; fotoUrl?: string | null }): string | null {
+  if (item.foto) return `/fotos/${item.foto}`;
+  return item.fotoUrl || null;
+}
+
 export const api = {
   get: <T>(ruta: string) => pedir<T>(ruta),
   post: <T>(ruta: string, cuerpo?: unknown) =>
@@ -151,6 +164,8 @@ export interface Item {
   precioPropio?: boolean;
   /** Nombre del archivo en /fotos/, o null si no tiene. */
   foto: string | null;
+  /** Enlace a una imagen referencial externa (https), alternativa a subir el archivo. */
+  fotoUrl?: string | null;
 }
 
 /** Un local. Ver `PLAN-MULTISUCURSAL.md`. */

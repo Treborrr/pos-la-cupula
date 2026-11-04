@@ -10,7 +10,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, LayoutGrid, Package, Plus, Scissors, Search, Tags, Upload } from "lucide-react";
 
-import { api, FalloDeApi, type Item } from "../lib/api";
+import { api, FalloDeApi, imagenDeItem, type Item } from "../lib/api";
 import { aCentimos, aTexto, aTextoConSimbolo, margenLegible, montoOAusente } from "../lib/formato";
 import { usarUsuario } from "../lib/sesion";
 import { Aviso, Modal, Vacio } from "../componentes/Modal";
@@ -229,10 +229,13 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
                     <td className="text-tinta/65">{i.marca || <span className="text-tinta/30">—</span>}</td>
                     <td>
                       <span className="flex items-center gap-2.5">
-                        {i.foto ? (
+                        {imagenDeItem(i) ? (
                           <img
-                            src={`/fotos/${i.foto}`}
+                            src={imagenDeItem(i)!}
                             alt=""
+                            // Un enlace externo roto no debe dejar un ícono de imagen
+                            // rota en la grilla: si no carga, se esconde.
+                            onError={(e) => (e.currentTarget.style.display = "none")}
                             className="h-8 w-8 shrink-0 rounded-md border border-linea object-cover"
                           />
                         ) : null}
@@ -504,6 +507,7 @@ function FormularioDeItem({
   const [stockMinimo, setStockMinimo] = useState(String(item?.stockMinimo ?? 0));
   const [stockInicial, setStockInicial] = useState("0");
   const [fotoActual, setFotoActual] = useState(item?.foto ?? null);
+  const [fotoUrl, setFotoUrl] = useState(item?.fotoUrl ?? "");
 
   const qc = useQueryClient();
   const refCampoFoto = useRef<HTMLInputElement>(null);
@@ -512,6 +516,14 @@ function FormularioDeItem({
     mutationFn: (archivo: File) => api.subirFoto<{ item: Item }>(`/catalogo/${item!.id}/foto`, archivo),
     onSuccess: (r) => {
       setFotoActual(r.item.foto);
+      qc.invalidateQueries({ queryKey: ["catalogo"] });
+    },
+  });
+  const guardarEnlace = useMutation({
+    mutationFn: (url: string | null) =>
+      api.put<{ item: Item }>(`/catalogo/${item!.id}/foto-url`, { url }),
+    onSuccess: (r) => {
+      setFotoUrl(r.item.fotoUrl ?? "");
       qc.invalidateQueries({ queryKey: ["catalogo"] });
     },
   });
@@ -626,8 +638,13 @@ function FormularioDeItem({
           ) : (
             <div className="flex items-center gap-4">
               <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-linea bg-hueso">
-                {fotoActual ? (
-                  <img src={`/fotos/${fotoActual}`} alt="" className="h-full w-full object-cover" />
+                {fotoActual || fotoUrl ? (
+                  <img
+                    src={fotoActual ? `/fotos/${fotoActual}` : fotoUrl}
+                    alt=""
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <Camera className="h-8 w-8 text-tinta/25" />
                 )}
@@ -668,6 +685,36 @@ function FormularioDeItem({
                 <p className="ayuda">JPG, PNG o WEBP, hasta 3 MB.</p>
                 {subirFoto.error ? (
                   <p className="text-sm text-mal">{(subirFoto.error as FalloDeApi).message}</p>
+                ) : null}
+
+                {/* Alternativa a subir el archivo: pegar un enlace a una imagen
+                    referencial de internet. No carga la base de datos (solo
+                    guarda la URL) y el POS la muestra cargándola de internet.
+                    La foto subida, si hay, manda sobre el enlace. */}
+                <div className="flex gap-2 pt-1">
+                  <input
+                    className="campo boton-chico h-10 flex-1 text-sm"
+                    type="url"
+                    inputMode="url"
+                    placeholder="…o pega un enlace https:// a una imagen"
+                    value={fotoUrl}
+                    onChange={(e) => setFotoUrl(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="boton-suave boton-chico shrink-0"
+                    disabled={guardarEnlace.isPending}
+                    onClick={() => guardarEnlace.mutate(fotoUrl.trim() || null)}
+                  >
+                    {guardarEnlace.isPending ? "Guardando…" : "Guardar enlace"}
+                  </button>
+                </div>
+                <p className="ayuda">
+                  Una imagen referencial de internet. No ocupa espacio: se carga del enlace.
+                  {fotoActual ? " Mientras haya una foto subida, se muestra esa." : ""}
+                </p>
+                {guardarEnlace.error ? (
+                  <p className="text-sm text-mal">{(guardarEnlace.error as FalloDeApi).message}</p>
                 ) : null}
               </div>
             </div>

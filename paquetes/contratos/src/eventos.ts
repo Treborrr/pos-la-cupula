@@ -438,6 +438,34 @@ export const itemFotoActualizada = definir(
   }),
 );
 
+/**
+ * El ENLACE a una imagen referencial del producto, en vez de subir el archivo.
+ *
+ * No guarda la imagen: solo la URL. El navegador del POS la carga de internet
+ * al mostrar la grilla, así el log y el respaldo no cargan con los bytes de
+ * cada foto. Es la vía rápida para ponerle una imagen genérica a cada producto
+ * sin fotografiarlos uno por uno.
+ *
+ * Solo `https`: una imagen por `http` daría contenido mixto que el navegador
+ * bloquea cuando el POS se sirve por `https` (como en la nube). `javascript:`,
+ * `data:` y demás quedan fuera por el mismo filtro. El servidor NUNCA pide esta
+ * URL —la pide el navegador—, así que no hay forma de usarla para que el POS
+ * lea algo de su red interna.
+ */
+export const itemFotoUrlCambiada = definir(
+  "item.foto_url_cambiada",
+  z.object({
+    itemId: esquemaUlid,
+    /** Null = se quita el enlace. Si no, una URL `https` de hasta 500 caracteres. */
+    url: z
+      .string()
+      .trim()
+      .max(500)
+      .refine((u) => /^https:\/\//i.test(u), "el enlace de la imagen tiene que empezar con https://")
+      .nullable(),
+  }),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inventario (solo ítems tipo PRODUCTO)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1039,6 +1067,7 @@ export const esquemaEvento = z.discriminatedUnion("tipo", [
   itemDesactivado,
   itemReactivado,
   itemFotoActualizada,
+  itemFotoUrlCambiada,
   stockEntrada,
   stockAjustado,
   stockMerma,
@@ -1121,6 +1150,7 @@ export const VERSION_ACTUAL: Record<TipoEvento, number> = {
   "item.desactivado": 1,
   "item.reactivado": 1,
   "item.foto_actualizada": 1,
+  "item.foto_url_cambiada": 1,
   "stock.entrada": 1,
   "stock.ajustado": 1,
   "stock.merma": 1,

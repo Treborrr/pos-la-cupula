@@ -328,3 +328,16 @@ export function actualizarFotoDeItem(p: Proyeccion, itemId: string, archivo: str
   if (!p.items.get(itemId)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
   return [{ tipo: "item.foto_actualizada", datos: { itemId, archivo } }];
 }
+
+/**
+ * Pone (o quita) el ENLACE a una imagen referencial externa del ítem.
+ *
+ * No sube ningún archivo: guarda la URL y el navegador la carga de internet.
+ * Vacío = se quita el enlace. La validación de que sea `https` la hace el
+ * esquema del evento (ver `item.foto_url_cambiada`).
+ */
+export function cambiarFotoUrlDeItem(p: Proyeccion, itemId: string, url: string | null): EventoNuevo[] {
+  if (!p.items.get(itemId)) throw new ErrorDeNegocio("ITEM_NO_EXISTE", "Ese ítem no existe.");
+  const limpia = url?.trim() ? url.trim() : null;
+  return [{ tipo: "item.foto_url_cambiada", datos: { itemId, url: limpia } }];
+}

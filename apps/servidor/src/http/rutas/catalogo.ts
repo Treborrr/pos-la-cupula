@@ -13,6 +13,7 @@ import { coincide, normalizar } from "@cupula/contratos";
 import { claveStock } from "../../proyecciones/Proyeccion";
 import {
   actualizarFotoDeItem,
+  cambiarFotoUrlDeItem,
   actualizarItem,
   cambiarPrecioDeSede,
   crearItem,
@@ -427,6 +428,31 @@ export async function rutasCatalogo(app: FastifyInstance, { pos, carpetaDatos }:
 
     await borrarFotoVieja(id);
     await pos.escribir(() => actualizarFotoDeItem(pos.p, id, null), peticion.actor);
+    return { item: paraPantalla(id, peticion.sede) };
+  });
+
+  /**
+   * El ENLACE a una imagen referencial externa, en vez de subir el archivo.
+   *
+   * No guarda la imagen, solo la URL: el navegador la carga de internet. `url`
+   * vacío la quita. Que sea `https` lo valida el esquema del evento.
+   */
+  app.put("/catalogo/:id/foto-url", { config: { rol: "ADMIN" } }, async (peticion) => {
+    const { id } = z.object({ id: z.string() }).parse(peticion.params);
+    const { url } = z
+      .object({
+        url: z
+          .string()
+          .trim()
+          .max(500)
+          // Solo https: un `http` da contenido mixto que el navegador bloquea en
+          // la nube, y corta de paso `javascript:`/`data:`. Vacío = quitar.
+          .refine((u) => u === "" || /^https:\/\//i.test(u), "El enlace tiene que empezar con https://")
+          .nullable(),
+      })
+      .parse(peticion.body);
+
+    await pos.escribir(() => cambiarFotoUrlDeItem(pos.p, id, url), peticion.actor);
     return { item: paraPantalla(id, peticion.sede) };
   });
 }

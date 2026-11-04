@@ -57,8 +57,10 @@ export interface Item {
   activo: boolean;
   creadoEn: string;
   actualizadoEn: string;
-  /** Nombre del archivo en datos/fotos/, servido por /fotos/:archivo. Null = sin foto. */
+  /** Nombre del archivo en datos/fotos/, servido por /fotos/:archivo. Null = sin foto subida. */
   foto: string | null;
+  /** Enlace a una imagen referencial externa (https). Null = sin enlace. Ver `item.foto_url_cambiada`. */
+  fotoUrl: string | null;
 }
 
 export interface Venta {
