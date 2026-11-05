@@ -4,8 +4,8 @@
  *
  * El campo de texto (IPs/CIDR) por sí solo no le sirve a un dueño de barbería:
  * no tiene por qué saber cuál es la IP pública de su local. Por eso arriba va
- * lo fácil —la IP desde la que está conectado ahora, con un botón para
- * permitirla— y el campo manual queda abajo para los casos avanzados (varios
+ * lo fácil (la IP desde la que está conectado ahora, con un botón para
+ * permitirla) y el campo manual queda abajo para los casos avanzados (varios
  * locales, un rango).
  */
 
@@ -66,7 +66,7 @@ export function SeccionSeguridad({
             <div className="ayuda">
               {ipUtil
                 ? "Si estás en el local y los cajeros usan este mismo internet, permite esta IP."
-                : "Estás en una red local. Entra desde el internet del local —o escribe su IP abajo— para restringirlo."}
+                : "Estás en una red local. Entra desde el internet del local (o escribe su IP abajo) para restringirlo."}
             </div>
           </div>
           {ipUtil ? (

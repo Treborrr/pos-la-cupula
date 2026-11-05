@@ -1,8 +1,8 @@
 /**
  * Caja: apertura de turno, egresos, arqueo en vivo y cierre.
  *
- * EL EFECTIVO ESPERADO SE MUESTRA DESGLOSADO —apertura + cobrado − lo que
- * salió— y no como un número solo. Quien cuenta el cajón tiene que poder
+ * EL EFECTIVO ESPERADO SE MUESTRA DESGLOSADO (apertura + cobrado − lo que
+ * salió) y no como un número solo. Quien cuenta el cajón tiene que poder
  * seguir de dónde sale la cifra contra la que lo están comparando; si no, un
  * faltante es una acusación sin cuentas a la vista.
  */
@@ -312,7 +312,7 @@ function Egresos({
 
 const CATEGORIAS: { id: CategoriaEgreso; texto: string; ayuda: string }[] = [
   { id: "OTRO", texto: "Otro", ayuda: "Insumos, el taxi, cualquier gasto suelto del día." },
-  { id: "ADELANTO", texto: "Adelanto a barbero", ayuda: "Se descuenta de su sueldo — queda pendiente en Barberos." },
+  { id: "ADELANTO", texto: "Adelanto a barbero", ayuda: "Se descuenta de su sueldo: queda pendiente en Barberos." },
   { id: "YAPE", texto: "Yape", ayuda: "Efectivo que pasó a la cuenta de Yape del negocio." },
   { id: "DEPOSITO", texto: "Depósito", ayuda: "Efectivo que se llevó al banco." },
 ];

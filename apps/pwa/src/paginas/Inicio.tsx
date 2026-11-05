@@ -1,8 +1,8 @@
 /**
  * La pantalla de inicio del dueño: cómo va el negocio HOY.
  *
- * Antes de que esto existiera, el ADMIN entraba y aterrizaba en "Cobrar" —la
- * pantalla del mostrador— porque el dueño y el cajero compartían el mismo
+ * Antes de que esto existiera, el ADMIN entraba y aterrizaba en "Cobrar" (la
+ * pantalla del mostrador) porque el dueño y el cajero compartían el mismo
  * arranque. Un dueño abre el sistema para ver cómo va, no para atender a
  * alguien; con varios locales, menos todavía.
  *
@@ -87,7 +87,7 @@ export function Inicio() {
             />
             <Recuadro
               etiqueta="Ticket promedio"
-              valor={d.cadena.ventas === 0 ? "—" : aTextoConSimbolo(d.cadena.ticketPromedio)}
+              valor={d.cadena.ventas === 0 ? "-" : aTextoConSimbolo(d.cadena.ticketPromedio)}
               tamano="grande"
               nota="Lo que gasta cada cliente"
             />

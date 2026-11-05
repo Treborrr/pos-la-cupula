@@ -108,8 +108,8 @@ export function Clientes() {
                 {lista.map((c) => (
                   <tr key={c.id} onClick={() => setAbierto(c.id)}>
                     <td className="font-medium">{c.nombre}</td>
-                    <td className="cifra text-tinta/65">{c.telefono || "—"}</td>
-                    <td>{c.seriales.length > 0 ? <Pastilla tono="laton">Vinculada</Pastilla> : <span className="text-tinta/30">—</span>}</td>
+                    <td className="cifra text-tinta/65">{c.telefono || "-"}</td>
+                    <td>{c.seriales.length > 0 ? <Pastilla tono="laton">Vinculada</Pastilla> : <span className="text-tinta/30">-</span>}</td>
                     <td className="cifra text-right">{c.visitas}</td>
                     <td className="cifra text-right">{aTextoConSimbolo(c.totalGastado)}</td>
                     <td className="text-tinta/65">{cuandoFue(c.ultimaVisita)}</td>

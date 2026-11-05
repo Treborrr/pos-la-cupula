@@ -26,7 +26,7 @@ export interface LineaDelTicket {
    *
    * `null` = el ítem no tiene precio de lista y el de esta línea se escribió a
    * mano. No hay nada contra qué compararlo, así que la pantalla no lo marca
-   * como "modificado" — no se modificó nada, se completó lo que faltaba.
+   * como "modificado": no se modificó nada, se completó lo que faltaba.
    */
   precioLista: number | null;
 }
@@ -43,13 +43,13 @@ interface EstadoCarrito {
    *
    * Al cobrar se copia a cada línea de SERVICIO, porque el evento
    * `venta.registrada` guarda el barbero línea por línea. Mantener ahí el dato
-   * —en vez de subirlo a la cabecera de la venta— evita cambiar la forma de un
+   * (en vez de subirlo a la cabecera de la venta) evita cambiar la forma de un
    * evento ya escrito en disco, que dejaría ilegibles las ventas anteriores.
    */
   barberoId: string | null;
   /**
    * Lo que el cliente dejó de propina para el barbero, si algo. No se suma al
-   * total ni pasa por los pagos — es puro registro, para que el dueño sepa
+   * total ni pasa por los pagos: es puro registro, para que el dueño sepa
    * cuánto recibe cada uno (D6: sueldo fijo, sin comisiones).
    */
   propina: number;
@@ -65,7 +65,7 @@ interface EstadoCarrito {
    * Un ítem sin precio de lista NO entra al ticket: no se puede vender hasta
    * que se le ponga precio desde Catálogo. La pantalla ni siquiera lo muestra
    * en la grilla, pero el guardia vive acá también por si llega por otro
-   * camino —la pistola de escaneo, por ejemplo—.
+   * camino (la pistola de escaneo, por ejemplo).
    */
   agregar: (item: Item, cantidad?: number) => void;
   cambiarCantidad: (indice: number, cantidad: number) => void;
@@ -94,7 +94,7 @@ export const usarCarrito = create<EstadoCarrito>((set) => ({
   agregar: (item, cantidad = 1) =>
     set((s) => {
       // Sin precio de lista no entra al ticket. El servidor lo rechaza igual
-      // —la regla vive en el dominio—, pero frenarlo acá evita que el cajero
+      // (la regla vive en el dominio), pero frenarlo acá evita que el cajero
       // arme un ticket que después no va a poder cobrar.
       const precio = item.precio;
       if (precio === null) return s;

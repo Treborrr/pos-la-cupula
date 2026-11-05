@@ -1,6 +1,6 @@
 /**
  * Quién está logueado, disponible en cualquier pantalla sin tener que
- * volver a pedirlo. Vive en su propio archivo —no en `App.tsx`— para que
+ * volver a pedirlo. Vive en su propio archivo (no en `App.tsx`) para que
  * páginas como `Barberos.tsx` puedan importar `usarUsuario()` sin un import
  * circular.
  */
@@ -33,7 +33,7 @@ export function esAdmin(usuario: UsuarioDeSesion): boolean {
 /**
  * Para distinguir un logout que la propia persona pidió de uno que la
  * sorprendió (otro cajero entró, un admin la desactivó). `App` solo muestra
- * el aviso de "se cerró tu sesión" en el segundo caso — un clic en "Salir"
+ * el aviso de "se cerró tu sesión" en el segundo caso: un clic en "Salir"
  * no necesita que le expliquen por qué ya no hay sesión.
  */
 export const banderaDeSalidaIntencional = { valor: false };

@@ -391,7 +391,7 @@ function ReporteDeBarbero({ barbero, alCerrar }: { barbero: Barbero; alCerrar: (
           <div className="space-y-4">
             <p className="text-tinta/75">
               Queda registrado que se le pagaron <strong>{aTextoConSimbolo(r.saldoPendiente)}</strong> de adelantos a{" "}
-              {barbero.nombre}. No calcula ni paga sueldo — eso sigue fuera del sistema — solo deja la cuenta en cero
+              {barbero.nombre}. No calcula ni paga sueldo (eso sigue fuera del sistema), solo deja la cuenta en cero
               para la semana que entra.
             </p>
             <label className="block">

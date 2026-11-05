@@ -4,7 +4,7 @@
  * El flujo es de dos pasos y no de uno: primero se LEE el archivo y se muestra
  * exactamente qué va a pasar con cada fila, y recién entonces aparece el botón
  * de aplicar. Nadie debería autorizar una carga masiva sin ver antes qué
- * cambia — sobre todo en «Reemplazar», donde lo que no viene en el archivo se
+ * cambia, sobre todo en «Reemplazar», donde lo que no viene en el archivo se
  * da de baja.
  */
 

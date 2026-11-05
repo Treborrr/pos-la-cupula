@@ -135,7 +135,7 @@ export function Cobrar() {
     mutationFn: async () => {
       const clienteId = carrito.clienteId ?? (await registrarCliente(carrito.nombreCliente ?? ""));
       carrito.ponerCliente(clienteId, carrito.nombreCliente);
-      // La propina es una por venta en esta pantalla —igual que el barbero—,
+      // La propina es una por venta en esta pantalla (igual que el barbero),
       // pero el evento la referencia por LÍNEA: se cuelga de la primera de
       // servicio, que es la que ya lleva el barbero asignado.
       const primeraDeServicio = carrito.lineas.findIndex((l) => l.tipo === "SERVICIO");
@@ -444,7 +444,7 @@ export function Cobrar() {
               className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-linea px-4 py-3 text-sm text-tinta/60 hover:border-tinta/30 hover:text-tinta"
             >
               <UserRound className="h-4 w-4 shrink-0" />
-              Todavía no hay barberos cargados — agrégalos en Barberos para poder elegir quién atendió.
+              Todavía no hay barberos cargados: agrégalos en Barberos para poder elegir quién atendió.
             </Link>
           ) : null}
 
@@ -664,7 +664,7 @@ function BotonDeItem({ item, enTicket, onClick }: { item: Item; enTicket: number
           </span>
         ) : null}
       </span>
-      {/* Los ítems sin precio no llegan a esta grilla —no se pueden vender—,
+      {/* Los ítems sin precio no llegan a esta grilla (no se pueden vender),
           así que acá el precio siempre existe. */}
       <span className="cifra mt-3 text-xl font-semibold tracking-tight">{aTextoConSimbolo(item.precio ?? 0)}</span>
     </button>
@@ -858,7 +858,7 @@ function Descuento({
 
 /**
  * Propina para el barbero de la venta. No se suma al total ni pasa por los
- * pagos —solo para contabilizar, D6: sueldo fijo, sin comisiones— así que
+ * pagos (solo para contabilizar, D6: sueldo fijo, sin comisiones) así que
  * vive aparte del carrito y no del `Descuento`, aunque el control se vea
  * parecido.
  */
@@ -959,7 +959,7 @@ function RecibirPorCorreo({
           {contador ? (
             <p className={`ayuda text-sm ${sinCupo ? "text-mal" : ""}`}>
               Correos usados hoy: {contador.usadosHoy} / {contador.topeTotal}
-              {sinCupo ? " — se alcanzó el tope, hoy no se podrá mandar." : ""}
+              {sinCupo ? ": se alcanzó el tope, hoy no se podrá mandar." : ""}
             </p>
           ) : null}
         </div>

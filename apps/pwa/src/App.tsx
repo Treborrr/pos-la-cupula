@@ -94,7 +94,7 @@ const GRUPOS: {
 
 /**
  * La puerta de entrada: nadie ve el shell real sin sesión. El límite de
- * verdad está del lado del servidor (cada ruta exige su rol) — esto es solo
+ * verdad está del lado del servidor (cada ruta exige su rol); esto es solo
  * para no mostrar una pantalla que de todos modos no va a poder usar.
  */
 export function App() {
@@ -117,7 +117,7 @@ export function App() {
         banderaDeSalidaIntencional.valor = false;
       } else {
         setDesconectadoPor(
-          "Se cerró tu sesión — puede ser que otro cajero haya iniciado la suya, o que se te desconectó por seguridad. Vuelve a entrar.",
+          "Se cerró tu sesión: puede ser que otro cajero haya iniciado la suya, o que se te desconectó por seguridad. Vuelve a entrar.",
         );
       }
     }

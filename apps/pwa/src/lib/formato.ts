@@ -54,9 +54,9 @@ export function cantidad(n: number): string {
 /**
  * Cómo se nombra un ítem o una línea de venta en pantalla: "DON NISH TALCO".
  *
- * Una sola función porque hay siete lugares que muestran lo mismo —la grilla de
+ * Una sola función porque hay siete lugares que muestran lo mismo (la grilla de
  * cobro, el ticket en curso, el historial, el lector de tickets, el kardex, los
- * reportes— y cada uno resolvía por su cuenta si poner la marca o no. El
+ * reportes) y cada uno resolvía por su cuenta si poner la marca o no. El
  * resultado era que el mismo producto se llamaba distinto según la pantalla, y
  * con dos TALCO de marcas distintas en el catálogo eso no es cosmético: es no
  * poder saber cuál de los dos se vendió.
@@ -73,27 +73,27 @@ export function nombreConMarca(x: { marca?: string | null; nombre: string }): st
  * Un monto que puede no existir.
  *
  * Existe para que las cinco pantallas que muestran precios digan LO MISMO
- * cuando el dato falta. Un "S/ 0.00" ahí sería mentira —el producto no es
- * gratis, es que nadie le puso precio todavía— y es la clase de mentira que
+ * cuando el dato falta. Un "S/ 0.00" ahí sería mentira (el producto no es
+ * gratis, es que nadie le puso precio todavía) y es la clase de mentira que
  * termina en un cobro equivocado.
  */
-export function montoOAusente(centimos: number | null | undefined, ausente = "—"): string {
+export function montoOAusente(centimos: number | null | undefined, ausente = "-"): string {
   return centimos === null || centimos === undefined ? ausente : aTextoConSimbolo(centimos);
 }
 
 /**
- * Un porcentaje de variación con su signo: "↑ 12.5%", "↓ 3%", "—".
+ * Un porcentaje de variación con su signo: "↑ 12.5%", "↓ 3%", "-".
  *
  * `null` se muestra como raya y no como "0%": no hubo período anterior contra
  * el cual comparar, y un 0% afirmaría que se vendió igual.
  */
 export function variacionLegible(v: number | null | undefined): string {
-  if (v === null || v === undefined) return "—";
+  if (v === null || v === undefined) return "-";
   if (v === 0) return "igual";
   return `${v > 0 ? "↑" : "↓"} ${Math.abs(v)}%`;
 }
 
 /** El porcentaje de margen, o una raya si no se pudo calcular. */
 export function margenLegible(margen: number | null | undefined): string {
-  return margen === null || margen === undefined ? "—" : `${margen}%`;
+  return margen === null || margen === undefined ? "-" : `${margen}%`;
 }

@@ -4,7 +4,7 @@
  * Rutas relativas siempre (`/api/...`): en desarrollo el proxy de Vite las
  * manda al 7070 y en producción el mismo servidor sirve la PWA. Así no hay una
  * variable de entorno con la URL del backend que alguien tenga que configurar
- * —ni equivocar— al instalar.
+ * (ni equivocar) al instalar.
  */
 
 export interface ErrorApi {

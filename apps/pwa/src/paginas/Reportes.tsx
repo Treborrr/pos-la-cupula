@@ -5,7 +5,7 @@
  *
  * LO QUE NO SE SABE SE DICE. Un producto sin precio de compra cargado no tiene
  * margen del 100%: no tiene margen calculable. Cada cifra de utilidad viene con
- * su COBERTURA —sobre qué parte de lo vendido se pudo calcular— y donde falta el
+ * su COBERTURA (sobre qué parte de lo vendido se pudo calcular) y donde falta el
  * dato hay una raya, no un cero. Es la diferencia entre un reporte y un adorno.
  *
  * TODO SE COMPARA CONTRA EL PERÍODO ANTERIOR. "Vendí S/ 8,450" no es información
@@ -245,7 +245,7 @@ export function Reportes() {
               pregunta del dueño no es "qué se vendió" sino "cuál vendió más". */}
           <ComparativaSucursales filas={r.porSede} mirando={r.sede} />
 
-          {/* El inventario NO depende del período —es una foto de hoy— así que va
+          {/* El inventario NO depende del período (es una foto de hoy) así que va
               separado y con su propio encabezado, para que nadie lea "plata en
               stock" como si fuera del mes elegido. */}
           {r.cantidadVentas === 0 ? (
@@ -374,7 +374,7 @@ function ComparativaSucursales({
                 <td className="cifra text-right font-semibold">{aTextoConSimbolo(f.total)}</td>
                 <td className="cifra text-right">{f.cantidad}</td>
                 <td className="cifra text-right">{aTextoConSimbolo(f.ticketPromedio)}</td>
-                <td className="cifra text-right">{f.margen === null ? "—" : `${f.margen}%`}</td>
+                <td className="cifra text-right">{f.margen === null ? "-" : `${f.margen}%`}</td>
                 <td className="cifra text-right">
                   {f.variacion === null ? (
                     <span className="text-tinta/35">sin base</span>
@@ -409,7 +409,7 @@ function Totales({ r }: { r: Reporte }) {
         />
         <Recuadro
           etiqueta="Ganancia"
-          valor={u.margen === null ? "—" : aTextoConSimbolo(u.utilidad)}
+          valor={u.margen === null ? "-" : aTextoConSimbolo(u.utilidad)}
           tamano="grande"
           tono={u.utilidad < 0 ? "mal" : undefined}
           nota={
@@ -503,7 +503,7 @@ function VentasPorDia({ r }: { r: Reporte }) {
  *
  * Responde la pregunta de gestión más barata que hay en una barbería: a qué
  * hora conviene tener dos barberos y a qué hora uno. El dato estaba en el log
- * desde el primer día —cada evento lleva su hora— y no se mostraba en ningún
+ * desde el primer día (cada evento lleva su hora) y no se mostraba en ningún
  * lado.
  *
  * Se dibujan las 24 horas aunque la barbería abra ocho: los huecos de los
@@ -528,7 +528,7 @@ function PorHora({ r }: { r: Reporte }) {
           <div
             key={h.hora}
             className="group flex h-full flex-1 items-end"
-            title={`${String(h.hora).padStart(2, "0")}:00 — ${aTextoConSimbolo(h.total)} · ${h.cantidad} venta${h.cantidad === 1 ? "" : "s"}`}
+            title={`${String(h.hora).padStart(2, "0")}:00 · ${aTextoConSimbolo(h.total)} · ${h.cantidad} venta${h.cantidad === 1 ? "" : "s"}`}
           >
             <div
               className={`w-full rounded-t-md transition-colors ${
@@ -552,8 +552,8 @@ function PorHora({ r }: { r: Reporte }) {
  * Qué hay que comprar.
  *
  * No es la misma lista que "productos agotados": esa es un número y no sirve
- * para ir al proveedor. Esta dice cuántas quedan, cuántas se vendieron —que es
- * lo que decide si vale la pena reponer— y cuánto costaría. Se puede copiar de
+ * para ir al proveedor. Esta dice cuántas quedan, cuántas se vendieron (que es
+ * lo que decide si vale la pena reponer) y cuánto costaría. Se puede copiar de
  * un botón para mandarla por WhatsApp, que es como se pide de verdad.
  */
 function ParaReponer({ r }: { r: Reporte }) {
@@ -563,7 +563,7 @@ function ParaReponer({ r }: { r: Reporte }) {
 
   const comoTexto = () =>
     [
-      `Reposición — ${fecha(r.hasta + "T00:00:00")}`,
+      `Reposición: ${fecha(r.hasta + "T00:00:00")}`,
       ...r.paraReponer.map((x) => `${x.sugeridas} × ${x.nombre}` + (x.stock > 0 ? ` (quedan ${x.stock})` : " (agotado)")),
     ].join("\n");
 
@@ -610,11 +610,11 @@ function ParaReponer({ r }: { r: Reporte }) {
                 <td className={`cifra text-right ${x.stock <= 0 ? "font-semibold text-mal" : ""}`}>
                   {x.stock <= 0 ? "agotado" : cantidad(x.stock)}
                 </td>
-                <td className="cifra text-right text-tinta/45">{x.stockMinimo || "—"}</td>
+                <td className="cifra text-right text-tinta/45">{x.stockMinimo || "-"}</td>
                 <td className="cifra text-right text-tinta/65">{cantidad(x.vendidasEnPeriodo)}</td>
                 <td className="cifra text-right font-semibold">{cantidad(x.sugeridas)}</td>
                 <td className="cifra text-right text-tinta/65">
-                  {x.costoDeReponer === null ? "—" : aTextoConSimbolo(x.costoDeReponer)}
+                  {x.costoDeReponer === null ? "-" : aTextoConSimbolo(x.costoDeReponer)}
                 </td>
               </tr>
             ))}
@@ -632,7 +632,7 @@ function ParaReponer({ r }: { r: Reporte }) {
  * Una agrupación con su barra, su margen y su cobertura.
  *
  * Sirve para categoría, marca e ítem: son la misma pregunta sobre distinta
- * clave, así que comparten la presentación. Que se vean iguales no es pereza —es
+ * clave, así que comparten la presentación. Que se vean iguales no es pereza: es
  * lo que permite comparar entre bloques sin recalibrar la vista.
  */
 function Agrupado({
@@ -764,7 +764,7 @@ function Propinas({ r }: { r: Reporte }) {
   const total = r.propinas.reduce((a, b) => a + b.total, 0);
 
   return (
-    <Seccion titulo="Propinas" descripcion="Para que el dueño sepa cuánto recibe cada uno — nada más.">
+    <Seccion titulo="Propinas" descripcion="Para que el dueño sepa cuánto recibe cada uno, nada más.">
       <div className="space-y-4">
         {r.propinas.map((b) => (
           <div key={b.barberoId}>
@@ -927,7 +927,7 @@ function SinRotar({ r }: { r: Reporte }) {
                   )}
                 </td>
                 <td className="cifra text-right text-tinta/65">
-                  {s.inmovilizado === null ? "—" : aTextoConSimbolo(s.inmovilizado)}
+                  {s.inmovilizado === null ? "-" : aTextoConSimbolo(s.inmovilizado)}
                 </td>
               </tr>
             ))}

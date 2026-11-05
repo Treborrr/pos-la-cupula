@@ -226,7 +226,7 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
                 {items.map((i) => (
                   <tr key={i.id} onClick={() => alAbrir(i)} className={i.activo ? "" : "text-tinta/40"}>
                     <td className="cifra font-semibold">{i.codigo}</td>
-                    <td className="text-tinta/65">{i.marca || <span className="text-tinta/30">—</span>}</td>
+                    <td className="text-tinta/65">{i.marca || <span className="text-tinta/30">-</span>}</td>
                     <td>
                       <span className="flex items-center gap-2.5">
                         {imagenDeItem(i) ? (
@@ -261,7 +261,7 @@ function ListaDeItems({ alAbrir, alNuevo }: { alAbrir: (i: Item) => void; alNuev
                       {i.tipo === "PRODUCTO" ? (
                         <span className={i.stock! < 0 ? "font-semibold text-mal" : ""}>{i.stock}</span>
                       ) : (
-                        <span className="text-tinta/30">—</span>
+                        <span className="text-tinta/30">-</span>
                       )}
                     </td>
                   </tr>
@@ -296,8 +296,8 @@ function margenDe(i: Item): number | null {
  *
  * Existe porque el catálogo del cliente llegó con 169 productos sin precio, y
  * abrir 169 veces el formulario de edición no es una tarea que alguien vaya a
- * terminar. Van agrupados por marca —que es como está ordenada la cabeza de
- * quien los va a tipear, no alfabéticamente— y se guardan todos en una sola
+ * terminar. Van agrupados por marca (que es como está ordenada la cabeza de
+ * quien los va a tipear, no alfabéticamente) y se guardan todos en una sola
  * tanda: si algo falla, no queda la mitad hecha.
  *
  * LAS DOS COLUMNAS VAN JUNTAS porque los dos datos se cargan juntos: quien
@@ -449,7 +449,7 @@ function FilaDePrecio({
 }) {
   // El margen aparece en cuanto los dos campos tienen número: es la devolución
   // inmediata de por qué vale la pena cargar el precio de compra, y delata el
-  // dedo más común —invertir los dos— en el momento, no en el reporte.
+  // dedo más común (invertir los dos) en el momento, no en el reporte.
   const pv = aCentimos(precio) ?? item.precio;
   const pc = aCentimos(costo) ?? item.costo;
   const margen = pv !== null && pc !== null && pv > 0 ? Math.round(((pv - pc) / pv) * 1000) / 10 : null;
@@ -483,7 +483,7 @@ function FilaDePrecio({
         ? campo(costo, alCambiarCosto, item.costo !== null ? aTexto(item.costo) : "no lo sé", false)
         : // Un servicio no tiene precio de compra: el hueco deja la columna
           // alineada sin fingir que el dato podría existir.
-          <span className="w-32 shrink-0 text-center text-tinta/25">—</span>}
+          <span className="w-32 shrink-0 text-center text-tinta/25">-</span>}
       {campo(precio, alCambiarPrecio, item.precio !== null ? aTexto(item.precio) : "0.00", item.precio === null)}
     </div>
   );

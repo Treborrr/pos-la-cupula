@@ -162,8 +162,8 @@ export function SeccionRespaldos({ destinoConfigurado }: { destinoConfigurado: s
 
       <div className="space-y-2 text-tinta/70">
         <p>
-          <strong className="text-tinta">Automático:</strong> cada hora mientras el POS esté encendido —solo si hubo
-          movimientos— y al cerrar cada turno. Se conservan las últimas 24 copias horarias y los últimos 30 cierres, así
+          <strong className="text-tinta">Automático:</strong> cada hora mientras el POS esté encendido (solo si hubo
+          movimientos) y al cerrar cada turno. Se conservan las últimas 24 copias horarias y los últimos 30 cierres, así
           que hay un día con detalle fino y un mes para volver más atrás.
         </p>
         <p>
@@ -208,7 +208,7 @@ const ICONO = { nube: Cloud, extraible: Usb, disco: HardDrive, carpeta: Folder }
  * una ventaja que el nativo no tendría: funciona igual desde el celular.
  *
  * Arranca en las SUGERENCIAS y no en la lista de discos, porque el destino que
- * sirve casi siempre es uno de dos —una carpeta de OneDrive o un USB— y hacer
+ * sirve casi siempre es uno de dos (una carpeta de OneDrive o un USB) y hacer
  * navegar a alguien desde `C:\` hasta su carpeta de OneDrive son seis clics
  * para llegar a algo que el sistema ya sabe dónde está.
  */

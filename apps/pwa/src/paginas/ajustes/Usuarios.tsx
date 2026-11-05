@@ -1,7 +1,7 @@
 /**
  * Los cajeros del mostrador: hasta 3 cuentas, usuario y contraseña elegidos
- * acá mismo al crearlas. Los dueños NO se gestionan desde esta pantalla —se
- * crean aparte, directo contra el log (`herramientas/crear-usuario.mts`)—
+ * acá mismo al crearlas. Los dueños NO se gestionan desde esta pantalla: se
+ * crean aparte, directo contra el log (`herramientas/crear-usuario.mts`)
  * y aparecen solo de lectura, para que se pueda confirmar que las dos
  * cuentas existen.
  */

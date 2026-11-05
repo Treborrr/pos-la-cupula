@@ -1,8 +1,8 @@
 /**
- * El dueño actualiza su propio nombre, correo, teléfono y/o contraseña — todo
+ * El dueño actualiza su propio nombre, correo, teléfono y/o contraseña, todo
  * en un solo formulario, y nada se aplica hasta confirmar el código que
  * llega por correo. El código SIEMPRE va al correo YA registrado (si hay
- * uno), nunca al nuevo que se esté pidiendo — eso lo decide el servidor, acá
+ * uno), nunca al nuevo que se esté pidiendo: eso lo decide el servidor, acá
  * solo se muestra el resultado.
  */
 
@@ -75,7 +75,7 @@ export function SeccionMiCuenta() {
       }),
     onSuccess: (r) => {
       // Si no se pudo mandar (ej. se alcanzó el tope del día), no tiene
-      // sentido pasar a la pantalla de "escribí el código" — nunca llegó
+      // sentido pasar a la pantalla de "escribí el código": nunca llegó
       // ninguno. Se queda en el formulario con el aviso de qué pasó.
       if (r.enviado) setPaso("codigo");
     },
@@ -86,7 +86,7 @@ export function SeccionMiCuenta() {
     onSuccess: (r) => {
       if (r.contrasenaCambiada) {
         // Fuerza a `App` a notar la sesión cerrada YA, en vez de esperar su
-        // sondeo cada 30 s — el servidor ya invalidó todas las sesiones de
+        // sondeo cada 30 s: el servidor ya invalidó todas las sesiones de
         // esta cuenta al confirmar el cambio.
         qc.invalidateQueries({ queryKey: ["auth", "yo"] });
         return;

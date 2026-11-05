@@ -1,5 +1,5 @@
 /**
- * Login. Dos pantallas —mostrador por defecto, admin aparte en `/login/admin`—
+ * Login. Dos pantallas (mostrador por defecto, admin aparte en `/login/admin`)
  * que mandan al MISMO `POST /auth/login`: el rol sale de la cuenta, nunca de
  * cuál pantalla se usó para entrar. La distinción es puro gesto para el
  * cajero del día a día, no un límite de seguridad.

@@ -133,8 +133,8 @@ export function Inventario() {
       {enNegativo.length > 0 ? (
         <div className="mb-6">
           <Aviso tono="mal" titulo={`${enNegativo.length} producto(s) con stock negativo`}>
-            Se vendió más de lo que el sistema creía tener. El POS no bloquea una venta por falta de stock —con el
-            cliente delante sería peor—, pero conviene contar y registrar el conteo.
+            Se vendió más de lo que el sistema creía tener. El POS no bloquea una venta por falta de stock (con el
+            cliente delante sería peor), pero conviene contar y registrar el conteo.
           </Aviso>
         </div>
       ) : null}
@@ -246,7 +246,7 @@ const ACCIONES: { id: Accion; titulo: string; detalle: string; icono: LucideIcon
   { id: "entrada", titulo: "Llegó mercadería", detalle: "Suma unidades", icono: PackagePlus },
   // ADMIN, no cajero: un conteo puede absorber en silencio una merma real
   // (por ejemplo, un robo) bajo "conté y había menos", sin ninguna señal
-  // secundaria para el dueño — misma razón que en el servidor.
+  // secundaria para el dueño: misma razón que en el servidor.
   { id: "ajuste", titulo: "Hice un conteo", detalle: "Corrige el stock", icono: ClipboardCheck, soloAdmin: true },
   { id: "merma", titulo: "Se perdió o dañó", detalle: "Resta unidades", icono: PackageMinus },
 ];
@@ -489,7 +489,7 @@ interface LineaEnEdicion {
 /**
  * Varios productos de un proveedor en una sola acción: cada línea entra al
  * inventario con su costo y, si de verdad salió plata del cajón, un solo
- * egreso por el total —no hay que anotarlo dos veces.
+ * egreso por el total: no hay que anotarlo dos veces.
  */
 function RegistrarCompra({
   productos,
@@ -675,7 +675,7 @@ function RegistrarCompra({
                       </div>
                     </td>
                     <td className="cifra text-right font-medium">
-                      {Number.isFinite(l.n) && l.centimos !== null ? aTextoConSimbolo(l.n * l.centimos) : "—"}
+                      {Number.isFinite(l.n) && l.centimos !== null ? aTextoConSimbolo(l.n * l.centimos) : "-"}
                     </td>
                     <td>
                       <button className="boton-icono" aria-label="Quitar" onClick={() => quitar(l.itemId)}>
@@ -718,7 +718,7 @@ function RegistrarCompra({
           <span>
             <span className="block font-medium">Salió plata del cajón</span>
             <span className="ayuda block">
-              Desactívalo si se pagó por otro lado —transferencia, crédito del proveedor— y no debe descontarse del
+              Desactívalo si se pagó por otro lado (transferencia, crédito del proveedor) y no debe descontarse del
               efectivo esperado.
             </span>
           </span>
