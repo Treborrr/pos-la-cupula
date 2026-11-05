@@ -89,6 +89,15 @@ function saltosDeProxyConfiables(enNube: boolean): FastifyServerOptions["trustPr
 
 export async function construirApp(deps: Dependencias): Promise<FastifyInstance> {
   const app = Fastify({
+    /**
+     * Al apagar, cerrar también las conexiones keep-alive ociosas en vez de
+     * esperarlas. El healthcheck de Railway mantiene una abierta, y sin esto
+     * `app.close()` se quedaba esperándola: el apagado no terminaba, Railway
+     * mandaba SIGKILL pasado el tiempo de drenaje, y eso contaba como un
+     * "crash" en cada despliegue (un correo de alarma por cada deploy, con el
+     * servicio en realidad sano).
+     */
+    forceCloseConnections: true,
     // Registro en JSON plano. Corriendo como servicio de Windows nadie lo lee
     // en vivo, y JSON es lo que se puede filtrar después cuando haga falta.
     logger: { level: process.env.NIVEL_LOG ?? (process.env.VITEST ? "silent" : "info") },

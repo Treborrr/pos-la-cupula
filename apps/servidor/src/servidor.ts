@@ -292,8 +292,25 @@ async function principal() {
       if (apagando) return;
       apagando = true;
       app.log.info("apagando…");
-      await app.close();
-      await pos.cerrar();
+
+      /**
+       * Red de contención: salir con código 0 a los 4 s pase lo que pase.
+       *
+       * Si el cierre ordenado se cuelga (una conexión que no drena, el disco
+       * del Volumen lento), sin esto el proceso no termina, Railway manda
+       * SIGKILL y lo cuenta como crash. Salir 0 por nuestra cuenta, rápido,
+       * evita ese falso crash en cada despliegue. `unref` para que este timer
+       * no sea, él mismo, lo que mantenga vivo el proceso.
+       */
+      const forzar = setTimeout(() => process.exit(0), 4000);
+      forzar.unref();
+
+      try {
+        await app.close();
+        await pos.cerrar();
+      } catch (e) {
+        app.log.error({ err: e }, "error al apagar; se sale igual");
+      }
       process.exit(0);
     });
   }
