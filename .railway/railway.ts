@@ -48,7 +48,34 @@ export default defineRailway(() => {
   const pos = service("pos-la-cupula", {
     source: github("Treborrr/pos-la-cupula"),
     build: "npm run build",
-    start: "npm start",
+
+    /**
+     * Node ARRANCA DIRECTO, sin pasar por `npm start`. No es cosmético: es lo
+     * que hace que el apagado sea limpio.
+     *
+     * Con `npm start`, el PID 1 del contenedor es npm, y la cadena queda
+     * npm → sh → node. Al desplegar, Railway manda SIGTERM al PID 1. npm se lo
+     * pasa a su hijo `sh`, y `sh` se muere en el acto sin reenviarlo: node
+     * NUNCA recibe la señal (en los logs no aparecía ni el "apagando…"). npm ve
+     * que su hijo murió por señal, imprime `npm error signal SIGTERM` y sale
+     * con código 1. Un PID 1 que sale distinto de 0 es, para Railway, un crash:
+     * de ahí el correo "Deploy Crashed" en CADA despliegue, con el servicio
+     * sano y la propia deploy en SUCCESS.
+     *
+     * Arrancando node directo, node ES el PID 1, recibe el SIGTERM, corre su
+     * apagado ordenado (ver `servidor.ts`) y sale con 0.
+     *
+     * Medido en un contenedor igual al de Railway, con `docker stop`:
+     *   npm start  + apagado ordenado  → exit 1    (crash)
+     *   npm start  + apagado colgado   → exit 1    (crash)
+     *   node directo + apagado colgado → exit 137  (crash, por SIGKILL)
+     *   node directo + apagado ordenado→ exit 0    ✓
+     *
+     * O sea que hacen falta LAS DOS COSAS: node como PID 1 y un apagado que
+     * termine rápido. Si alguna vez esto vuelve a `npm start`, vuelven los
+     * correos. El script `start` del package.json se queda para uso local.
+     */
+    start: "node apps/servidor/dist/pos-cupula.mjs",
 
     /**
      * Railway no da por sano el despliegue hasta que esta ruta responde, y
